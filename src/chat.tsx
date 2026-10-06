@@ -1,6 +1,7 @@
 import { isCodex } from './shared';
 import { conversationEntries, currentActivity, working } from './conversation';
 import { CodexCatalogStatus } from './codex-catalog';
+import { signatureModel, reportedTokens, compactTokens } from './task-signature';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
@@ -746,6 +747,11 @@ export function Composer({
   const sendingRef = useRef(false);
   const claude = !isCodex(session.profile);
   const config = session.config;
+  const signature = signatureModel(session, optimization, !!draft.trim() || !!images.length);
+  const tokens = reportedTokens(session);
+  const tokenDetail = tokens
+    ? `Tokens acumulados de esta conversación · Última lectura confirmada\nEntrada: ${tokens.input.toLocaleString('es-ES')} (incluye caché)\nSalida: ${tokens.output.toLocaleString('es-ES')}${claude ? '\nClaude actualiza el conteo al terminar cada respuesta.' : ' (incluye razonamiento)'}`
+    : 'Tokens pendientes de la primera lectura del proveedor';
   const optimize = (patch: Partial<TokenOptimization>) =>
     run({
       type: 'configureOptimization',
@@ -1245,6 +1251,23 @@ export function Composer({
             </button>
           )}
         </div>
+      </div>
+      <div className="task-signature" aria-label="Modelo y tokens">
+        <span
+          className="task-signature-model"
+          title={
+            signature === 'Auto'
+              ? 'El modelo se elige al enviar la tarea'
+              : `Modelo seleccionado: ${signature}${optimization.autoModel ? ' · Auto' : ''}`
+          }
+        >
+          {signature}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span className="task-signature-tokens" title={tokenDetail} aria-label={tokenDetail}>
+          ↑{tokens ? compactTokens(tokens.input) : '—'} ↓
+          {tokens ? compactTokens(tokens.output) : '—'}
+        </span>
       </div>
     </div>
   );

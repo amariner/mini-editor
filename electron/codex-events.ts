@@ -33,7 +33,33 @@ export function messageFromItem(item: any): Message | undefined {
 /** Consume server events without inventing activity or treating terminal text as protocol. */
 export function applyCodexEvent(s: Session, method: string, p: any) {
   if (p?.threadId && s.reference && p.threadId !== s.reference) return;
-  if (method === 'turn/started') {
+  if (method === 'thread/tokenUsage/updated') {
+    if (!s.reference || p?.threadId !== s.reference) return;
+    const total = p.tokenUsage?.total;
+    if (
+      !Number.isSafeInteger(total?.inputTokens) ||
+      total.inputTokens < 0 ||
+      !Number.isSafeInteger(total?.outputTokens) ||
+      total.outputTokens < 0
+    )
+      return;
+    const stats = (s.stats ??= {
+      cost: 0,
+      turns: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: 0,
+    });
+    // Provider totals already include cached input and reasoning output. Replace,
+    // never add: repeated notifications and thread resumes must not double-count.
+    stats.inputTokens = total.inputTokens;
+    stats.outputTokens = total.outputTokens;
+    stats.tokensReported = true;
+  } else if (method === 'model/rerouted') {
+    if (s.turnId !== p?.turnId || typeof p.toModel !== 'string') return;
+    if (s.optimization) s.optimization.model = p.toModel;
+    if (s.info) s.info.model = p.toModel;
+  } else if (method === 'turn/started') {
     s.turnId = p.turn.id;
     s.status = 'working';
   } else if (method === 'turn/completed') {

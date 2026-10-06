@@ -724,6 +724,16 @@ function App() {
                         ),
                       )}
                     </div>
+                    {!terminalMode && (
+                      <>
+                        {session.todos?.length ? <TodoPanel todos={session.todos} /> : null}
+                        <ActivityDock
+                          key={`activity-${session.id}`}
+                          session={session}
+                          kind={kind}
+                        />
+                      </>
+                    )}
                     <div className="git-summary" aria-label="Resumen de cambios del proyecto">
                       <button
                         className="git-summary-project"
@@ -760,12 +770,6 @@ function App() {
                     </div>
                     {!terminalMode && (
                       <>
-                        {session.todos?.length ? <TodoPanel todos={session.todos} /> : null}
-                        <ActivityDock
-                          key={`activity-${session.id}`}
-                          session={session}
-                          kind={kind}
-                        />
                         <Composer
                           key={session.id}
                           session={session}

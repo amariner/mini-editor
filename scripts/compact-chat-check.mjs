@@ -21,6 +21,7 @@ try {
       title: '¿Qué stack utilizas?',
       status: 'working',
       mode: 'chat',
+      optimization: { model: 'Sonnet 5.5', autoModel: true, level: 3, reason: 'General' },
       approvals: [],
       messages: [
         { id: 'u', role: 'user', text: '¿Qué stack utilizas?' },
@@ -58,7 +59,14 @@ try {
       ],
     };
     const state = {
-      profiles: [{ id: 'claude-1', name: 'Personal', kind: 'claude' }],
+      profiles: [
+        {
+          id: 'claude-1',
+          name: 'Personal',
+          kind: 'claude',
+          optimization: { level: 3, autoModel: true },
+        },
+      ],
       accounts: {},
       projects: [{ id: 'p', name: 'Proyecto', path: '/tmp/compact-chat-fixture' }],
       sessions: [session],
@@ -101,10 +109,13 @@ try {
     'Bash · Revisando la estructura del proyecto',
   );
   const composer = await page.locator('.composer').boundingBox();
+  const context = await page.locator('.git-summary').boundingBox();
   const dock = await progress.boundingBox();
-  assert.ok(dock.y + dock.height <= composer.y);
-  assert.ok(composer.y - (dock.y + dock.height) < 40);
+  assert.ok(dock.y + dock.height <= context.y);
+  assert.ok(context.y - (dock.y + dock.height) < 10);
+  assert.ok(context.y + context.height <= composer.y);
   assert.ok(dock.height <= 26);
+  assert.equal(await page.locator('.task-signature').innerText(), 'Sonnet 5.5\n·\n↑— ↓—');
   await progress.click();
   assert.equal(await page.locator('.activity-log .tool').count(), 2);
   await page.locator('.activity-log .tool-head').first().click();
@@ -127,9 +138,28 @@ try {
       ],
     });
     f.session.status = 'ready';
+    f.session.stats = {
+      cost: 0,
+      turns: 1,
+      inputTokens: 1234,
+      outputTokens: 340,
+      durationMs: 1000,
+      tokensReported: true,
+    };
     f.publish();
   });
   await page.getByText('El proyecto usa', { exact: false }).waitFor();
+  assert.equal(await page.locator('.task-signature-tokens').innerText(), '↑1,2k ↓340');
+  assert.match(
+    await page.locator('.task-signature-tokens').getAttribute('title'),
+    /Entrada: 1234|Entrada: 1.234/,
+  );
+  const signature = await page.locator('.task-signature').boundingBox();
+  const finishedComposer = await page.locator('.composer').boundingBox();
+  assert.ok(signature.y >= finishedComposer.y + finishedComposer.height);
+  await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Otra tarea');
+  assert.equal(await page.locator('.task-signature-model').innerText(), 'Auto');
+  await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('');
   assert.equal(await progress.count(), 0);
   assert.equal(await page.locator('.response-work').count(), 1);
   assert.equal(await page.locator('.response-work').getAttribute('open'), null);

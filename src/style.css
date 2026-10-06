@@ -3177,6 +3177,28 @@ svg.lucide {
   font-size: 10px;
   min-height: 22px;
 }
+.task-signature {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 5px 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.task-signature-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-signature-tokens {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .activity-dock {
   flex-shrink: 0;
   min-width: 0;
@@ -3194,6 +3216,15 @@ svg.lucide {
   color: var(--muted);
   font-size: 11px;
   text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.activity-current:hover,
+.activity-current:active {
+  background: transparent;
+  color: var(--text);
 }
 .activity-current:disabled {
   opacity: 1;

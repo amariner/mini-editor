@@ -922,6 +922,7 @@ export class Manager {
       await this.loadThread(s);
       const decision = this.optimizeTurn(s, text, images);
       this.coordinator.task(id, text);
+      s.optimization = decision;
       s.status = 'working';
       s.error = undefined;
       this.changed();

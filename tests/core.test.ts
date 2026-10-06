@@ -113,6 +113,14 @@ test('persistencia restaura referencias y conversación, nunca procesos, autenti
         messages: [{ id: 'm', role: 'assistant', text: 'Mensaje' }],
         account: 'private@example.com',
         approvals: [{ id: 1, method: 'approval', params: {} }],
+        stats: {
+          cost: 0,
+          turns: 0,
+          durationMs: 0,
+          inputTokens: 1234,
+          outputTokens: 340,
+          tokensReported: true,
+        },
       },
     ];
     store.flush();
@@ -122,6 +130,8 @@ test('persistencia restaura referencias y conversación, nunca procesos, autenti
     assert.equal(restored.state.sessions[0].messages[0].text, 'Mensaje');
     assert.deepEqual(restored.state.sessions[0].approvals, []);
     assert.equal(restored.state.sessions[0].account, undefined);
+    assert.equal(restored.state.sessions[0].stats?.tokensReported, true);
+    assert.equal(restored.state.sessions[0].stats?.inputTokens, 1234);
     assert.equal(fs.statSync(path.join(dir, 'state.json')).mode & 0o777, 0o600);
     fs.writeFileSync(path.join(dir, 'state.json'), 'invalid');
     assert.throws(() => new Store(dir));

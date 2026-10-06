@@ -55,6 +55,7 @@ const schema = z.object({
       codexConfig: codexConfigSchema.partial().optional(),
       stats: z
         .object({
+          tokensReported: z.boolean().optional(),
           cost: z.number(),
           turns: z.number(),
           inputTokens: z.number(),

@@ -220,3 +220,9 @@ El historial agrupa las intervenciones del asistente y sus herramientas entre me
 `tests/conversation.test.ts` cubre agrupación, preservación de mensajes, permisos, errores, arranques y paradas. `node scripts/compact-chat-check.mjs` (tras compilar) comprueba la posición fija, una sola línea, desplegables, respuesta y permisos en un navegador aislado con datos de prueba, sin llamadas a modelos. Capturas en `artifacts/chat-compacto-*.png`.
 
 Los selectores del chat muestran solo las opciones, sin descripciones. El selector de permisos ofrece el modo sin aprobaciones de Claude y **Acceso total** de Codex. Activarlos puede requerir reabrir el proceso para aplicar sus opciones de arranque; no se activan automáticamente al cambiar el ahorro.
+
+## Firma del compositor
+
+Debajo del campo de escritura aparece el modelo y `↑entrada ↓salida`, sin marco. Auto muestra el modelo elegido al enviar y vuelve a Auto al preparar otro mensaje. Durante una tarea conserva el modelo de esa tarea aunque cambie la selección manual para la siguiente. El tooltip muestra los tokens exactos acumulados de la conversación; `—` significa que aún no hay lectura confirmada. No son una estimación de cuota ni del texto del borrador.
+
+Claude actualiza los totales con el resultado de cada respuesta, incluyendo entrada de caché. Codex consume `thread/tokenUsage/updated` y reemplaza los totales acumulados del hilo: no suma otra vez caché o razonamiento ni duplica notificaciones repetidas. Los datos confirmados se guardan con la sesión. Protocolo contrastado con los tipos generados por el binario instalado y la [documentación oficial de eventos](https://learn.chatgpt.com/docs/app-server#events). La firma no genera llamadas de inferencia ni sondeos adicionales.

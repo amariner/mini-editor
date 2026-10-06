@@ -199,6 +199,7 @@ export interface SessionInfo {
   account?: { email?: string; organization?: string; subscriptionType?: string };
 }
 export interface SessionStats {
+  tokensReported?: boolean;
   cost: number;
   turns: number;
   inputTokens: number;

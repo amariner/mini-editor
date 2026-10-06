@@ -170,6 +170,8 @@ export function applyClaudeMessage(s: Session, m: any) {
       (m.usage?.cache_creation_input_tokens ?? 0) +
       (m.usage?.cache_read_input_tokens ?? 0);
     st.outputTokens += m.usage?.output_tokens ?? 0;
+    if (Number.isFinite(m.usage?.input_tokens) && Number.isFinite(m.usage?.output_tokens))
+      st.tokensReported = true;
     st.durationMs += m.duration_ms ?? 0;
     for (const b of walk(lastAssistant(s)?.blocks))
       if (b.type === 'tool_use' && !b.done) b.done = true;
