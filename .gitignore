@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-electron/
+artifacts/
+.DS_Store
+
+# Local configuration and account/session data
+.env
+.env.*
+!.env.example
+/profiles/
+/attachments/
+/state.json
+*.log
+test-results/
+playwright-report/
