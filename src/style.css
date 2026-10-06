@@ -35,7 +35,7 @@
   --rx: 6px;
   --mono: 'SF Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
   font-family: -apple-system, 'SF Pro Text', 'Inter', system-ui, sans-serif;
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
   background: var(--bg);
   font-size: 13px;
   line-height: 1.5;
@@ -94,7 +94,7 @@ button {
   border: 0;
   border-radius: var(--rx);
   background: var(--tile);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
   min-height: 32px;
   padding: 6px 12px;
   cursor: pointer;
@@ -145,11 +145,11 @@ button.primary.small {
 }
 button.quiet {
   background: transparent;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 button.quiet:hover {
   background: var(--tile);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 button.danger {
   background: var(--danger);
@@ -172,11 +172,11 @@ button.icon-btn.ghost {
   background: transparent;
   width: 26px;
   min-height: 26px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 button.icon-btn.ghost:hover {
   background: var(--tile-hover);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 input,
 textarea,
@@ -186,7 +186,7 @@ select {
   border-radius: var(--rx);
   padding: 8px 11px;
   width: 100%;
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 textarea {
   resize: vertical;
@@ -195,11 +195,11 @@ textarea {
 }
 input::placeholder,
 textarea::placeholder {
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
 }
 kbd {
   font-family: inherit;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 10.5px;
   background: var(--card);
   border-radius: 6px;
@@ -218,7 +218,7 @@ p {
   margin: 0;
 }
 .muted {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .mono {
   font-family: var(--mono);
@@ -274,7 +274,7 @@ p {
 }
 .search-trigger {
   background: var(--card);
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   justify-content: flex-start;
   height: 36px;
   border-radius: var(--rs);
@@ -289,7 +289,7 @@ p {
   font-size: 10.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -301,7 +301,7 @@ p {
   min-height: 24px;
   width: 24px;
   padding: 0;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .projects {
   min-height: 50px;
@@ -327,13 +327,13 @@ p {
   min-width: 0;
   flex: 1;
   justify-content: flex-start;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   padding-left: 11px;
   font-weight: 500;
 }
 .project-name:hover {
   background: transparent;
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .project-name span {
   overflow: hidden;
@@ -341,7 +341,7 @@ p {
   white-space: nowrap;
 }
 .selected .project-name {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .project-row .icon-btn {
   visibility: hidden;
@@ -369,7 +369,7 @@ p {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   padding: 4px 6px 2px;
 }
 .group-head .icon-btn {
@@ -383,7 +383,7 @@ p {
   width: 100%;
   justify-content: flex-start;
   background: transparent;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   min-height: 30px;
   padding: 4px 8px;
   gap: 8px;
@@ -402,7 +402,7 @@ p {
   font-weight: 500;
 }
 .session-row.empty {
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
   font-style: italic;
 }
 .dot {
@@ -446,7 +446,7 @@ p {
 }
 .sidebar-hint {
   font-size: 12px;
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
   padding: 4px 10px;
 }
 .sidebar-bottom {
@@ -457,11 +457,11 @@ p {
   width: 100%;
   background: transparent;
   justify-content: flex-start;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .sidebar-bottom button:hover {
   background: var(--card);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 /* Main */
 main {
@@ -493,7 +493,7 @@ main {
 }
 .crumb span {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-family: var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -508,13 +508,13 @@ main {
 }
 .top-actions button {
   background: transparent;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   font-size: 12px;
 }
 .top-actions button:hover,
 .top-actions button.on {
   background: var(--card);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .workspace {
   display: flex;
@@ -570,7 +570,7 @@ main {
 }
 .activity {
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .conv-actions {
   display: flex;
@@ -589,19 +589,19 @@ main {
   min-height: 26px;
   padding: 3px 10px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   border-radius: 8px;
 }
 .segmented button.on {
   background: var(--card);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   background: var(--tile);
   border-radius: 999px;
   padding: 3px 10px 3px 8px;
@@ -699,11 +699,11 @@ main {
   gap: 7px;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 .model-tag {
   font-weight: 400;
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
   font-family: var(--mono);
   font-size: 10.5px;
 }
@@ -716,7 +716,7 @@ main {
   font: inherit;
   font-size: 12px;
   white-space: pre-wrap;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   text-align: center;
   background: var(--tile);
   border-radius: 999px;
@@ -729,7 +729,7 @@ main {
   border-radius: var(--rs);
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 .row.system.error pre {
   background: var(--danger-soft);
@@ -748,7 +748,7 @@ main {
   cursor: pointer;
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 .row.tool-row pre {
   font-family: var(--mono);
@@ -760,7 +760,7 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 12.5px;
 }
 .spinner {
@@ -863,14 +863,14 @@ pre.result {
   top: 6px;
   right: 10px;
   font-size: 10px;
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
   font-family: inherit;
 }
 .md blockquote {
   margin: 0;
   padding: 2px 12px;
   border-left: 3px solid var(--line);
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 .md table {
   border-collapse: collapse;
@@ -902,7 +902,7 @@ pre.result {
   justify-content: flex-start;
   gap: 8px;
   padding: 7px 12px;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   min-height: 34px;
 }
 .tool-head:hover {
@@ -912,12 +912,12 @@ pre.result {
 .tool-name {
   font-weight: 600;
   font-size: 12px;
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .tool-summary {
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -926,7 +926,7 @@ pre.result {
 }
 .tool-state {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   display: inline-flex;
   gap: 6px;
   align-items: center;
@@ -969,7 +969,7 @@ pre.result.failed {
 }
 .child-text {
   font-size: 12.5px;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 pre.diff {
   font-family: var(--mono);
@@ -997,13 +997,13 @@ pre.diff .removed {
 }
 .thinking-block button {
   background: transparent;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   padding: 2px 6px;
   min-height: 24px;
   font-size: 12px;
 }
 .thinking-text {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 12.5px;
   white-space: pre-wrap;
   padding: 6px 10px;
@@ -1025,7 +1025,7 @@ pre.diff .removed {
   align-items: baseline;
 }
 .todos li.completed {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   text-decoration: line-through;
 }
 .todos li.in_progress {
@@ -1041,7 +1041,7 @@ pre.diff .removed {
 }
 .todo-panel > button {
   background: transparent;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   padding: 4px 6px;
   min-height: 26px;
   font-size: 12px;
@@ -1095,7 +1095,7 @@ pre.diff .removed {
   font-size: 10.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   background: var(--tile);
   border-radius: 999px;
   padding: 2px 8px;
@@ -1143,7 +1143,7 @@ pre.diff .removed {
 }
 .tile-desc {
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   line-height: 1.4;
 }
 .tile.on .tile-desc {
@@ -1179,7 +1179,7 @@ pre.diff .removed {
   letter-spacing: -0.02em;
 }
 .empty p {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   max-width: 420px;
 }
 .auth-card {
@@ -1199,7 +1199,7 @@ pre.diff .removed {
   font-size: 17px;
 }
 .auth-card p {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 /* Composer */
 .composer-area {
@@ -1243,7 +1243,7 @@ pre.diff .removed {
 }
 .chip-btn {
   background: transparent;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   min-height: 28px;
   padding: 3px 9px;
   font-size: 12px;
@@ -1254,7 +1254,7 @@ pre.diff .removed {
   background: var(--card);
 }
 .popover-note {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 11px;
   padding: 6px 10px;
 }
@@ -1265,7 +1265,7 @@ pre.diff .removed {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 12px;
   padding: 0 6px;
 }
@@ -1309,7 +1309,7 @@ pre.diff .removed {
   color: var(--sel-text);
 }
 .popover button small {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 11px;
   line-height: 1.35;
 }
@@ -1343,14 +1343,14 @@ pre.diff .removed {
   gap: 14px;
   padding: 6px 6px 0;
   font-size: 10.5px;
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
 }
 .hint-right {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .slash-menu {
   position: absolute;
@@ -1388,10 +1388,10 @@ pre.diff .removed {
 .slash-hint {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
 }
 .slash-desc {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1405,7 +1405,7 @@ pre.diff .removed {
   align-items: center;
   padding: 6px 18px 10px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   flex-shrink: 0;
 }
 .foot-right {
@@ -1436,7 +1436,7 @@ pre.diff .removed {
   justify-content: space-between;
   padding: 8px 18px 2px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   flex-shrink: 0;
 }
 .terminal-footer span {
@@ -1470,11 +1470,11 @@ pre.diff .removed {
   background: transparent;
   padding: 4px;
   min-height: 28px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .drawer-head button:hover {
   background: var(--tile);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .drawer-body {
   flex: 1;
@@ -1493,11 +1493,11 @@ pre.diff .removed {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .drawer h5 {
   font-size: 12px;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   margin-top: 4px;
 }
 .drawer .notice {
@@ -1509,7 +1509,7 @@ pre.diff .removed {
   flex-direction: column;
   gap: 5px;
   font-size: 12px;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 .two {
   display: grid;
@@ -1532,7 +1532,7 @@ pre.diff .removed {
 }
 .switch small {
   grid-column: 2;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 11px;
 }
 .taglist {
@@ -1561,15 +1561,15 @@ pre.diff .removed {
   padding: 0;
   min-height: 16px;
   width: 16px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .tag.off {
   text-decoration: line-through;
-  color: var(--faint);
+  color: var(--ui-text-color, var(--faint));
 }
 .tag.add {
   font-family: inherit;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .tag-add {
   display: flex;
@@ -1582,7 +1582,7 @@ pre.diff .removed {
 .tool-list summary {
   cursor: pointer;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .tool-list .tags {
   margin-top: 8px;
@@ -1595,7 +1595,7 @@ pre.diff .removed {
   font-size: 12px;
 }
 .facts dt {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .facts dd {
   margin: 0;
@@ -1616,7 +1616,7 @@ pre.diff .removed {
   gap: 8px;
 }
 .mcp small {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   margin-left: auto;
   text-align: right;
 }
@@ -1635,7 +1635,7 @@ pre.diff .removed {
   align-items: center;
   gap: 4px;
   padding: 50px 0;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .clean-git svg {
   color: var(--ok);
@@ -1659,7 +1659,7 @@ pre.diff .removed {
   font-weight: 600;
 }
 .welcome > p {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   max-width: 440px;
   margin-bottom: 10px;
 }
@@ -1694,7 +1694,7 @@ pre.diff .removed {
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .palette-search input {
   background: transparent;
@@ -1727,7 +1727,7 @@ pre.diff .removed {
   min-width: 0;
 }
 .palette-results small {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1749,7 +1749,7 @@ pre.diff .removed {
 }
 .modal h3 {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-top: 8px;
@@ -1770,7 +1770,7 @@ pre.diff .removed {
 }
 .modal-title button {
   background: transparent;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   padding: 4px;
 }
 .tool-setting {
@@ -1817,7 +1817,7 @@ pre.diff .removed {
   height: 100vh;
   display: grid;
   place-items: center;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 
 .catalog-status {
@@ -1826,7 +1826,7 @@ pre.diff .removed {
 }
 .catalog-status p {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   line-height: 1.5;
   margin: 0 0 7px;
   overflow-wrap: anywhere;
@@ -1886,11 +1886,11 @@ pre.diff .removed {
 .account-heading small {
   display: block;
   margin-top: 5px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .account-status {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .account-status.signedIn {
   color: #2b9365;
@@ -1976,7 +1976,7 @@ pre.diff .removed {
   padding: 4px;
   min-height: 24px;
   margin-left: auto;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .compact .search-trigger {
   height: 30px;
@@ -2115,15 +2115,15 @@ pre.diff .removed {
   border-radius: 7px;
   font-size: 12px;
   background: transparent;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .account-switcher button[aria-pressed='true'] {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
   background: var(--card);
   box-shadow: 0 1px 3px #0001;
 }
 .account-switcher button:hover {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .crumb .account-switcher .glyph {
   font-family: inherit;
@@ -2145,7 +2145,7 @@ pre.diff .removed {
   min-width: 0;
 }
 .session-picker select {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
   background: transparent;
   border: 0;
   border-radius: 6px;
@@ -2162,11 +2162,11 @@ pre.diff .removed {
   background: var(--tile);
 }
 .session-picker option {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
   background: var(--card);
 }
 .session-picker .icon-btn {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 @media (max-width: 1050px) {
   .crumb {
@@ -2206,7 +2206,7 @@ pre.diff .removed {
   gap: 6px;
 }
 .account-switcher select {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
   background: transparent;
   border: 0;
   font: inherit;
@@ -2216,7 +2216,7 @@ pre.diff .removed {
 }
 .account-switcher option {
   background: var(--card);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .session-tabs-bar {
   display: flex;
@@ -2240,12 +2240,12 @@ pre.diff .removed {
   max-width: 190px;
   border-radius: 9px 9px 0 0;
   border-bottom: 2px solid transparent;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .session-tab.selected {
   background: var(--tile);
   border-bottom-color: var(--accent);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .session-tab button {
   background: transparent;
@@ -2286,7 +2286,7 @@ pre.diff .removed {
 .session-rename {
   padding: 5px;
   min-height: 24px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   background: transparent;
 }
 .no-session {
@@ -2300,7 +2300,7 @@ pre.diff .removed {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
   opacity: 0.075;
   pointer-events: none;
   user-select: none;
@@ -2344,7 +2344,7 @@ pre.diff .removed {
 }
 .coordination-status {
   font-size: 10px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2390,7 +2390,7 @@ pre.diff .removed {
   background: transparent;
   padding: 4px;
   min-height: 26px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .browser-toolbar input {
   width: 0;
@@ -2401,7 +2401,7 @@ pre.diff .removed {
   border-radius: 7px;
   background: var(--tile);
   border: 1px solid var(--line);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .browser-viewport {
   flex: 1;
@@ -2418,7 +2418,7 @@ pre.diff .removed {
   text-align: center;
   padding: 18px;
   gap: 10px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 12px;
 }
 .browser-empty p {
@@ -2542,10 +2542,10 @@ pre.diff .removed {
 }
 .session-tab.running {
   background: color-mix(in srgb, var(--text) 6%, transparent);
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 .session-tab.running.selected {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .session-tab > button[role='tab'] {
   min-height: 35px;
@@ -2598,7 +2598,7 @@ pre.diff .removed {
   background: transparent;
 }
 .crumb .account-switcher .glyph {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .tools-drawer .drawer-head {
   padding: 3px 8px;
@@ -2660,7 +2660,7 @@ pre.diff .removed {
 }
 .crumb .account-switcher .glyph.claude,
 .crumb .account-switcher .glyph.codex {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 @container (max-width: 340px) {
   .popover {
@@ -2730,7 +2730,7 @@ pre.diff .removed {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .add-account-form > div {
   display: flex;
@@ -2826,14 +2826,14 @@ pre.diff .removed {
   min-height: 26px;
   padding: 3px 5px;
   background: transparent;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 10px;
   border-radius: 4px;
 }
 .git-summary button:hover,
 .git-summary button[aria-expanded='true'] {
   background: var(--tile-hover);
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .git-summary-project {
   flex: 1;
@@ -2900,7 +2900,7 @@ pre.diff .removed {
 .usage-account > svg {
   position: absolute;
   right: 0;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   pointer-events: none;
 }
 .usage-switcher select {
@@ -2938,11 +2938,11 @@ pre.diff .removed {
   padding-block: 2px 4px;
 }
 .crumb .usage-switcher .usage-period {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 9px;
 }
 .crumb .usage-switcher .usage-value {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .crumb .usage-switcher .usage-track {
   position: absolute;
@@ -3038,7 +3038,7 @@ svg.lucide {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--tile);
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
   font-size: 11px;
   white-space: nowrap;
 }
@@ -3090,7 +3090,7 @@ svg.lucide {
   outline-offset: 3px;
 }
 .token-policy-hint {
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 10px;
   padding: 0 4px 5px;
 }
@@ -3133,7 +3133,7 @@ svg.lucide {
   align-items: center;
   gap: 5px;
   width: fit-content;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   cursor: pointer;
   list-style: none;
   font-size: 10px;
@@ -3161,7 +3161,7 @@ svg.lucide {
 .activity-messages .md {
   font-size: 11.5px;
   line-height: 1.45;
-  color: var(--text-2);
+  color: var(--ui-text-color, var(--text-2));
 }
 .activity-messages .tool-head {
   padding: 5px 7px;
@@ -3184,7 +3184,7 @@ svg.lucide {
   gap: 6px;
   min-width: 0;
   padding: 5px 5px 0;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 10px;
   line-height: 15px;
   font-variant-numeric: tabular-nums;
@@ -3213,7 +3213,7 @@ svg.lucide {
   height: 25px;
   min-height: 25px;
   padding: 2px 4px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 11px;
   text-align: left;
   background: transparent;
@@ -3224,7 +3224,7 @@ svg.lucide {
 .activity-current:hover,
 .activity-current:active {
   background: transparent;
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .activity-current:disabled {
   opacity: 1;
@@ -3310,7 +3310,7 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
   font-size: 10px;
 }
 .browser-tab {
@@ -3325,7 +3325,7 @@ svg.lucide {
   background: var(--tile);
 }
 .browser-tab.selected > button {
-  color: var(--text);
+  color: var(--ui-text-color, var(--text));
 }
 .browser-tab button[role='tab'] {
   min-width: 0;
@@ -3369,7 +3369,7 @@ svg.lucide {
   border: 0;
   background: transparent;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--ui-text-color, var(--muted));
 }
 .browser-toolbar button {
   padding: 2px;
@@ -3378,4 +3378,235 @@ svg.lucide {
 main > .browser-pane {
   flex: 1;
   min-height: 0;
+}
+
+/* Personal interface preferences stay local to Agent Desk, outside web pages. */
+.settings-tabs {
+  display: flex;
+  gap: 16px;
+  margin: 4px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.settings-tabs button {
+  padding: 8px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-text-color, var(--muted));
+}
+.settings-tabs button[aria-selected='true'] {
+  color: var(--ui-text-color, var(--text));
+  box-shadow: inset 0 -2px var(--text);
+}
+.interface-settings {
+  display: grid;
+  gap: 18px;
+}
+.interface-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.interface-setting select {
+  width: 100px;
+}
+.interface-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.interface-color button {
+  font-size: 12px;
+}
+.interface-color button.selected {
+  box-shadow: inset 0 0 0 1px var(--muted);
+}
+.interface-color input[type='color'] {
+  width: 36px;
+  height: 30px;
+  padding: 3px;
+  cursor: pointer;
+}
+.interface-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--tile);
+}
+.interface-preview p {
+  margin: 0;
+}
+.interface-reset {
+  justify-self: end;
+  font-size: 12px;
+}
+.sidebar .project-mark,
+.interface-preview .project-mark {
+  width: var(--project-icon-size, 20px);
+  height: var(--project-icon-size, 20px);
+}
+.sidebar .project-mark svg,
+.interface-preview .project-mark svg {
+  width: 100%;
+  height: 100%;
+}
+.compact-conversation .md,
+.compact-conversation .bubble,
+.composer textarea,
+.activity-messages .md,
+.interface-preview p {
+  font-size: var(--chat-font-size, 13px);
+  color: var(--chat-color, var(--text));
+}
+.compact-conversation .md pre.md-code code {
+  font-size: 0.92em;
+}
+.sidebar.compact .project-row {
+  min-height: calc(var(--project-icon-size, 20px) + 8px);
+}
+
+/* The folded project rail follows the selected icon size, including its hit area. */
+.sidebar.compact.collapsed {
+  width: calc(var(--project-icon-size, 20px) + 20px);
+  min-width: calc(var(--project-icon-size, 20px) + 20px);
+}
+.sidebar.compact.collapsed .project-row,
+.sidebar.compact.collapsed .project-name {
+  height: calc(var(--project-icon-size, 20px) + 12px);
+  min-height: calc(var(--project-icon-size, 20px) + 12px);
+}
+.sidebar.compact.collapsed .project-name {
+  padding: 6px;
+}
+.sidebar.compact.collapsed .section-label {
+  padding-left: 0;
+  padding-right: 0;
+}
+.sidebar.compact.collapsed .sidebar-bottom button {
+  width: 100%;
+  min-width: 0;
+  padding: 4px;
+}
+.app svg.lucide {
+  color: var(--ui-icon-color, currentColor);
+}
+.interface-icon-preview {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--ui-text-color, var(--muted));
+}
+
+.app {
+  color: var(--ui-text-color, var(--text));
+}
+.compact-conversation .md h1 {
+  font-size: 1.5em;
+}
+.compact-conversation .md h2 {
+  font-size: 1.25em;
+}
+.compact-conversation .md h3 {
+  font-size: 1.12em;
+}
+.compact-conversation .md h4,
+.compact-conversation .md h5,
+.compact-conversation .md h6,
+.compact-conversation .md table {
+  font-size: 1em;
+}
+.compact-conversation .md :not(pre) > code,
+.compact-conversation .md pre.md-code {
+  font-size: 0.92em;
+}
+.compact-conversation .md pre.md-code code {
+  font-size: inherit;
+}
+.compact-conversation .md blockquote {
+  color: inherit;
+}
+
+/* Align project/session tools and place the bottom controls on one baseline. */
+main {
+  padding-bottom: 8px;
+}
+.sidebar.compact {
+  padding-bottom: 10px;
+}
+.sidebar.compact .section-label {
+  height: 38px;
+  min-height: 38px;
+  flex: 0 0 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin: 0;
+  align-items: center;
+}
+.workspace .session-tabs-bar .new-tab {
+  margin-bottom: 0;
+}
+.sidebar.compact .sidebar-bottom {
+  gap: 2px;
+}
+.sidebar.compact .sidebar-bottom button {
+  height: 26px;
+  min-height: 26px;
+  padding-block: 0;
+}
+.composer-area {
+  padding: 4px 8px 2px;
+}
+.composer-footer,
+.conversation-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 0;
+  height: 26px;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.conversation-footer {
+  margin: 0 8px 2px;
+  justify-content: flex-end;
+}
+.composer-footer .task-signature {
+  padding: 0;
+  margin-left: auto;
+}
+.terminal-toggle {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--ui-text-color, var(--muted));
+}
+.terminal-toggle.on {
+  color: var(--ui-text-color, var(--text));
+}
+.topbar {
+  justify-content: flex-end;
+  gap: 6px;
+  padding-inline: 8px;
+}
+.topbar .crumb {
+  flex: 0 1 auto;
+  max-width: calc(100% - 32px);
+  justify-content: flex-end;
+}
+.topbar .top-actions {
+  position: static;
+  flex: 0 0 auto;
+}
+.topbar .top-actions button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
 }

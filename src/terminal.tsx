@@ -134,12 +134,12 @@ export function TerminalView({
     if (terminal.current) terminal.current.options.disableStdin = !live(session);
   }, [session.status]);
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !live(session)) return;
     const timer = setTimeout(() => {
       fit.current?.fit();
       terminal.current?.focus();
     }, 50);
     return () => clearTimeout(timer);
-  }, [visible]);
+  }, [visible, session.id, session.status]);
   return <div className={`terminal-wrap ${visible ? '' : 'hidden'}`} ref={host} />;
 }

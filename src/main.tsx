@@ -1,4 +1,5 @@
 import { isCodex } from './shared';
+import { useInterfacePreferences } from './interface-settings';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -9,7 +10,7 @@ import {
   GitBranch,
   Globe,
   X,
-  TerminalSquare,
+  Terminal,
   MessageSquare,
   Command,
   ShieldCheck,
@@ -75,6 +76,7 @@ function App() {
     [removeId, setRemoveId] = useState<string>(),
     [editingName, setEditingName] = useState<{ kind: 'project' | 'session'; id: string }>(),
     [stick, setStick] = useState(true);
+  const appearance = useInterfacePreferences(setError);
   const list = useRef<HTMLDivElement>(null),
     diffRequest = useRef(0),
     navigationInFlight = useRef(false),
@@ -371,6 +373,18 @@ function App() {
     });
     return result === true;
   };
+  const terminalButton = (
+    <button
+      className={`terminal-toggle ${showTerminalPanel ? 'on' : ''}`}
+      disabled={!project}
+      aria-label="Terminal"
+      title="Terminal · Panel inferior"
+      aria-pressed={showTerminalPanel}
+      onClick={toggleTerminal}
+    >
+      <Terminal size={17} />
+    </button>
+  );
   const browserPanel = (
     <BrowserPanel
       tabs={state.browsers ?? []}
@@ -385,7 +399,7 @@ function App() {
     />
   );
   return (
-    <div className="app">
+    <div className="app" style={appearance.style}>
       <aside className={`sidebar compact ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="traffic-space" />
         <div className="section-label">
@@ -506,17 +520,6 @@ function App() {
             )}
           </div>
           <div className="top-actions">
-            <button
-              className={showTerminalPanel ? 'on' : ''}
-              disabled={!project}
-              aria-label="Terminal"
-              title="Terminal · Panel inferior"
-              aria-pressed={showTerminalPanel}
-              onClick={toggleTerminal}
-            >
-              <TerminalSquare size={17} />
-            </button>
-
             <button
               className={showBrowser ? 'on' : ''}
               aria-label="Navegador"
@@ -772,6 +775,7 @@ function App() {
                       <>
                         <Composer
                           key={session.id}
+                          footerControl={terminalButton}
                           session={session}
                           optimization={
                             accountProfiles.find((p) => p.id === session.profile)?.optimization
@@ -789,6 +793,9 @@ function App() {
                       </>
                     )}
                   </>
+                )}
+                {(!session || terminalMode) && (
+                  <div className="conversation-footer">{terminalButton}</div>
                 )}
               </section>
               {(showDiff || showBrowser) && split.separator}
@@ -862,19 +869,10 @@ function App() {
               )}
             </div>
             {showTerminalPanel && (
-              <section className="tool-pane terminal-pane bottom-terminal">
-                <div className="drawer-head">
-                  <strong>
-                    <TerminalSquare size={14} />
-                  </strong>
-                  <button
-                    title="Ocultar terminal"
-                    aria-label="Ocultar terminal"
-                    onClick={() => setShowTerminalPanel(false)}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
+              <section
+                className="tool-pane terminal-pane bottom-terminal"
+                aria-label="Terminal del proyecto"
+              >
                 {terminalSession ? (
                   <TerminalView
                     key={terminalSession.id}
@@ -883,14 +881,8 @@ function App() {
                     onError={setError}
                   />
                 ) : (
-                  <div className="inline-notice">
-                    <button
-                      onClick={() =>
-                        project && run({ type: 'openProjectTerminal', projectId: project.id })
-                      }
-                    >
-                      Conectar terminal
-                    </button>
+                  <div className="inline-notice" role="status">
+                    Abriendo terminal…
                   </div>
                 )}
               </section>
@@ -960,6 +952,7 @@ function App() {
       {settings && (
         <AccountsSettings
           state={state}
+          appearance={appearance}
           run={run}
           close={() => setSettings(false)}
           onError={setError}

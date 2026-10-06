@@ -728,6 +728,7 @@ export function Composer({
   images,
   setImages,
   onLocalCommand,
+  footerControl,
 }: {
   session: Session;
   optimization?: TokenOptimization;
@@ -738,6 +739,7 @@ export function Composer({
   setImages: (images: ImageAttachment[]) => void;
   onSend: (text: string, images: ImageAttachment[]) => Promise<boolean>;
   onLocalCommand: (name: string, arg: string) => boolean;
+  footerControl?: React.ReactNode;
 }) {
   const area = useRef<HTMLTextAreaElement>(null);
   const [index, setIndex] = useState(0);
@@ -1252,22 +1254,25 @@ export function Composer({
           )}
         </div>
       </div>
-      <div className="task-signature" aria-label="Modelo y tokens">
-        <span
-          className="task-signature-model"
-          title={
-            signature === 'Auto'
-              ? 'El modelo se elige al enviar la tarea'
-              : `Modelo seleccionado: ${signature}${optimization.autoModel ? ' · Auto' : ''}`
-          }
-        >
-          {signature}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span className="task-signature-tokens" title={tokenDetail} aria-label={tokenDetail}>
-          ↑{tokens ? compactTokens(tokens.input) : '—'} ↓
-          {tokens ? compactTokens(tokens.output) : '—'}
-        </span>
+      <div className="composer-footer">
+        <div className="task-signature" aria-label="Modelo y tokens">
+          <span
+            className="task-signature-model"
+            title={
+              signature === 'Auto'
+                ? 'El modelo se elige al enviar la tarea'
+                : `Modelo seleccionado: ${signature}${optimization.autoModel ? ' · Auto' : ''}`
+            }
+          >
+            {signature}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className="task-signature-tokens" title={tokenDetail} aria-label={tokenDetail}>
+            ↑{tokens ? compactTokens(tokens.input) : '—'} ↓
+            {tokens ? compactTokens(tokens.output) : '—'}
+          </span>
+        </div>
+        {footerControl}
       </div>
     </div>
   );

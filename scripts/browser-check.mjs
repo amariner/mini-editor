@@ -166,7 +166,7 @@ try {
   await page.getByRole('button', { name: 'Plegar proyectos' }).click();
   const mark = await page.locator('.project-mark').first().innerHTML();
   const rail = await page.locator('.sidebar').boundingBox();
-  assert.equal(rail.width, 48);
+  assert.equal(rail.width, 40);
   assert.equal(await page.locator('.project-initial').count(), 0);
   const divider = page.getByRole('separator', { name: 'Ancho del chat' });
   await page.waitForTimeout(250);
@@ -217,6 +217,37 @@ try {
   assert.equal(Number(await divider.getAttribute('aria-valuenow')), 220);
   await page.getByRole('button', { name: 'Terminal', exact: true }).click();
   await page.locator('.bottom-terminal .xterm').waitFor();
+  await until(
+    async () =>
+      await page
+        .locator('.bottom-terminal .xterm-helper-textarea')
+        .evaluate((el) => el === document.activeElement),
+  );
+  assert.equal(
+    await page.getByRole('button', { name: 'Ocultar terminal', exact: true }).count(),
+    0,
+  );
+  await page.keyboard.type('printf "terminal-lista\\n"');
+  await page.keyboard.press('Enter');
+  const shellId = (await snap()).terminals[0].id;
+  await until(async () =>
+    (
+      await page.evaluate(
+        (id) => window.desk.invoke({ type: 'terminalBuffer', sessionId: id }),
+        shellId,
+      )
+    ).data.includes('terminal-lista\r\n'),
+  );
+  await page.getByRole('button', { name: 'Terminal', exact: true }).click();
+  assert.equal(await page.locator('.bottom-terminal').count(), 0);
+  assert.ok((await snap()).terminals.some((t) => t.id === shellId));
+  await page.getByRole('button', { name: 'Terminal', exact: true }).click();
+  await until(
+    async () =>
+      await page
+        .locator('.bottom-terminal .xterm-helper-textarea')
+        .evaluate((el) => el === document.activeElement),
+  );
   const lower = await page.locator('.bottom-terminal').boundingBox();
   await until(
     async () =>
