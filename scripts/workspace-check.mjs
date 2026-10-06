@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -32,6 +33,8 @@ try {
     },
   });
   page = await app.firstWindow();
+  await page.waitForFunction(() => !!window.desk);
+  await createTestAccounts(page);
   page.on('pageerror', (e) => errors.push(e.message));
   await page.emulateMedia({ colorScheme: 'dark' });
   await app.evaluate(({ dialog }, folder) => {

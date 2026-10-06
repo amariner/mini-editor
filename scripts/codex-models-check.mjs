@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 // Real local app-server catalogue. No model calls, credentials copied or artificial catalogues.
 import { _electron as electron } from 'playwright';
 import fs from 'node:fs/promises';
@@ -29,6 +30,7 @@ async function launch() {
   page = await app.firstWindow();
   page.on('pageerror', (e) => errors.push(e.message));
   await page.waitForFunction(() => !!window.desk);
+  await createTestAccounts(page);
 }
 try {
   await launch();

@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -38,6 +39,8 @@ try {
     },
   });
   page = await app.firstWindow();
+  await page.waitForFunction(() => !!window.desk);
+  await createTestAccounts(page);
   page.on('pageerror', (e) => errors.push(e.message));
   await page.emulateMedia({ colorScheme: 'dark' });
   await app.evaluate(({ dialog }, folder) => {
@@ -163,7 +166,7 @@ try {
   await page.getByRole('button', { name: 'Plegar proyectos' }).click();
   const mark = await page.locator('.project-mark').first().innerHTML();
   const rail = await page.locator('.sidebar').boundingBox();
-  assert.equal(rail.width, 64);
+  assert.equal(rail.width, 48);
   assert.equal(await page.locator('.project-initial').count(), 0);
   const divider = page.getByRole('separator', { name: 'Ancho del chat' });
   await page.waitForTimeout(250);
@@ -228,7 +231,9 @@ try {
         );
       }, lower.y),
   );
-  await page.getByRole('button', { name: 'Cerrar navegador', exact: true }).click();
+  await page.getByRole('button', { name: 'Ocultar navegador', exact: true }).click();
+  assert.ok((await snap()).browsers.some((b) => b.sessionId === first));
+  await browser({ action: 'close' });
   await until(async () => !(await snap()).browsers.some((b) => b.sessionId === first));
   assert.deepEqual(errors, []);
   console.log(

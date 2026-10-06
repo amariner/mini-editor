@@ -57,3 +57,21 @@ test('browser approval is restricted to the installed local tool and validated i
     false,
   );
 });
+
+test('pestañas explícitas, zoom acotado y operaciones de memoria', () => {
+  for (const input of [
+    { action: 'new', url: 'https://example.com' },
+    { action: 'zoom', factor: 0.75 },
+    { action: 'list' },
+    { action: 'suspend', tabId: 'tab' },
+  ])
+    assert.equal(browserInput.safeParse(input).success, true);
+  for (const factor of [0, 0.1, 4, NaN])
+    assert.equal(browserInput.safeParse({ action: 'zoom', factor }).success, false);
+  assert.equal(
+    actionSchema.safeParse({ type: 'browserTab', tabId: 'tab', input: { action: 'inspect' } })
+      .success,
+    true,
+  );
+  assert.equal(actionSchema.safeParse({ type: 'browserNew', projectId: 'project' }).success, true);
+});

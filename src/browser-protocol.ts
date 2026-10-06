@@ -1,12 +1,18 @@
 import { z } from 'zod';
+const target = { tabId: z.string().min(1).max(150).optional() };
 export const browserInput = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('navigate'), url: z.string().min(1).max(4096) }).strict(),
-  ...(['inspect', 'screenshot', 'back', 'forward', 'reload', 'close'] as const).map((action) =>
-    z.object({ action: z.literal(action) }).strict(),
-  ),
-  z.object({ action: z.literal('click'), ref: z.string().regex(/^e\d+$/) }).strict(),
+  z.object({ ...target, action: z.literal('navigate'), url: z.string().min(1).max(4096) }).strict(),
+  z
+    .object({ ...target, action: z.literal('new'), url: z.string().min(1).max(4096).optional() })
+    .strict(),
+  z.object({ ...target, action: z.literal('zoom'), factor: z.number().min(0.25).max(3) }).strict(),
+  ...(
+    ['inspect', 'screenshot', 'back', 'forward', 'reload', 'close', 'list', 'suspend'] as const
+  ).map((action) => z.object({ ...target, action: z.literal(action) }).strict()),
+  z.object({ ...target, action: z.literal('click'), ref: z.string().regex(/^e\d+$/) }).strict(),
   z
     .object({
+      ...target,
       action: z.literal('fill'),
       ref: z.string().regex(/^e\d+$/),
       text: z.string().max(20000),
@@ -14,6 +20,7 @@ export const browserInput = z.discriminatedUnion('action', [
     .strict(),
   z
     .object({
+      ...target,
       action: z.literal('press'),
       key: z.enum([
         'Enter',
@@ -27,10 +34,21 @@ export const browserInput = z.discriminatedUnion('action', [
       ]),
     })
     .strict(),
-  z.object({ action: z.literal('scroll'), deltaY: z.number().int().min(-5000).max(5000) }).strict(),
+  z
+    .object({
+      ...target,
+      action: z.literal('scroll'),
+      deltaY: z.number().int().min(-5000).max(5000),
+    })
+    .strict(),
 ]);
 export type BrowserInput = z.infer<typeof browserInput>;
 export interface BrowserState {
+  id: string;
+  projectId?: string;
+  zoom: number;
+  suspended?: boolean;
+  hostStatus?: 'online' | 'offline';
   sessionId: string;
   url: string;
   title: string;
@@ -55,6 +73,10 @@ export function browserURL(value: string): string {
 export const browserToolFields = {
   action: z.enum([
     'navigate',
+    'new',
+    'list',
+    'zoom',
+    'suspend',
     'inspect',
     'screenshot',
     'back',
@@ -66,6 +88,8 @@ export const browserToolFields = {
     'press',
     'scroll',
   ]),
+  tabId: z.string().min(1).max(150).optional(),
+  factor: z.number().min(0.25).max(3).optional(),
   url: z.string().max(4096).optional(),
   ref: z
     .string()

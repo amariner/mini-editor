@@ -4,9 +4,26 @@ export interface ProfileDefinition {
   id: Profile;
   name: string;
   kind: 'claude' | 'codex';
+  optimization?: TokenOptimization;
 }
+export interface TokenOptimization {
+  level: 0 | 1 | 2 | 3;
+  autoModel: boolean;
+}
+export const defaultOptimization: TokenOptimization = { level: 0, autoModel: false };
+export const savingLevels = [
+  { value: 0, name: 'Desactivado', hint: 'Usa tus ajustes manuales.' },
+  { value: 1, name: 'Suave', hint: 'Respuestas breves y sin repeticiones; conserva el esfuerzo.' },
+  {
+    value: 2,
+    name: 'Equilibrado',
+    hint: 'Respuesta directa, búsquedas acotadas y esfuerzo moderado.',
+  },
+  { value: 3, name: 'Intenso', hint: 'Solo lo esencial y menor esfuerzo en tareas sencillas.' },
+] as const;
 export const isCodex = (profile?: string) => profile === 'codex' || !!profile?.startsWith('codex-');
-export const profiles: ProfileDefinition[] = [
+// Only used to restore state written before profiles were stored explicitly.
+export const legacyProfiles: ProfileDefinition[] = [
   { id: 'claude-1', name: 'Claude 1', kind: 'claude' },
   { id: 'claude-2', name: 'Claude 2', kind: 'claude' },
   { id: 'codex', name: 'Codex', kind: 'codex' },
@@ -200,6 +217,13 @@ export interface RateLimit {
   status?: string;
 }
 export interface Session {
+  optimization?: {
+    model: string;
+    effort?: string;
+    reason: string;
+    level: number;
+    autoModel: boolean;
+  };
   modelsLoading?: boolean;
   modelsError?: string;
   id: string;
@@ -260,11 +284,15 @@ export interface Snapshot {
   notice?: string;
 }
 export type Action =
+  | { type: 'configureOptimization'; profile: Profile; optimization: TokenOptimization }
   | { type: 'addAccount'; kind: 'claude' | 'codex'; name?: string }
   | { type: 'browser'; sessionId: string; input: BrowserInput }
+  | { type: 'browserNew'; projectId?: string; sessionId?: string; url?: string }
+  | { type: 'browserTab'; tabId: string; input: BrowserInput }
   | {
       type: 'browserPresent';
-      sessionId: string;
+      sessionId?: string;
+      tabId?: string;
       visible: boolean;
       bounds: { x: number; y: number; width: number; height: number };
     }
@@ -305,7 +333,7 @@ export type Action =
   | { type: 'chooseDirectory'; sessionId: string };
 export type DeskEvent =
   | { type: 'shortcut'; action: 'search' | 'settings' }
-  | { type: 'browserOpened'; sessionId: string }
+  | { type: 'browserOpened'; sessionId: string; tabId?: string }
   | { type: 'state'; state: Snapshot }
   | { type: 'terminal'; sessionId: string; data: string; sequence: number };
 export interface DeskAPI {

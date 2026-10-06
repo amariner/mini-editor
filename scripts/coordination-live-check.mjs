@@ -19,6 +19,7 @@ const folder=path.join(root,'project');fs.mkdirSync(folder);
 const manager=new Manager(path.join(root,'data'),()=>{},process.env.AGENT_DESK_PROFILES_DIR);
 const wait=async(check:()=>boolean,ms=90000)=>{const end=Date.now()+ms;while(Date.now()<end){if(check())return; if(manager.state.sessions.some(s=>s.approvals.length)) throw new Error(JSON.stringify(manager.state.sessions.filter(s=>s.approvals.length).map(s=>({profile:s.profile,approvals:s.approvals}))));await new Promise(r=>setTimeout(r,150));}throw new Error('Timeout');};
 try{
+ manager.addAccount('claude', 'Claude 1');manager.addAccount('claude', 'Claude 2');manager.addAccount('codex', 'Codex');
  await manager.discover();const project=await manager.addProject(folder);
  const claude=manager.session(manager.state.selectedSession!);const codex=manager.newSession(project.id,'codex');
  await manager.configure(claude.id,{model:'haiku'});

@@ -1,6 +1,7 @@
 import { codexImageContent, type PreparedImage } from './attachments';
 import { codexUsage, claudeUsage } from '../src/subscription-usage';
-import { isCodex } from '../src/shared';
+import { isCodex, defaultOptimization, type TokenOptimization } from '../src/shared';
+import { savingInstructions, turnOptimization } from './token-optimization';
 import { fetchCodexModels, selectCodexConfig, resolveCodexModel } from './codex-models';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,7 @@ import type {
   Profile,
   Session,
 } from '../src/shared';
-import { efforts, permissionModes, profiles, type ProfileDefinition } from '../src/shared';
+import { efforts, permissionModes, type ProfileDefinition } from '../src/shared';
 import { Store } from './store';
 import { Coordinator, coordinationInstructions, isCoordinationApproval } from './coordination';
 import { ProjectTerminals } from './project-terminals';
@@ -49,6 +50,8 @@ type Runtime = {
   sequence: number;
   loginId?: string;
   loaded?: boolean;
+  optimizedControls?: boolean;
+  optimizationLevel?: TokenOptimization['level'];
   exit?: Promise<void>;
 };
 /** Configuration keys the SDK can change while the agent runs. The rest need a restart. */
@@ -100,23 +103,27 @@ export class Manager {
         this.changed();
       },
     );
-    for (const p of this.state.profiles ?? profiles) this.accounts.register(p.id);
+    for (const p of this.state.profiles ?? []) this.accounts.register(p.id);
   }
   get state() {
     return this.store.state;
   }
   addAccount(kind: 'claude' | 'codex', name?: string) {
-    const definitions = (this.state.profiles ??= profiles.map((p) => ({ ...p })));
+    const definitions = (this.state.profiles ??= []);
     if (definitions.length >= 100) throw new Error('Has alcanzado el límite de 100 perfiles.');
-    let index = kind === 'claude' ? 3 : 2;
-    while (definitions.some((p) => p.id === `${kind}-${index}`)) index++;
+    let index = 1;
+    const idAt = (index: number): Profile =>
+      kind === 'codex' && index === 1 ? 'codex' : `${kind}-${index}`;
+    while (definitions.some((p) => p.id === idAt(index))) index++;
     const definition: ProfileDefinition = {
-      id: `${kind}-${index}` as Profile,
+      id: idAt(index),
       name: name?.trim() || `${kind === 'claude' ? 'Claude' : 'Codex'} ${index}`,
       kind,
     };
     definitions.push(definition);
     this.accounts.register(definition.id);
+    if (this.state.selectedProject && !this.state.selectedSession)
+      this.select(this.state.selectedProject, undefined, definition.id);
     this.store.flush();
     this.changed();
     return definition;
@@ -182,7 +189,7 @@ export class Manager {
       project = { id: randomUUID(), name: path.basename(canonical), path: canonical };
       this.state.projects.push(project);
     }
-    this.select(project.id, undefined, 'claude-1');
+    this.select(project.id, undefined, this.state.profiles?.[0]?.id);
     return project;
   }
   select(projectId: string, sessionId?: string, profile?: Profile) {
@@ -193,15 +200,16 @@ export class Manager {
           .reverse()
           .find((s) => s.projectId === projectId && (!profile || s.profile === profile));
     if (s && s.projectId !== projectId) throw new Error('La sesión pertenece a otro proyecto.');
-    if (!s) s = this.newSession(projectId, profile ?? 'claude-1');
+    const selectedProfile = profile ?? this.state.profiles?.[0]?.id;
+    if (!s && selectedProfile) s = this.newSession(projectId, selectedProfile);
     this.state.selectedProject = projectId;
-    this.state.selectedSession = s.id;
+    this.state.selectedSession = s?.id;
     this.changed();
     return s;
   }
   newSession(projectId: string, profile: Profile, mode?: 'chat' | 'terminal') {
     this.project(projectId);
-    if (!(this.state.profiles ?? profiles).some((p) => p.id === profile))
+    if (!(this.state.profiles ?? []).some((p) => p.id === profile))
       throw new Error('Esta cuenta no existe. Añádela en Ajustes.');
     const count =
       this.state.sessions.filter((s) => s.projectId === projectId && s.profile === profile).length +
@@ -344,7 +352,32 @@ export class Manager {
       preset: 'claude_code',
       append: [s.config?.appendSystemPrompt, coordinationInstructions].filter(Boolean).join('\n\n'),
     };
+    let previousLevel: number | undefined;
     options.hooks = {
+      UserPromptSubmit: [
+        {
+          hooks: [
+            async () => {
+              const level = this.optimization(s.profile).level;
+              if (
+                level === 0 &&
+                (previousLevel === 0 ||
+                  (previousLevel === undefined && !s.messages.some((m) => m.role === 'user')))
+              )
+                return {};
+              previousLevel = level;
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'UserPromptSubmit',
+                  additionalContext:
+                    savingInstructions(level) ||
+                    'Preferencia de ahorro desactivada: responde según la petición y los ajustes habituales.',
+                },
+              };
+            },
+          ],
+        },
+      ],
       PreToolUse: [
         {
           matcher: 'Write|Edit|MultiEdit|NotebookEdit',
@@ -543,7 +576,8 @@ export class Manager {
   }
   async loadThread(s: Session) {
     const rt = this.runtime(s.id);
-    if (rt.loaded) return;
+    const level = this.optimization(s.profile).level;
+    if (rt.loaded && rt.optimizationLevel === level) return;
     const params = codexParams(
       resolveCodexModel(mergeCodexConfig(s.codexConfig), s.info?.models ?? []),
       this.project(s.projectId).path,
@@ -552,7 +586,11 @@ export class Manager {
       ...params.config,
       'mcp_servers.agent_desk': { ...(await this.coordinator.config(s.id)), required: true },
     } as any;
-    params.developerInstructions = [params.developerInstructions, coordinationInstructions]
+    params.developerInstructions = [
+      params.developerInstructions,
+      coordinationInstructions,
+      savingInstructions(level),
+    ]
       .filter(Boolean)
       .join('\n\n');
     let r;
@@ -573,6 +611,7 @@ export class Manager {
     }
     s.reference = r.thread.id;
     rt.loaded = true;
+    rt.optimizationLevel = level;
     if (r.thread.turns?.length) {
       const restored: Message[] = [];
       for (const turn of r.thread.turns)
@@ -806,6 +845,33 @@ export class Manager {
     this.usageJobs.set(profile, work);
     return work;
   }
+  private optimization(profile: Profile): TokenOptimization {
+    return this.state.profiles?.find((p) => p.id === profile)?.optimization ?? defaultOptimization;
+  }
+  configureOptimization(profile: Profile, optimization: TokenOptimization) {
+    const account = this.state.profiles?.find((p) => p.id === profile);
+    if (!account) throw new Error('La cuenta no existe.');
+    account.optimization = { ...optimization };
+    this.changed();
+    return account.optimization;
+  }
+  private optimizeTurn(s: Session, text: string, images: PreparedImage[]) {
+    const base = isCodex(s.profile)
+      ? resolveCodexModel(mergeCodexConfig(s.codexConfig), s.info?.models ?? [])
+      : mergeConfig(s.config);
+    return turnOptimization({
+      preferences: this.optimization(s.profile),
+      text,
+      images: !!images.length,
+      hasHistory: s.messages.some((m) => m.role === 'user'),
+      planning: !isCodex(s.profile) && s.config?.permissionMode === 'plan',
+      models: s.info?.models ?? [],
+      baseModel: base.model,
+      baseEffort: base.effort,
+      previousModel: s.optimization?.model,
+      previousEffort: s.optimization?.effort,
+    });
+  }
   async send(id: string, text: string, images: PreparedImage[] = []) {
     this.session(id);
     if (!this.runtimes.has(id)) await this.start(id);
@@ -818,6 +884,28 @@ export class Manager {
         if (!images.length && text.startsWith('/') && (await this.command(s, rt.claude, text))) {
           this.changed();
           return true;
+        }
+        if (s.status === 'ready') {
+          const decision = this.optimizeTurn(s, text, images);
+          if (
+            decision.autoModel ||
+            decision.level > 0 ||
+            s.optimization?.autoModel ||
+            s.optimization?.level ||
+            rt.optimizedControls
+          ) {
+            // Keep recovery armed if one control succeeds and the next is rejected.
+            rt.optimizedControls = true;
+            await rt.claude.setModel(decision.model);
+            await rt.claude.setEffort(decision.effort);
+            rt.optimizedControls = decision.autoModel || decision.level > 0;
+          }
+          s.optimization = decision;
+        } else if (s.optimization) {
+          s.optimization = {
+            ...s.optimization,
+            reason: 'Petición en cola: conserva el modelo y esfuerzo del proceso en curso',
+          };
         }
         this.coordinator.task(id, text);
         rt.claude.send(text, images);
@@ -832,6 +920,7 @@ export class Manager {
       if (!s.account)
         throw new Error('Inicia sesión oficialmente con ChatGPT antes de enviar una tarea.');
       await this.loadThread(s);
+      const decision = this.optimizeTurn(s, text, images);
       this.coordinator.task(id, text);
       s.status = 'working';
       s.error = undefined;
@@ -842,10 +931,11 @@ export class Manager {
           threadId: s.reference,
           input: codexImageContent(text, images),
           ...codexParams(
-            resolveCodexModel(mergeCodexConfig(s.codexConfig), s.info?.models ?? []),
+            { ...mergeCodexConfig(s.codexConfig), model: decision.model, effort: decision.effort },
             this.project(s.projectId).path,
           ).turn,
         });
+        s.optimization = decision;
         if (s.title.startsWith('Sesión ')) s.title = text.slice(0, 48) || 'Imagen adjunta';
         this.changed();
         return true;
@@ -870,7 +960,11 @@ export class Manager {
     let restart = false;
     if (rt) {
       if (patch.model !== undefined && patch.model !== before.model) await rt.setModel(patch.model);
-      if (patch.permissionMode && patch.permissionMode !== before.permissionMode)
+      if (
+        patch.permissionMode &&
+        patch.permissionMode !== before.permissionMode &&
+        !(patch.permissionMode === 'bypassPermissions' && !before.allowBypass)
+      )
         await rt.setPermissionMode(patch.permissionMode);
       if ('effort' in patch && patch.effort !== before.effort) await rt.setEffort(patch.effort);
       if (

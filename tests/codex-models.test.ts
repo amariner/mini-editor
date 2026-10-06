@@ -85,6 +85,7 @@ test('restaurar la app conserva modelo y esfuerzo de cada sesión Codex y admite
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-model-unit-'));
   try {
     const store = new Store(root);
+    store.state.profiles = [{ id: 'codex', name: 'Codex', kind: 'codex' }];
     store.state.sessions = [
       {
         id: 's',

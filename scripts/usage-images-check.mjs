@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -20,6 +21,7 @@ try {
   const page = await app.firstWindow();
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.waitForFunction(() => !!window.desk);
+  await createTestAccounts(page);
   const call = (a) => page.evaluate((a) => window.desk.invoke(a), a);
   const snap = () => call({ type: 'snapshot' });
   const until = async (fn) => {

@@ -36,9 +36,45 @@ async function launch() {
 }
 try {
   await launch();
+  let initial = await snap();
+  assert.deepEqual(initial.profiles, []);
+  assert.deepEqual(initial.accounts, {});
+  assert.deepEqual(initial.sessions, []);
+  assert.equal(
+    await fs.stat(path.join(root, 'data/profiles')).then(
+      () => true,
+      () => false,
+    ),
+    false,
+  );
+  await page.getByRole('button', { name: 'Añadir cuenta', exact: true }).click();
+  assert.equal(await page.locator('.account-card').count(), 0);
+  await page.getByText('No hay cuentas. Pulsa «Añadir cuenta» para crear la primera.').waitFor();
+  await page.getByRole('button', { name: 'Cerrar ajustes' }).click();
+  await app.close();
+  app = undefined;
+  await launch();
+  initial = await snap();
+  assert.deepEqual(initial.profiles, []);
+  assert.deepEqual(initial.accounts, {});
+  await app.evaluate(({ dialog }, folder) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+  }, folder);
+  await call({ type: 'addProject' });
+  assert.equal((await snap()).selectedSession, undefined);
+  assert.deepEqual((await snap()).sessions, []);
+  await page.getByRole('heading', { name: 'Sin cuentas' }).waitFor();
+  assert.equal(
+    await page.getByRole('button', { name: 'Nueva conversación', exact: true }).isDisabled(),
+    true,
+  );
+  await call({ type: 'select', projectId: (await snap()).selectedProject });
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   const add = async (kind, name) => {
-    await page.getByRole('button', { name: 'Añadir cuenta', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Ajustes', exact: true })
+      .getByRole('button', { name: 'Añadir cuenta', exact: true })
+      .click();
     await page.getByRole('combobox', { name: 'Proveedor de la nueva cuenta' }).selectOption(kind);
     await page.getByRole('textbox', { name: 'Nombre de la nueva cuenta' }).fill(name);
     await page.getByRole('button', { name: 'Crear perfil', exact: true }).click();
@@ -49,8 +85,10 @@ try {
   let state = await snap();
   const claude = state.profiles.find((p) => p.name === 'Claude trabajo');
   const codex = state.profiles.find((p) => p.name === 'Codex personal');
-  assert.equal(claude.id, 'claude-3');
-  assert.equal(codex.id, 'codex-2');
+  assert.equal(claude.id, 'claude-1');
+  assert.equal(codex.id, 'codex');
+  assert.equal(state.sessions.length, 1);
+  assert.equal(state.sessions[0].profile, claude.id);
   await until(
     async () =>
       [claude.id, codex.id].every(
@@ -67,7 +105,7 @@ try {
   const projectId = (await snap()).selectedProject;
   const chooser = page.getByRole('combobox', { name: 'Cuenta del proyecto' });
   await chooser.waitFor();
-  assert.equal(await chooser.locator('option').count(), 5);
+  assert.equal(await chooser.locator('option').count(), 2);
   for (const profile of [claude.id, codex.id]) {
     await chooser.selectOption(profile);
     const sessionId = (await snap()).selectedSession;
@@ -102,14 +140,14 @@ try {
   app = undefined;
   await launch();
   state = await snap();
-  assert.equal(state.profiles.length, 5);
+  assert.equal(state.profiles.length, 2);
   assert.ok(state.sessions.some((s) => s.profile === codex.id && s.status === 'stopped'));
-  assert.equal((await fs.stat(path.join(root, 'data/profiles/claude-3'))).isDirectory(), true);
-  assert.equal((await fs.stat(path.join(root, 'data/profiles/codex-2'))).isDirectory(), true);
+  assert.equal((await fs.stat(path.join(root, 'data/profiles/claude-1'))).isDirectory(), true);
+  assert.equal((await fs.stat(path.join(root, 'data/profiles/codex'))).isDirectory(), true);
   assert.deepEqual(await fs.readdir(folder), []);
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: add Claude/Codex via Settings, official empty profile status, two real isolated agent processes, scoped logout, persistence, rejected unregistered profile, icon-only controls, aligned toolbars. Zero model calls.',
+    'PASS: first run and restart without accounts or profile directories, project without accounts, explicit first account, add Claude/Codex via Settings, official empty profile status, two real isolated agent processes, scoped logout, persistence, rejected unregistered profile, icon-only controls, aligned toolbars. Zero model calls.',
   );
 } finally {
   await app?.close();

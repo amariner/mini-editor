@@ -1,7 +1,7 @@
 import type { Action, Snapshot } from './shared';
 
 // Increase when the renderer needs new main-process actions or changed semantics.
-export const IPC_VERSION = 8;
+export const IPC_VERSION = 11;
 export const RESTART_NOTICE =
   'Hay una versión antigua de Agent Desk abierta. Cuando terminen tus agentes, actualiza la aplicación o sal con ⌘Q y vuelve a ejecutar npm run dev para activar las funciones nuevas.';
 

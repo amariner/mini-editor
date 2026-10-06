@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 // Isolated Electron UI/lifecycle check. No prompts or existing credentials are used.
 import { _electron as electron } from 'playwright';
 import fs from 'node:fs/promises';
@@ -26,6 +27,8 @@ try {
     },
   });
   page = await app.firstWindow();
+  await page.waitForFunction(() => !!window.desk);
+  await createTestAccounts(page);
   page.on('pageerror', (e) => errors.push(e.message));
   await page.emulateMedia({ colorScheme: 'dark' });
   await app.evaluate(({ dialog }, folder) => {

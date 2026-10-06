@@ -1,4 +1,4 @@
-import { isCodex, profiles } from '../src/shared';
+import { isCodex, legacyProfiles } from '../src/shared';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -9,6 +9,7 @@ import {
   mergeCodexConfig,
   mergeConfig,
   profileSchema,
+  optimizationSchema,
 } from './core';
 const block: z.ZodType<any> = z.lazy(() =>
   z.discriminatedUnion('type', [
@@ -35,6 +36,7 @@ const schema = z.object({
         id: profileSchema,
         name: z.string().trim().min(1).max(40),
         kind: z.enum(['claude', 'codex']),
+        optimization: optimizationSchema.optional(),
       }),
     )
     .max(100)
@@ -96,7 +98,7 @@ export class Store {
   constructor(readonly root: string) {
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
     this.state = {
-      profiles: profiles.map((p) => ({ ...p })),
+      profiles: [],
       projects: [],
       sessions: [],
       tools: {},
@@ -106,11 +108,10 @@ export class Store {
     if (fs.existsSync(file))
       try {
         const data = schema.parse(JSON.parse(fs.readFileSync(file, 'utf8')));
-        const definitions = data.profiles ?? profiles.map((p) => ({ ...p }));
+        const definitions = data.profiles ?? legacyProfiles.map((p) => ({ ...p }));
         if (
           new Set(definitions.map((p) => p.id)).size !== definitions.length ||
           definitions.some((p) => (isCodex(p.id) ? 'codex' : 'claude') !== p.kind) ||
-          profiles.some((p) => !definitions.some((d) => d.id === p.id)) ||
           data.sessions.some((s) => !definitions.some((p) => p.id === s.profile))
         )
           throw new Error('Perfiles no válidos.');

@@ -31,6 +31,7 @@ app.on('second-instance', () => {
   }
 });
 const dev = process.env.AGENT_DESK_DEV_URL;
+const observedBrowserOutputs = new Set<string>();
 let updateAvailable = false;
 let restartRequested = false;
 const snapshot = () => ({
@@ -90,6 +91,33 @@ app.whenReady().then(async () => {
     manager = new Manager(
       app.getPath('userData'),
       (e) => {
+        if (browser && manager) {
+          if (e.type === 'terminal') {
+            const projectId = e.sessionId.startsWith('shell:')
+              ? e.sessionId.slice(6)
+              : manager.state.sessions.find((s) => s.id === e.sessionId)?.projectId;
+            if (projectId) void browser.observe(projectId, e.sessionId, e.data);
+          } else if (e.type === 'state') {
+            for (const session of e.state.sessions)
+              for (const message of session.messages.slice(-10)) {
+                const outputs = (message.blocks ?? []).flatMap((b) =>
+                  b.type === 'tool_use' && b.name === 'Bash' && b.result
+                    ? [{ id: b.id, text: b.result }]
+                    : [],
+                );
+                if (message.role === 'tool' && message.text.startsWith('$ '))
+                  outputs.push({ id: message.id, text: message.text });
+                for (const output of outputs) {
+                  const key = `${session.id}:${output.id}:${output.text.length}`;
+                  if (observedBrowserOutputs.has(key)) continue;
+                  observedBrowserOutputs.add(key);
+                  if (observedBrowserOutputs.size > 3000)
+                    observedBrowserOutputs.delete(observedBrowserOutputs.values().next().value!);
+                  void browser.observe(session.projectId, session.id, output.text);
+                }
+              }
+          }
+        }
         if (win && !win.isDestroyed())
           win.webContents.send('desk:event', e.type === 'state' ? { ...e, state: snapshot() } : e);
       },
@@ -100,14 +128,15 @@ app.whenReady().then(async () => {
     browser = new DeskBrowser(
       () => win,
       () => manager.changed(),
-      (sessionId) => {
+      (tabId, sessionId) => {
         if (win && !win.isDestroyed())
-          win.webContents.send('desk:event', { type: 'browserOpened', sessionId });
+          win.webContents.send('desk:event', { type: 'browserOpened', sessionId, tabId });
       },
+      app.getPath('userData'),
     );
     manager.coordinator.browserHandler = (session, input) => {
       if (quitting) return Promise.reject(new Error('Agent Desk se está cerrando.'));
-      return browser.action(session.id, input);
+      return browser.forSession(session.id, session.projectId, input);
     };
     await manager.discover();
   } catch (e) {
@@ -179,12 +208,23 @@ app.whenReady().then(async () => {
       case 'openProjectTerminal':
         manager.terminals.open(manager.project(a.projectId));
         return;
-      case 'browser':
-        manager.session(a.sessionId);
-        return browser.action(a.sessionId, a.input);
+      case 'browser': {
+        const session = manager.session(a.sessionId);
+        return browser.forSession(session.id, session.projectId, a.input);
+      }
+      case 'browserNew': {
+        if (a.projectId) manager.project(a.projectId);
+        if (a.sessionId) manager.session(a.sessionId);
+        const tab = browser.create(a.projectId, a.sessionId, a.url);
+        if (a.url) await browser.action(tab.id, { action: 'navigate', url: a.url });
+        return tab;
+      }
+      case 'browserTab':
+        if (!browser.snapshot().some((tab) => tab.id === a.tabId))
+          throw new Error('La pestaña ya no existe.');
+        return browser.action(a.tabId, a.input);
       case 'browserPresent':
-        if (manager.state.selectedSession === a.sessionId)
-          browser.present(a.sessionId, a.bounds, a.visible);
+        if (a.tabId || a.sessionId) browser.present((a.tabId ?? a.sessionId)!, a.bounds, a.visible);
         return;
       case 'snapshot':
         return snapshot();
@@ -213,22 +253,23 @@ app.whenReady().then(async () => {
           .filter((s) => s.projectId === a.projectId)
           .map((s) => s.id);
         await manager.removeProject(a.projectId);
-        ids.forEach((id) => browser.close(id));
+
         return;
       }
       case 'select': {
         const previous = manager.state.selectedSession;
         const selected = manager.select(a.projectId, a.sessionId, a.profile);
-        if (selected.id !== previous) browser.hide();
+
         return selected;
       }
       case 'newSession':
-        browser.hide();
         return manager.newSession(a.projectId, a.profile, a.mode);
       case 'configure':
         return manager.configure(a.sessionId, a.config);
       case 'refreshCodexModels':
         return manager.refreshCodexModels(a.sessionId);
+      case 'configureOptimization':
+        return manager.configureOptimization(a.profile, a.optimization);
       case 'configureCodex':
         return manager.configureCodex(a.sessionId, a.config);
       case 'renameProject':
@@ -344,7 +385,6 @@ app.on('before-quit', (event) => {
   quitting = true;
   void (async () => {
     const results = await manager?.shutdown();
-    browser?.closeAll();
     if (results?.some((r) => r.status === 'rejected')) {
       quitting = false;
       restartRequested = false;
@@ -354,6 +394,7 @@ app.on('before-quit', (event) => {
       );
       return;
     }
+    browser?.closeAll();
     await attachments.cleanup().catch(() => {});
     app.quit();
   })();

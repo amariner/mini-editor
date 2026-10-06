@@ -99,6 +99,7 @@ test('persistencia restaura referencias y conversación, nunca procesos, autenti
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-unit-'));
   try {
     const store = new Store(dir);
+    store.state.profiles = [{ id: 'codex', name: 'Codex', kind: 'codex' }];
     store.state.projects = [{ id: 'p', name: 'Proyecto', path: '/tmp/project' }];
     store.state.sessions = [
       {

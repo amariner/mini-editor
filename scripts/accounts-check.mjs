@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 // Real official account endpoints in fresh temporary profiles; never use the user's credentials.
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
@@ -34,6 +35,7 @@ async function launch() {
   page = await app.firstWindow();
   page.on('pageerror', (e) => errors.push(e.message));
   await page.waitForFunction(() => !!window.desk);
+  await createTestAccounts(page);
   // Observe official login URLs without navigating the user's browser in this test.
   await app.evaluate(({ shell }) => {
     globalThis.accountTestUrls = [];

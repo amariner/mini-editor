@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 // Opt-in: real subscriptions, temporary project/data, never reads credentials.
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
@@ -27,6 +28,7 @@ try {
   });
   page = await app.firstWindow();
   await page.waitForFunction(() => !!window.desk);
+  await createTestAccounts(page);
   await app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
   }, folder);

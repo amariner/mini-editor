@@ -71,6 +71,16 @@ export function limitingWindow(usage: SubscriptionUsage | undefined, now: number
   if (usage.windows.some((w) => w.resetsAt !== undefined && w.resetsAt <= now)) return undefined;
   return [...usage.windows].sort((a, b) => b.usedPercent - a.usedPercent)[0];
 }
+export function currentUsageWindow(
+  usage: SubscriptionUsage | undefined,
+  label: string,
+  now: number,
+) {
+  if (!usage || now - usage.checkedAt > 180000) return undefined;
+  return usage.windows.find(
+    (w) => w.label === label && (w.resetsAt === undefined || w.resetsAt > now),
+  );
+}
 export function resetCountdown(reset: number | undefined, now: number) {
   if (!reset) return 'Reinicio no disponible';
   const minutes = Math.max(0, Math.ceil((reset - now) / 60000));

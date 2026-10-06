@@ -1,4 +1,5 @@
 import { isCodex } from './shared';
+import { conversationEntries, currentActivity, working } from './conversation';
 import { CodexCatalogStatus } from './codex-catalog';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -25,6 +26,7 @@ import {
   Gauge,
   Bug,
   FlaskConical,
+  Leaf,
 } from 'lucide-react';
 import type {
   Action,
@@ -34,8 +36,15 @@ import type {
   Session,
   SlashCommand,
   ImageAttachment,
+  TokenOptimization,
 } from './shared';
-import { codexApprovals, efforts, permissionModes } from './shared';
+import {
+  codexApprovals,
+  efforts,
+  permissionModes,
+  defaultOptimization,
+  savingLevels,
+} from './shared';
 import { Markdown } from './markdown';
 export type Run = (a: Action) => Promise<any>;
 const localCommands: SlashCommand[] = [
@@ -235,7 +244,15 @@ function Thinking({ text, streaming }: { text: string; streaming: boolean }) {
     </div>
   );
 }
-export function MessageView({ m, kind }: { m: Message; kind: 'claude' | 'codex' }) {
+export function MessageView({
+  m,
+  kind,
+  showAuthor = true,
+}: {
+  m: Message;
+  kind: 'claude' | 'codex';
+  showAuthor?: boolean;
+}) {
   if (m.role === 'user')
     return (
       <div className="row user">
@@ -268,11 +285,13 @@ export function MessageView({ m, kind }: { m: Message; kind: 'claude' | 'codex' 
     );
   return (
     <div className="row assistant">
-      <div className="author">
-        <span className={`glyph ${kind}`}>{kind === 'codex' ? '◈' : '✳'}</span>
-        {kind === 'codex' ? 'Codex' : 'Claude'}
-        {m.model && <span className="model-tag">{m.model.replace(/^claude-/, '')}</span>}
-      </div>
+      {showAuthor && (
+        <div className="author">
+          <span className={`glyph ${kind}`}>{kind === 'codex' ? '◈' : '✳'}</span>
+          {kind === 'codex' ? 'Codex' : 'Claude'}
+          {m.model && <span className="model-tag">{m.model.replace(/^claude-/, '')}</span>}
+        </div>
+      )}
       {m.blocks
         ? m.blocks.map((b, k) =>
             b.type === 'text' ? (
@@ -286,6 +305,114 @@ export function MessageView({ m, kind }: { m: Message; kind: 'claude' | 'codex' 
             ),
           )
         : m.text && <Markdown text={m.text} />}
+    </div>
+  );
+}
+function ActivityMessages({ messages, kind }: { messages: Message[]; kind: 'claude' | 'codex' }) {
+  return (
+    <div className="activity-messages">
+      {messages.map((m) => (
+        <MessageView key={m.id} m={m} kind={kind} showAuthor={false} />
+      ))}
+    </div>
+  );
+}
+export function ConversationMessages({
+  session,
+  kind,
+}: {
+  session: Session;
+  kind: 'claude' | 'codex';
+}) {
+  return (
+    <>
+      {conversationEntries(session).map((entry) => {
+        if (entry.type === 'message')
+          return <MessageView key={entry.id} m={entry.message} kind={kind} />;
+        if (entry.pending) return null;
+        return (
+          <div className="response-group" key={entry.id}>
+            {entry.work.length > 0 && (
+              <details className={`response-work ${entry.errors ? 'has-errors' : ''}`}>
+                <summary>
+                  <ChevronRight size={12} />
+                  <span>
+                    {entry.steps
+                      ? `Ver ${entry.steps} ${entry.steps === 1 ? 'paso' : 'pasos'}`
+                      : 'Ver actividad'}
+                    {entry.errors
+                      ? ` · ${entry.errors} ${entry.errors === 1 ? 'error' : 'errores'}`
+                      : ''}
+                  </span>
+                </summary>
+                <ActivityMessages messages={entry.work} kind={kind} />
+              </details>
+            )}
+            {entry.answer && <MessageView m={entry.answer} kind={kind} showAuthor={false} />}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+export function ActivityDock({ session, kind }: { session: Session; kind: 'claude' | 'codex' }) {
+  const [open, setOpen] = useState(false);
+  const active = working(session);
+  useEffect(() => {
+    if (!active) setOpen(false);
+  }, [active]);
+  if (!active) return null;
+  const activity = currentActivity(session);
+  const last = activity?.messages.at(-1);
+  const block = last?.blocks?.at(-1);
+  let label = 'Preparando respuesta…';
+  if (last?.role === 'tool') label = last.text.split('\n')[0];
+  else if (block?.type === 'tool_use') {
+    const meta = toolMeta(block);
+    label = block.done ? 'Preparando respuesta…' : `${block.name} · ${meta.summary}`;
+  } else if (block?.type === 'thinking') label = 'Razonando…';
+  else if (block?.type === 'text') label = block.text;
+  else if (last?.text) label = last.text;
+  if (session.activity) label = session.activity;
+  if (session.status === 'starting') label = 'Abriendo agente…';
+  if (session.status === 'stopping') label = 'Deteniendo…';
+  if (session.approvals.length || session.status === 'waiting') label = 'Esperando tu respuesta';
+  label = label.replace(/\s+/g, ' ').trim().slice(0, 180) || 'Preparando respuesta…';
+  return (
+    <div className="activity-dock">
+      {open && activity && (
+        <div className="activity-log" id={`activity-${session.id}`}>
+          <ActivityMessages messages={activity.messages} kind={kind} />
+        </div>
+      )}
+      <button
+        className="activity-current"
+        aria-label="Ver progreso"
+        aria-expanded={open}
+        aria-controls={activity ? `activity-${session.id}` : undefined}
+        disabled={!activity}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {session.approvals.length || session.status === 'waiting' ? (
+          <CircleHelp size={12} />
+        ) : (
+          <i className="spinner" />
+        )}
+        <span className="activity-current-text" role="status" title={label}>
+          {label}
+        </span>
+        {activity?.steps ? (
+          <span className="activity-count">
+            {activity.steps} {activity.steps === 1 ? 'paso' : 'pasos'}
+          </span>
+        ) : null}
+        {activity?.errors ? (
+          <span className="activity-count has-errors">
+            {activity.errors} {activity.errors === 1 ? 'error' : 'errores'}
+          </span>
+        ) : null}
+        {activity && <ChevronDown size={12} className={open ? 'expanded' : ''} />}
+      </button>
     </div>
   );
 }
@@ -557,7 +684,9 @@ function Popover({
   icon: Icon,
   children,
   title,
+  active = false,
 }: {
+  active?: boolean;
   label: string;
   icon: any;
   title?: string;
@@ -576,7 +705,7 @@ function Popover({
   return (
     <div className="popover-host" ref={ref}>
       <button
-        className={`chip-btn ${open ? 'on' : ''}`}
+        className={`chip-btn ${open || active ? 'on' : ''}`}
         title={`${title ?? label} · ${label}`}
         aria-label={title ?? label}
         aria-expanded={open}
@@ -590,6 +719,7 @@ function Popover({
 }
 export function Composer({
   session,
+  optimization = defaultOptimization,
   draft,
   setDraft,
   run,
@@ -599,6 +729,7 @@ export function Composer({
   onLocalCommand,
 }: {
   session: Session;
+  optimization?: TokenOptimization;
   draft: string;
   setDraft: (v: string) => void;
   run: Run;
@@ -615,6 +746,31 @@ export function Composer({
   const sendingRef = useRef(false);
   const claude = !isCodex(session.profile);
   const config = session.config;
+  const optimize = (patch: Partial<TokenOptimization>) =>
+    run({
+      type: 'configureOptimization',
+      profile: session.profile,
+      optimization: { ...optimization, ...patch },
+    });
+  const chooseModel = async (model: string) => {
+    const changed = await run({
+      type: claude ? 'configure' : 'configureCodex',
+      sessionId: session.id,
+      config: { model },
+    });
+    if (changed) await optimize({ autoModel: false });
+  };
+  const autoOption = (close: () => void) => (
+    <button
+      className={optimization.autoModel ? 'on' : ''}
+      onClick={() => {
+        void optimize({ autoModel: true });
+        close();
+      }}
+    >
+      <strong>Auto</strong>
+    </button>
+  );
   const working = session.status === 'working' || session.status === 'waiting';
   const enabled = claude
     ? ['ready', 'working', 'waiting', 'stopped', 'error'].includes(session.status) &&
@@ -784,29 +940,61 @@ export function Composer({
             >
               <Plus size={16} />
             </button>
+            <Popover
+              label={
+                savingLevels.find((l) => l.value === optimization.level)?.name ?? 'Desactivado'
+              }
+              icon={Leaf}
+              active={optimization.level > 0}
+              title="Ahorro de tokens"
+            >
+              {(close) => (
+                <>
+                  {savingLevels.map((level) => (
+                    <button
+                      key={level.value}
+                      className={optimization.level === level.value ? 'on' : ''}
+                      onClick={() => {
+                        void optimize({ level: level.value });
+                        close();
+                      }}
+                    >
+                      <strong>{level.name}</strong>
+                    </button>
+                  ))}
+                </>
+              )}
+            </Popover>
             {claude ? (
               <>
-                <Popover label={modelName} icon={Sparkles} title="Modelo">
+                <Popover
+                  label={
+                    optimization.autoModel
+                      ? `Auto · ${session.optimization?.model ?? modelName}`
+                      : modelName
+                  }
+                  icon={Sparkles}
+                  active={optimization.autoModel}
+                  title="Modelo"
+                >
                   {(close) => (
                     <>
+                      {autoOption(close)}
                       {(session.info?.models.length
                         ? session.info.models
                         : [{ value: 'default', displayName: 'Por defecto', description: '' }]
                       ).map((m) => (
                         <button
                           key={m.value}
-                          className={m.value === config?.model ? 'on' : ''}
+                          className={
+                            !optimization.autoModel && m.value === config?.model ? 'on' : ''
+                          }
                           onClick={() => {
-                            void run({
-                              type: 'configure',
-                              sessionId: session.id,
-                              config: { model: m.value },
-                            });
+                            void chooseModel(m.value);
                             close();
                           }}
                         >
                           <strong>{m.displayName}</strong>
-                          <small>{m.description}</small>
                         </button>
                       ))}
                     </>
@@ -819,25 +1007,25 @@ export function Composer({
                 >
                   {(close) => (
                     <>
-                      {permissionModes
-                        .filter((m) => m.id !== 'bypassPermissions' || config?.allowBypass)
-                        .map((m) => (
-                          <button
-                            key={m.id}
-                            className={m.id === mode?.id ? 'on' : ''}
-                            onClick={() => {
-                              void run({
-                                type: 'configure',
-                                sessionId: session.id,
-                                config: { permissionMode: m.id },
-                              });
-                              close();
-                            }}
-                          >
-                            <strong>{m.name}</strong>
-                            <small>{m.hint}</small>
-                          </button>
-                        ))}
+                      {permissionModes.map((m) => (
+                        <button
+                          key={m.id}
+                          className={m.id === mode?.id ? 'on' : ''}
+                          onClick={() => {
+                            void run({
+                              type: 'configure',
+                              sessionId: session.id,
+                              config: {
+                                permissionMode: m.id,
+                                ...(m.id === 'bypassPermissions' ? { allowBypass: true } : {}),
+                              },
+                            });
+                            close();
+                          }}
+                        >
+                          <strong>{m.name}</strong>
+                        </button>
+                      ))}
                     </>
                   )}
                 </Popover>
@@ -860,7 +1048,6 @@ export function Composer({
                         }}
                       >
                         <strong>Por defecto</strong>
-                        <small>Lo decide el modelo.</small>
                       </button>
                       {efforts.map((e) => (
                         <button
@@ -886,59 +1073,51 @@ export function Composer({
               <>
                 <Popover
                   label={
-                    session.info?.models.find((m) =>
-                      !session.codexConfig?.model || session.codexConfig.model === 'default'
-                        ? m.isDefault
-                        : m.value === session.codexConfig.model,
-                    )?.displayName ??
-                    (session.codexConfig?.model === 'default' || !session.codexConfig?.model
-                      ? 'Modelo por defecto'
-                      : session.codexConfig.model)
+                    optimization.autoModel
+                      ? `Auto · ${session.optimization?.model ?? 'Por defecto'}`
+                      : (session.info?.models.find((m) => m.value === session.codexConfig?.model)
+                          ?.displayName ??
+                        session.codexConfig?.model ??
+                        'Por defecto')
                   }
+                  active={optimization.autoModel}
                   icon={Sparkles}
                   title="Modelo de Codex"
                 >
                   {(close) => (
                     <>
+                      {autoOption(close)}
                       <button
                         className={
-                          !session.codexConfig?.model || session.codexConfig.model === 'default'
+                          !optimization.autoModel &&
+                          (!session.codexConfig?.model || session.codexConfig.model === 'default')
                             ? 'on'
                             : ''
                         }
                         onClick={() => {
-                          void run({
-                            type: 'configureCodex',
-                            sessionId: session.id,
-                            config: { model: 'default', effort: undefined },
-                          });
+                          void chooseModel('default');
                           close();
                         }}
                       >
                         <strong>Por defecto</strong>
-                        <small>
-                          {session.info?.models.find((m) => m.isDefault)?.displayName ??
-                            'Predeterminado del servidor de Codex.'}
-                        </small>
                       </button>
                       {(session.info?.models ?? []).map((m) => (
                         <button
                           key={m.value}
-                          className={m.value === session.codexConfig?.model ? 'on' : ''}
+                          className={
+                            !optimization.autoModel && m.value === session.codexConfig?.model
+                              ? 'on'
+                              : ''
+                          }
                           onClick={() => {
-                            void run({
-                              type: 'configureCodex',
-                              sessionId: session.id,
-                              config: { model: m.value, effort: undefined },
-                            });
+                            void chooseModel(m.value);
                             close();
                           }}
                         >
                           <strong>{m.displayName}</strong>
-                          <small>{m.description}</small>
                         </button>
                       ))}
-                      <CodexCatalogStatus session={session} run={run} />
+                      <CodexCatalogStatus session={session} run={run} compact />
                     </>
                   )}
                 </Popover>
@@ -952,6 +1131,24 @@ export function Composer({
                 >
                   {(close) => (
                     <>
+                      <button
+                        className={
+                          session.codexConfig?.sandbox === 'danger-full-access' &&
+                          session.codexConfig.approvalPolicy === 'never'
+                            ? 'on'
+                            : ''
+                        }
+                        onClick={() => {
+                          void run({
+                            type: 'configureCodex',
+                            sessionId: session.id,
+                            config: { sandbox: 'danger-full-access', approvalPolicy: 'never' },
+                          });
+                          close();
+                        }}
+                      >
+                        <strong>Acceso total</strong>
+                      </button>
                       {codexApprovals.map((a) => (
                         <button
                           key={a.id}
@@ -960,13 +1157,17 @@ export function Composer({
                             void run({
                               type: 'configureCodex',
                               sessionId: session.id,
-                              config: { approvalPolicy: a.id },
+                              config: {
+                                approvalPolicy: a.id,
+                                ...(session.codexConfig?.sandbox === 'danger-full-access'
+                                  ? { sandbox: 'workspace-write' as const }
+                                  : {}),
+                              },
                             });
                             close();
                           }}
                         >
                           <strong>{a.name}</strong>
-                          <small>{a.hint}</small>
                         </button>
                       ))}
                     </>

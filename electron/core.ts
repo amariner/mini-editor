@@ -42,7 +42,14 @@ export const codexConfigSchema = z.object({
   personality: z.enum(['none', 'friendly', 'pragmatic']),
   developerInstructions: z.string().max(20000),
 });
+export const optimizationSchema = z
+  .object({
+    level: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+    autoModel: z.boolean(),
+  })
+  .strict();
 export const actionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('configureOptimization'), profile, optimization: optimizationSchema }),
   z.object({
     type: z.literal('addAccount'),
     kind: z.enum(['claude', 'codex']),
@@ -51,8 +58,16 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('snapshot') }),
   z.object({ type: z.literal('browser'), sessionId: id, input: browserInput }),
   z.object({
+    type: z.literal('browserNew'),
+    projectId: id.optional(),
+    sessionId: id.optional(),
+    url: z.string().max(4096).optional(),
+  }),
+  z.object({ type: z.literal('browserTab'), tabId: id, input: browserInput }),
+  z.object({
     type: z.literal('browserPresent'),
-    sessionId: id,
+    sessionId: id.optional(),
+    tabId: id.optional(),
     visible: z.boolean(),
     bounds: z.object({
       x: z.number().min(0).max(20000),

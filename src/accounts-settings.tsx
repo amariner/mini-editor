@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { LogIn, LogOut, RefreshCw, X, Plus } from 'lucide-react';
-import { profiles, type Action, type Profile, type Snapshot } from './shared';
-import { compatibleRuntime, RESTART_NOTICE } from './runtime';
+import { LogIn, LogOut, RefreshCw, X, Plus, Leaf } from 'lucide-react';
+import {
+  defaultOptimization,
+  savingLevels,
+  type Action,
+  type Profile,
+  type Snapshot,
+  type TokenOptimization,
+} from './shared';
+import { compatibleRuntime } from './runtime';
 import { TerminalView, live } from './terminal';
 
 export function AccountsSettings({
@@ -19,7 +26,25 @@ export function AccountsSettings({
     profile: Profile;
     type: 'accountLogin' | 'accountLogout';
   }>();
-  const accountProfiles = state.profiles ?? profiles;
+  const accountProfiles = state.profiles ?? [];
+  const [optimizationDrafts, setOptimizationDrafts] = useState<
+    Partial<Record<Profile, TokenOptimization>>
+  >({});
+  const [savingProfile, setSavingProfile] = useState<Profile>();
+  const saveOptimization = async (profile: Profile, optimization: TokenOptimization) => {
+    setSavingProfile(profile);
+    const before = optimizationDrafts[profile];
+    setOptimizationDrafts((d) => ({ ...d, [profile]: optimization }));
+    try {
+      const result = await run({ type: 'configureOptimization', profile, optimization });
+      if (!result) setOptimizationDrafts((d) => ({ ...d, [profile]: before }));
+    } catch (error) {
+      setOptimizationDrafts((d) => ({ ...d, [profile]: before }));
+      onError((error as Error).message);
+    } finally {
+      setSavingProfile(undefined);
+    }
+  };
   const [adding, setAdding] = useState(false);
   const [newKind, setNewKind] = useState<'claude' | 'codex'>('claude');
   const [newName, setNewName] = useState('');
@@ -114,14 +139,13 @@ export function AccountsSettings({
             </div>
           </form>
         )}
-        <p className="muted">
-          Conecta cada perfil con su suscripción. Los proyectos y las conversaciones se conservan al
-          cerrar sesión.
-        </p>
-        {!compatible && <p role="status">{RESTART_NOTICE}</p>}
         <div className="account-list">
+          {!accountProfiles.length && (
+            <p className="muted">No hay cuentas. Pulsa «Añadir cuenta» para crear la primera.</p>
+          )}
           {accountProfiles.map((p) => {
             const account = state.accounts?.[p.id];
+            const optimization = optimizationDrafts[p.id] ?? p.optimization ?? defaultOptimization;
             const busy = account?.busy;
             const status =
               busy === 'checking'
@@ -182,12 +206,51 @@ export function AccountsSettings({
                   >
                     <RefreshCw size={14} />
                   </button>
+                  <fieldset
+                    className="token-settings"
+                    disabled={!compatible || savingProfile !== undefined}
+                  >
+                    <label className="token-saving" title="Ahorro de tokens">
+                      <Leaf size={13} aria-hidden="true" />
+                      <select
+                        aria-label="Ahorro de tokens"
+                        value={optimization.level}
+                        onChange={(e) =>
+                          void saveOptimization(p.id, {
+                            ...optimization,
+                            level: Number(e.target.value) as TokenOptimization['level'],
+                          })
+                        }
+                      >
+                        {savingLevels.map((level) => (
+                          <option key={level.value} value={level.value}>
+                            {level.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="token-auto">
+                      <span>Modelo auto</span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={optimization.autoModel}
+                        onChange={(e) =>
+                          void saveOptimization(p.id, {
+                            ...optimization,
+                            autoModel: e.target.checked,
+                          })
+                        }
+                      />
+                    </label>
+                  </fieldset>
                   {account?.cancellable && (
                     <button onClick={() => void run({ type: 'accountCancel', profile: p.id })}>
                       Cancelar acceso
                     </button>
                   )}
                 </div>
+
                 {busy === 'signingIn' && p.kind === 'codex' && (
                   <p className="muted">
                     Continúa en el navegador. Puedes cerrar Ajustes y volver aquí mientras completas

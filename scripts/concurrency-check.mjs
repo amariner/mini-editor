@@ -22,7 +22,8 @@ const folder=path.join(root,'project');fs.mkdirSync(folder);
 const manager=new Manager(path.join(root,'data'),()=>{});
 const clients=[];
 try{
-  await manager.discover();
+  manager.addAccount('claude', 'Claude 1');manager.addAccount('claude', 'Claude 2');manager.addAccount('codex', 'Codex');
+ await manager.discover();
   const p=await manager.addProject(folder);
   const one=manager.session(manager.state.selectedSession!);
   const two=manager.newSession(p.id,'claude-2');

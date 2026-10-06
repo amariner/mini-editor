@@ -1,3 +1,4 @@
+import { createTestAccounts } from './test-accounts.mjs';
 // Real Electron + real Claude Code through the Agent SDK. Uses the authenticated profiles of this
 // machine (AGENT_DESK_PROFILES_DIR) with an isolated state directory and a temporary project.
 import { _electron as electron } from 'playwright';
@@ -21,6 +22,7 @@ const page = await app.firstWindow();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 await page.waitForFunction(() => !!window.desk);
+await createTestAccounts(page);
 await page.setViewportSize({ width: 1380, height: 880 });
 const call = (a) => page.evaluate((a) => window.desk.invoke(a), a);
 const snapshot = () => call({ type: 'snapshot' });

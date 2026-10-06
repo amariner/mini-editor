@@ -20,11 +20,18 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import type { Action, Session, Snapshot, ImageAttachment } from './shared';
-import { permissionModes, profiles } from './shared';
+import { permissionModes } from './shared';
 import { actionError, assertCompatibleAction, compatibleRuntime, RESTART_NOTICE } from './runtime';
 import { TerminalView, live } from './terminal';
 import { openSessionTab, sessionGroup } from './session-tabs';
-import { ClaudeApproval, CodexApproval, Composer, MessageView, TodoPanel } from './chat';
+import {
+  ClaudeApproval,
+  CodexApproval,
+  Composer,
+  ConversationMessages,
+  ActivityDock,
+  TodoPanel,
+} from './chat';
 import { UsageSwitcher } from './usage-switcher';
 import { EditableName } from './editable-name';
 import { useWorkspaceSplit } from './workspace-split';
@@ -43,14 +50,6 @@ const statusLabels: Record<string, string> = {
   stopping: 'Cerrando…',
   error: 'Error',
 };
-function StatusPill({ session }: { session: Session }) {
-  return (
-    <span className={`status ${session.status}`}>
-      <i />
-      {statusLabels[session.status]}
-    </span>
-  );
-}
 function App() {
   const split = useWorkspaceSplit();
   const [state, setState] = useState<Snapshot>(),
@@ -66,6 +65,7 @@ function App() {
     [confirmClose, setConfirmClose] = useState<Session>(),
     [showDiff, setShowDiff] = useState(false),
     [showBrowser, setShowBrowser] = useState(false),
+    [browserTab, setBrowserTab] = useState<string>(),
     [showTerminalPanel, setShowTerminalPanel] = useState(false),
     [diff, setDiff] = useState<any>(),
     [diffError, setDiffError] = useState(''),
@@ -84,8 +84,10 @@ function App() {
   useEffect(() => {
     const off = window.desk.subscribe((e) => {
       if (e.type === 'state') setState(e.state);
-      if (e.type === 'browserOpened' && e.sessionId === stateRef.current?.selectedSession)
+      if (e.type === 'browserOpened') {
         setShowBrowser(true);
+        setBrowserTab(e.tabId ?? e.sessionId);
+      }
       if (e.type === 'shortcut') {
         if (e.action === 'search') {
           setSearch(true);
@@ -99,17 +101,11 @@ function App() {
       .catch((e) => setError(e.message));
     return off;
   }, []);
-  const accountProfiles = state?.profiles ?? profiles;
-  const accountLabel = (p: (typeof profiles)[number]) => {
-    const account = state?.accounts?.[p.id];
-    if (account?.status === 'signedIn')
-      return `${p.name} · ${account.label ?? 'Cuenta conectada'} · ${account.plan ?? 'Plan no disponible'}`;
-    return `${p.name} · ${account?.status === 'signedOut' ? 'Sin sesión' : 'Sin verificar'}`;
-  };
+  const accountProfiles = state?.profiles ?? [];
   const project = state?.projects.find((p) => p.id === state.selectedProject),
     selectedSession = state?.sessions.find((s) => s.id === state.selectedSession),
     session = selectedSession?.id === closedSelection ? undefined : selectedSession,
-    profile = selectedSession?.profile ?? 'claude-1',
+    profile = selectedSession?.profile ?? accountProfiles[0]?.id,
     kind = isCodex(profile) ? 'codex' : 'claude';
   useEffect(() => {
     if (!selectedSession || selectedSession.id === closedSelection) return;
@@ -134,8 +130,6 @@ function App() {
       setConfirmClose(s);
       return;
     }
-    if (stateRef.current?.browsers?.some((b) => b.sessionId === s.id))
-      await run({ type: 'browser', sessionId: s.id, input: { action: 'close' } });
     const remaining = (tabs[sessionGroup(s)] ?? []).filter((id) => id !== s.id);
     setTabs((v) => ({ ...v, [sessionGroup(s)]: remaining }));
     if (stateRef.current?.selectedSession === s.id) {
@@ -278,7 +272,7 @@ function App() {
       void run({ type: 'openProjectTerminal', projectId: project.id });
   }, [project?.id, showTerminalPanel, session?.mode]);
   useEffect(() => {
-    if (!project || !compatibleRuntime(state)) return;
+    if (!project || !profile || !compatibleRuntime(state)) return;
     let pending = false;
     const refresh = async () => {
       if (pending || document.hidden) return;
@@ -377,6 +371,19 @@ function App() {
     });
     return result === true;
   };
+  const browserPanel = (
+    <BrowserPanel
+      tabs={state.browsers ?? []}
+      selected={browserTab}
+      select={setBrowserTab}
+      projectId={project?.id}
+      sessionId={session?.id}
+      projects={state.projects}
+      blocked={split.dragging || search || settings || !!confirmClose || !!removeId || !!error}
+      close={() => setShowBrowser(false)}
+      onError={setError}
+    />
+  );
   return (
     <div className="app">
       <aside className={`sidebar compact ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -424,7 +431,10 @@ function App() {
                     aria-label={p.name}
                     aria-current={p.id === project?.id ? 'page' : undefined}
                     onClick={(e) => {
-                      if (e.detail < 2) void switchProfile(p.id, profile);
+                      if (e.detail < 2) {
+                        if (profile) void switchProfile(p.id, profile);
+                        else void run({ type: 'select', projectId: p.id });
+                      }
                     }}
                     onDoubleClick={() => {
                       setSidebarCollapsed(false);
@@ -469,11 +479,6 @@ function App() {
       <main>
         {(!compatibleRuntime(state) || state.runtime?.updateAvailable) && (
           <div className="runtime-notice" role="status">
-            <span>
-              {!compatibleRuntime(state)
-                ? RESTART_NOTICE
-                : 'Actualización preparada. Detén las sesiones abiertas para aplicarla.'}
-            </span>
             {state.runtime?.restartSupported && state.runtime.updateAvailable && (
               <button
                 disabled={
@@ -490,11 +495,10 @@ function App() {
         )}
         <header className="topbar">
           <div className="crumb">
-            {project && (
+            {project && profile && (
               <UsageSwitcher
                 profiles={accountProfiles}
                 profile={profile}
-                label={accountLabel}
                 usage={state.accounts?.[profile]?.usage}
                 disabled={navigating}
                 change={(next) => void switchProfile(project.id, next)}
@@ -518,19 +522,28 @@ function App() {
               aria-label="Navegador"
               title="Navegador"
               aria-pressed={showBrowser}
-              disabled={!session || !compatibleRuntime(state)}
+              disabled={!compatibleRuntime(state)}
               onClick={() => setShowBrowser((v) => !v)}
             >
               <Globe size={17} />
             </button>
           </div>
         </header>
-        {!project ? (
+        {!project && showBrowser && compatibleRuntime(state) ? (
+          browserPanel
+        ) : !project ? (
           <div className="welcome">
             <p>
-              Abre una carpeta y conversa con Claude Code o Codex como en su terminal, pero con
-              interfaz.
+              {accountProfiles.length
+                ? 'Abre una carpeta y conversa con Claude Code o Codex como en su terminal, pero con interfaz.'
+                : 'Añade tu primera cuenta de Claude o Codex en Ajustes para empezar.'}
             </p>
+            {!accountProfiles.length && (
+              <button className="primary large" onClick={() => setSettings(true)}>
+                <Plus size={16} />
+                Añadir cuenta
+              </button>
+            )}
             <button className="primary large" onClick={() => run({ type: 'addProject' })}>
               <Plus size={16} />
               Añadir proyecto
@@ -541,14 +554,14 @@ function App() {
             <div
               ref={split.ref}
               style={split.style}
-              className={`workspace ${showDiff || (showBrowser && session) ? 'with-tools' : ''} ${split.dragging ? 'resizing' : ''}`}
+              className={`workspace ${showDiff || showBrowser ? 'with-tools' : ''} ${split.dragging ? 'resizing' : ''}`}
             >
               <section className="conversation">
                 <div className="session-tabs-bar">
                   <div className="session-tabs" role="tablist" aria-label="Conversaciones">
                     {openTabs.map((s) => (
                       <div
-                        className={`session-tab ${s.id === session?.id ? 'selected' : ''}`}
+                        className={`session-tab ${live(s) ? 'running' : ''} ${s.id === session?.id ? 'selected' : ''}`}
                         key={s.id}
                       >
                         {editingName?.kind === 'session' && editingName.id === s.id ? (
@@ -564,13 +577,13 @@ function App() {
                             aria-selected={s.id === session?.id}
                             aria-controls="conversation-content"
                             aria-disabled={navigating}
-                            title={s.title}
+                            title={`${s.title} · ${live(s) ? 'Proceso abierto' : 'Proceso parado'}`}
+                            aria-description={live(s) ? 'Proceso abierto' : 'Proceso parado'}
                             onClick={() =>
                               run({ type: 'select', projectId: project.id, sessionId: s.id })
                             }
                             onDoubleClick={() => setEditingName({ kind: 'session', id: s.id })}
                           >
-                            {live(s) && <i className="live-dot" />}
                             <span>{s.title}</span>
                           </button>
                         )}
@@ -589,48 +602,55 @@ function App() {
                   <button
                     className="icon-btn ghost new-tab"
                     title="Nueva conversación (⌘N) · Hasta 5 pestañas por cuenta"
-                    disabled={navigating}
+                    disabled={navigating || !profile}
                     aria-label="Nueva conversación"
-                    onClick={() => run({ type: 'newSession', projectId: project.id, profile })}
+                    onClick={() =>
+                      profile && run({ type: 'newSession', projectId: project.id, profile })
+                    }
                   >
                     <Plus size={16} />
                   </button>
                 </div>
                 {!session && (
                   <div className="empty no-session">
-                    <h2>Sin pestañas abiertas</h2>
-                    <p>Crea una conversación con + o recupera una anterior con ⌘K.</p>
+                    <h2>{accountProfiles.length ? 'Sin pestañas abiertas' : 'Sin cuentas'}</h2>
+                    <p>
+                      {accountProfiles.length
+                        ? 'Crea una conversación con + o recupera una anterior con ⌘K.'
+                        : 'Añade una cuenta de Claude o Codex para conversar en este proyecto.'}
+                    </p>
+                    {!accountProfiles.length && (
+                      <button className="primary" onClick={() => setSettings(true)}>
+                        <Plus size={16} /> Añadir cuenta
+                      </button>
+                    )}
                   </div>
                 )}
                 {session && (
                   <>
-                    <div
-                      className="conv-head"
-                      id="conversation-content"
-                      role="tabpanel"
-                      aria-label={session.title}
-                    >
-                      <div className="conv-title">
-                        <StatusPill session={session} />
-                        {(state.coordination?.filter((a) => a.projectId === project.id).length ??
-                          0) > 1 && (
-                          <span
-                            className="coordination-status"
-                            title={state.coordination
-                              ?.filter((a) => a.projectId === project.id)
-                              .map(
-                                (a) =>
-                                  `${accountProfiles.find((p) => p.id === a.profile)?.name}: ${a.task || a.title} · ${a.paths.join(', ') || 'sin reservas'}`,
-                              )
-                              .join('\n')}
-                          >
-                            {state.coordination?.filter((a) => a.projectId === project.id).length}{' '}
-                            agentes · coordinación compartida
-                          </span>
-                        )}
-                        {session.activity && <span className="activity">{session.activity}</span>}
+                    {(state.coordination?.filter((a) => a.projectId === project.id).length ?? 0) >
+                      1 && (
+                      <div className="conv-head">
+                        <div className="conv-title">
+                          {(state.coordination?.filter((a) => a.projectId === project.id).length ??
+                            0) > 1 && (
+                            <span
+                              className="coordination-status"
+                              title={state.coordination
+                                ?.filter((a) => a.projectId === project.id)
+                                .map(
+                                  (a) =>
+                                    `${accountProfiles.find((p) => p.id === a.profile)?.name}: ${a.task || a.title} · ${a.paths.join(', ') || 'sin reservas'}`,
+                                )
+                                .join('\n')}
+                            >
+                              {state.coordination?.filter((a) => a.projectId === project.id).length}{' '}
+                              agentes · coordinación compartida
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     {session.error && (
                       <div className="inline-notice">
                         <span>{session.error}</span>
@@ -642,7 +662,10 @@ function App() {
                       </div>
                     )}
                     <div
-                      className="messages"
+                      className="messages compact-conversation"
+                      id="conversation-content"
+                      role="tabpanel"
+                      aria-label={session.title}
                       ref={list}
                       onScroll={(e) => {
                         const el = e.currentTarget;
@@ -692,20 +715,7 @@ function App() {
                           )}
                         </div>
                       )}
-                      {session.messages.map((m) => (
-                        <MessageView key={m.id} m={m} kind={kind} />
-                      ))}
-                      {session.status === 'working' && !session.approvals.length && (
-                        <div className="row assistant">
-                          <div className="thinking-line">
-                            <i className="spinner" />
-                            {session.activity ??
-                              (kind === 'codex'
-                                ? 'Codex está trabajando…'
-                                : 'Claude está trabajando…')}
-                          </div>
-                        </div>
-                      )}
+                      <ConversationMessages session={session} kind={kind} />
                       {session.approvals.map((a) =>
                         a.method === 'claude/permission' ? (
                           <ClaudeApproval key={a.id} approval={a} session={session} run={run} />
@@ -751,9 +761,17 @@ function App() {
                     {!terminalMode && (
                       <>
                         {session.todos?.length ? <TodoPanel todos={session.todos} /> : null}
+                        <ActivityDock
+                          key={`activity-${session.id}`}
+                          session={session}
+                          kind={kind}
+                        />
                         <Composer
                           key={session.id}
                           session={session}
+                          optimization={
+                            accountProfiles.find((p) => p.id === session.profile)?.optimization
+                          }
                           draft={drafts[session.id] ?? ''}
                           setDraft={(v) => setDrafts((d) => ({ ...d, [session.id]: v }))}
                           run={run}
@@ -769,28 +787,12 @@ function App() {
                   </>
                 )}
               </section>
-              {(showDiff || (showBrowser && session)) && split.separator}
-              {(showDiff || (showBrowser && session)) && (
+              {(showDiff || showBrowser) && split.separator}
+              {(showDiff || showBrowser) && (
                 <aside
-                  className={`drawer tools-drawer ${[showDiff, showBrowser && !!session].filter(Boolean).length > 1 ? 'split' : ''} ${showBrowser && session ? 'with-browser' : ''}`}
+                  className={`drawer tools-drawer ${[showDiff, showBrowser].filter(Boolean).length > 1 ? 'split' : ''} ${showBrowser ? 'with-browser' : ''}`}
                 >
-                  {showBrowser && session && compatibleRuntime(state) && (
-                    <BrowserPanel
-                      key={session.id}
-                      sessionId={session.id}
-                      state={state.browsers?.find((b) => b.sessionId === session.id)}
-                      blocked={
-                        split.dragging ||
-                        search ||
-                        settings ||
-                        !!confirmClose ||
-                        !!removeId ||
-                        !!error
-                      }
-                      close={() => setShowBrowser(false)}
-                      onError={setError}
-                    />
-                  )}
+                  {showBrowser && compatibleRuntime(state) && browserPanel}
                   {showDiff && (
                     <section className="tool-pane diff-panel">
                       <div className="drawer-head">

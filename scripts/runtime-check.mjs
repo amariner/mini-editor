@@ -64,7 +64,7 @@ async function launch() {
 try {
   await launch();
   let state = await call({ type: 'snapshot' });
-  assert.equal(state.runtime.protocol, 8);
+  assert.equal(state.runtime.protocol, 11);
   assert.equal(state.runtime.updateAvailable, false);
   await call({ type: 'start', sessionId: 's' });
   state = await call({ type: 'snapshot' });

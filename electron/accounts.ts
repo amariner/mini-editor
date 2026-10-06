@@ -8,7 +8,7 @@ import { Rpc } from './rpc';
 import { claudeAccount, codexAccount } from './account-state';
 import { cleanEnv, profileDirectory } from './core';
 import { reapGroup } from './processes';
-import { profiles, type AccountState, type Profile, type DeskEvent } from '../src/shared';
+import type { AccountState, Profile, DeskEvent } from '../src/shared';
 const exec = promisify(execFile);
 
 type Login = {
@@ -19,10 +19,7 @@ type Login = {
   cancelling?: boolean;
 };
 export class Accounts {
-  readonly state = Object.fromEntries(profiles.map((p) => [p.id, { status: 'unknown' }])) as Record<
-    Profile,
-    AccountState
-  >;
+  readonly state = {} as Record<Profile, AccountState>;
   readonly logins = new Map<Profile, Login>();
   readonly buffers = new Map<string, { data: string; sequence: number }>();
   private jobs = new Set<Promise<unknown>>();

@@ -5,7 +5,38 @@ import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../electron/store';
 import { actionSchema, profileDirectory } from '../electron/core';
-import { isCodex, profiles } from '../src/shared';
+import { isCodex, legacyProfiles } from '../src/shared';
+test('primera instalación y reinicio sin cuentas ni carpetas de perfiles', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desk-first-run-'));
+  try {
+    const store = new Store(root);
+    assert.deepEqual(store.state.profiles, []);
+    assert.deepEqual(store.state.sessions, []);
+    assert.deepEqual(fs.readdirSync(root), []);
+    store.flush();
+    assert.deepEqual(new Store(root).state.profiles, []);
+    assert.equal(fs.existsSync(path.join(root, 'profiles')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+test('restaura únicamente las cuentas creadas y rechaza conversaciones sin cuenta', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desk-single-profile-'));
+  try {
+    const store = new Store(root);
+    store.state.profiles = [{ id: 'codex', name: 'Personal', kind: 'codex' }];
+    store.flush();
+    assert.deepEqual(new Store(root).state.profiles, store.state.profiles);
+    const data = JSON.parse(fs.readFileSync(path.join(root, 'state.json'), 'utf8'));
+    data.sessions = [
+      { id: 's', projectId: 'p', profile: 'claude-1', title: 'Huérfana', messages: [] },
+    ];
+    fs.writeFileSync(path.join(root, 'state.json'), JSON.stringify(data));
+    assert.throws(() => new Store(root), /state.json no es válido/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('perfiles adicionales: rutas aisladas, proveedor correcto y validación IPC', () => {
   for (const id of ['claude-3', 'codex-2'])
     assert.equal(actionSchema.safeParse({ type: 'accountRefresh', profile: id }).success, true);
@@ -33,7 +64,7 @@ test('migración y persistencia de perfiles y conversaciones; rechaza proveedor 
       JSON.stringify({ projects: [], sessions: [], tools: {} }),
     );
     const store = new Store(root);
-    assert.deepEqual(store.state.profiles, profiles);
+    assert.deepEqual(store.state.profiles, legacyProfiles);
     store.state.profiles!.push({ id: 'codex-2', name: 'Trabajo', kind: 'codex' });
     store.state.sessions.push({
       id: 's',
