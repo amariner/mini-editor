@@ -1141,6 +1141,7 @@ export class Manager {
             this.project(s.projectId).path,
           ).turn,
         });
+        s.notice = undefined;
         s.optimization = decision;
         if (s.title.startsWith('Sesión ')) s.title = text.slice(0, 48) || 'Imagen adjunta';
         this.changed();
@@ -1269,13 +1270,18 @@ export class Manager {
     const before = mergeCodexConfig(s.codexConfig);
     s.codexConfig = selectCodexConfig(before, patch, s.info?.models ?? []);
     const rt = this.runtimes.get(id);
-    const restart =
-      !!rt &&
-      !!rt.loaded &&
-      ((patch.sandbox !== undefined && patch.sandbox !== before.sandbox) ||
-        (patch.developerInstructions !== undefined &&
-          patch.developerInstructions !== before.developerInstructions));
-    if (restart) s.notice = 'El sandbox y las instrucciones se aplican al reabrir el agente.';
+    const restart = !!(
+      rt?.loaded &&
+      patch.developerInstructions !== undefined &&
+      patch.developerInstructions !== before.developerInstructions
+    );
+    if (restart) s.notice = 'Las instrucciones se aplican al reabrir el agente.';
+    // Access is overridden by turn/start. The running turn keeps its existing grant.
+    else if (patch.sandbox !== undefined || patch.approvalPolicy !== undefined)
+      s.notice =
+        s.status === 'working' || s.status === 'waiting'
+          ? 'El nuevo modo de permisos se aplicará al siguiente mensaje. Para autorizar la acción pendiente, responde a su solicitud.'
+          : undefined;
     this.changed();
     return { restart };
   }

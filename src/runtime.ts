@@ -1,7 +1,7 @@
 import type { Action, Snapshot } from './shared';
 
 // Increase when the renderer needs new main-process actions or changed semantics.
-export const IPC_VERSION = 21;
+export const IPC_VERSION = 22;
 export const RESTART_NOTICE =
   'Hay una versión antigua de Agent Desk abierta. Cuando terminen tus agentes, actualiza la aplicación o sal con ⌘Q y vuelve a ejecutar npm run dev para activar las funciones nuevas.';
 
@@ -29,6 +29,8 @@ export function assertCompatibleAction(state: Snapshot | undefined, action: Acti
     state.runtime.updateAvailable
   )
     return;
+  if (!compatibleRuntime(state) && action.type === 'approve' && action.decision === 'always')
+    throw new Error(RESTART_NOTICE);
   if (!compatibleRuntime(state) && !legacyControls.has(action.type))
     throw new Error(RESTART_NOTICE);
 }

@@ -265,6 +265,20 @@ export function codexParams(config: Partial<CodexConfig> | undefined, cwd: strin
       cwd,
       approvalPolicy: c.approvalPolicy,
       approvalsReviewer: 'user',
+      // turn/start uses SandboxPolicy, not the SandboxMode accepted by thread/start.
+      // Send it every turn so an already loaded thread cannot retain obsolete access.
+      sandboxPolicy:
+        c.sandbox === 'danger-full-access'
+          ? { type: 'dangerFullAccess' as const }
+          : c.sandbox === 'read-only'
+            ? { type: 'readOnly' as const, networkAccess: false }
+            : {
+                type: 'workspaceWrite' as const,
+                writableRoots: [cwd],
+                networkAccess: false,
+                excludeTmpdirEnvVar: false,
+                excludeSlashTmp: false,
+              },
       ...(model ? { model } : {}),
       ...(c.effort ? { effort: c.effort } : {}),
       ...(c.personality !== 'none' ? { personality: c.personality } : {}),
@@ -324,17 +338,29 @@ export function approvalResult(
   decision: 'accept' | 'always' | 'decline',
   answers?: Record<string, string>,
 ) {
-  if (decision === 'always') decision = 'accept';
   if (
     method === 'item/commandExecution/requestApproval' ||
     method === 'item/fileChange/requestApproval'
   ) {
-    if (params.availableDecisions && !params.availableDecisions.includes(decision))
+    const result =
+      decision === 'always'
+        ? 'acceptForSession'
+        : decision === 'decline' &&
+            params.availableDecisions?.includes('cancel') &&
+            !params.availableDecisions.includes('decline')
+          ? 'cancel'
+          : decision;
+    if (params.availableDecisions && !params.availableDecisions.includes(result))
       throw new Error('Esta decisión no está disponible en el servidor.');
-    return { decision };
+    if (decision === 'always' && !params.availableDecisions?.includes('acceptForSession'))
+      throw new Error('El servidor no ofrece autorización para toda la sesión.');
+    return { decision: result };
   }
   if (method === 'item/permissions/requestApproval')
-    return { permissions: decision === 'accept' ? params.permissions : {}, scope: 'turn' };
+    return {
+      permissions: decision === 'decline' ? {} : params.permissions,
+      scope: decision === 'always' ? 'session' : 'turn',
+    };
   if (method === 'item/tool/requestUserInput') {
     const result: Record<string, { answers: string[] }> = {};
     for (const q of params.questions ?? []) {

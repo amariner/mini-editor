@@ -116,7 +116,11 @@ export const defaultCodexConfig: CodexConfig = {
 export const codexApprovals: { id: CodexApproval; name: string; hint: string }[] = [
   { id: 'untrusted', name: 'Preguntar', hint: 'Pide aprobación salvo para comandos de confianza.' },
   { id: 'on-request', name: 'A petición', hint: 'Codex decide cuándo pedir aprobación.' },
-  { id: 'never', name: 'Nunca', hint: 'No pide aprobación; el sandbox sigue vigente.' },
+  {
+    id: 'never',
+    name: 'Rechazar sin preguntar',
+    hint: 'No pide aprobación: bloquea las acciones fuera del acceso seleccionado.',
+  },
 ];
 export const codexSandboxes: { id: CodexSandbox; name: string; hint: string }[] = [
   { id: 'read-only', name: 'Solo lectura', hint: 'No puede modificar archivos.' },
