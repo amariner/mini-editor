@@ -60,7 +60,15 @@ function finalize(s: Session, blocks: Block[], content: any[], streamed: boolean
         existing.input = c.input;
         existing.final = true;
         existing.partial = undefined;
-      } else blocks.push({ type: 'tool_use', id: c.id, name: c.name, input: c.input, final: true });
+      } else
+        blocks.push({
+          type: 'tool_use',
+          id: c.id,
+          name: c.name,
+          input: c.input,
+          final: true,
+          at: Date.now(),
+        });
       if (c.name === 'TodoWrite' && Array.isArray(c.input?.todos)) s.todos = c.input.todos;
     } else if (c.type === 'text' || c.type === 'thinking') {
       const text = c.type === 'text' ? c.text : c.thinking;
@@ -105,7 +113,14 @@ export function applyClaudeMessage(s: Session, m: any) {
       if (blocks[e.index]) return;
       blocks[e.index] =
         c.type === 'tool_use'
-          ? { type: 'tool_use', id: c.id, name: c.name, input: c.input ?? {}, partial: '' }
+          ? {
+              type: 'tool_use',
+              id: c.id,
+              name: c.name,
+              input: c.input ?? {},
+              partial: '',
+              at: Date.now(),
+            }
           : {
               type: c.type === 'thinking' || c.type === 'redacted_thinking' ? 'thinking' : 'text',
               text: c.text ?? c.thinking ?? '',
@@ -156,6 +171,7 @@ export function applyClaudeMessage(s: Session, m: any) {
           b.result = contentText(c.content).slice(0, RESULT_LIMIT);
           b.isError = !!c.is_error;
           b.done = true;
+          if (b.at) b.ms = Math.max(0, Date.now() - b.at);
         }
       }
     return;
@@ -173,8 +189,10 @@ export function applyClaudeMessage(s: Session, m: any) {
     if (Number.isFinite(m.usage?.input_tokens) && Number.isFinite(m.usage?.output_tokens))
       st.tokensReported = true;
     st.durationMs += m.duration_ms ?? 0;
-    for (const b of walk(lastAssistant(s)?.blocks))
-      if (b.type === 'tool_use' && !b.done) b.done = true;
+    const last = lastAssistant(s);
+    for (const b of walk(last?.blocks)) if (b.type === 'tool_use' && !b.done) b.done = true;
+    if (last && Number.isFinite(m.duration_ms) && m.duration_ms > 0)
+      last.durationMs = m.duration_ms;
     if (m.is_error || m.subtype !== 'success') {
       const reasons: Record<string, string> = {
         error_max_turns: 'Se alcanzó el máximo de turnos configurado.',

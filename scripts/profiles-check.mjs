@@ -103,10 +103,12 @@ try {
   }, folder);
   await call({ type: 'addProject' });
   const projectId = (await snap()).selectedProject;
-  const chooser = page.getByRole('combobox', { name: 'Cuenta del proyecto' });
+  const chooser = page.getByRole('combobox', { name: 'Cuenta del chat' });
   await chooser.waitFor();
   assert.equal(await chooser.locator('option').count(), 2);
   for (const profile of [claude.id, codex.id]) {
+    if (profile === codex.id) await call({ type: 'newSession', projectId, profile });
+    await page.waitForTimeout(150);
     await chooser.selectOption(profile);
     const sessionId = (await snap()).selectedSession;
     await call({ type: 'start', sessionId });

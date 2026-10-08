@@ -1,6 +1,9 @@
+import { readGit, changeGit, repositoryRoot } from './git';
+import type { GitOperation } from '../src/git-types';
 import { codexImageContent, type PreparedImage } from './attachments';
 import { codexUsage, claudeUsage } from '../src/subscription-usage';
 import { isCodex, defaultOptimization, type TokenOptimization } from '../src/shared';
+import { sessionAccountLocked } from '../src/session-tabs';
 import { savingInstructions, turnOptimization } from './token-optimization';
 import { fetchCodexModels, selectCodexConfig, resolveCodexModel } from './codex-models';
 import fs from 'node:fs';
@@ -58,6 +61,7 @@ type Runtime = {
 const liveKeys: (keyof ClaudeConfig)[] = [
   'model',
   'permissionMode',
+  'allowBypass', // Legacy UI capability flag; interactive runtimes now support mode changes at startup.
   'effort',
   'thinking',
   'thinkingBudget',
@@ -71,12 +75,19 @@ export class Manager {
   readonly runtimes = new Map<string, Runtime>();
   readonly coordinator = new Coordinator(() => this.changed());
   private operations = new Set<string>();
+  private operationWork = new Map<string, Promise<unknown>>();
+  private stoppingRuntimes = new Map<string, Promise<void>>();
+  private removingProjects = new Map<string, Promise<void>>();
+  private modelJobs = new Map<string, { controller: AbortController; work: Promise<void> }>();
+  private gitJobs = new Set<string>();
+  private gitWork = new Set<Promise<unknown>>();
   private eventTimer?: NodeJS.Timeout;
   /** `profilesRoot` lets tests reuse authenticated profiles with an isolated state file. */
   constructor(
     root: string,
     private emit: (e: DeskEvent) => void,
     readonly profilesRoot = root,
+    private networkEnvironment: () => Record<string, string> = () => ({}),
   ) {
     this.store = new Store(root);
     this.terminals = new ProjectTerminals(this.emit, () => this.changed());
@@ -102,6 +113,7 @@ export class Manager {
         }
         this.changed();
       },
+      this.networkEnvironment,
     );
     for (const p of this.state.profiles ?? []) this.accounts.register(p.id);
   }
@@ -114,13 +126,21 @@ export class Manager {
     let index = 1;
     const idAt = (index: number): Profile =>
       kind === 'codex' && index === 1 ? 'codex' : `${kind}-${index}`;
-    while (definitions.some((p) => p.id === idAt(index))) index++;
+    while (
+      index <= 9999 &&
+      (definitions.some((p) => p.id === idAt(index)) ||
+        this.state.removedProfiles?.includes(idAt(index)) ||
+        fs.existsSync(profileDirectory(this.profilesRoot, idAt(index))))
+    )
+      index++;
+    if (index > 9999) throw new Error('No quedan identificadores disponibles para este proveedor.');
     const definition: ProfileDefinition = {
       id: idAt(index),
       name: name?.trim() || `${kind === 'claude' ? 'Claude' : 'Codex'} ${index}`,
       kind,
     };
     definitions.push(definition);
+    this.state.defaultProfile ??= definition.id;
     this.accounts.register(definition.id);
     if (this.state.selectedProject && !this.state.selectedSession)
       this.select(this.state.selectedProject, undefined, definition.id);
@@ -129,7 +149,112 @@ export class Manager {
     return definition;
   }
   get canRestart() {
-    return this.runtimes.size === 0 && this.operations.size === 0 && !this.accounts.active;
+    return (
+      this.runtimes.size === 0 &&
+      this.operations.size === 0 &&
+      !this.accounts.active &&
+      this.gitJobs.size === 0
+    );
+  }
+  setDefaultAccount(profile: Profile) {
+    if (!this.state.profiles?.some((p) => p.id === profile) || this.accounts.removing(profile))
+      throw new Error('Esta cuenta no está disponible.');
+    this.state.defaultProfile = profile;
+    this.store.flush();
+    this.changed();
+    return true;
+  }
+  async changeSessionAccount(id: string, profile: Profile) {
+    return this.exclusive(id, async () => {
+      const session = this.session(id);
+      if (sessionAccountLocked(session))
+        throw new Error('Este chat ya ha comenzado. Abre otra pestaña para cambiar de cuenta.');
+      if (!this.state.profiles?.some((p) => p.id === profile) || this.accounts.removing(profile))
+        throw new Error('Esta cuenta no está disponible.');
+      if (session.profile === profile) return session;
+      this.modelJobs.get(id)?.controller.abort();
+      await this.modelJobs.get(id)?.work;
+      await this.stopRuntime(id);
+      if (sessionAccountLocked(session))
+        throw new Error('Este chat ya ha comenzado. Abre otra pestaña para cambiar de cuenta.');
+      const previous = [...this.state.sessions]
+        .reverse()
+        .find((s) => s.projectId === session.projectId && s.profile === profile);
+      const sameProvider = isCodex(profile) === isCodex(session.profile);
+      const next: Session = {
+        id,
+        projectId: session.projectId,
+        title: session.title,
+        profile,
+        accountLocked: false,
+        status: 'stopped',
+        messages: [],
+        approvals: [],
+        reference: isCodex(profile) ? undefined : randomUUID(),
+        mode: isCodex(profile) ? undefined : 'chat',
+        config: isCodex(profile)
+          ? undefined
+          : mergeConfig((sameProvider ? session : previous)?.config),
+        codexConfig: isCodex(profile)
+          ? mergeCodexConfig((sameProvider ? session : previous)?.codexConfig)
+          : undefined,
+      };
+      this.state.sessions[this.state.sessions.indexOf(session)] = next;
+      this.store.flush();
+      this.changed();
+      return next;
+    });
+  }
+  async removeAccount(
+    profile: Profile,
+    confirmed: boolean,
+    trash: (directory: string) => Promise<void>,
+  ) {
+    return this.accounts.remove(profile, confirmed, async () => {
+      const jobs = this.state.sessions
+        .filter((s) => s.profile === profile)
+        .map((s) => this.modelJobs.get(s.id))
+        .filter((job) => !!job);
+      for (const job of jobs) job.controller.abort();
+      await Promise.allSettled(jobs.map((job) => job.work));
+      const definition = this.state.profiles?.find((p) => p.id === profile);
+      if (!definition) throw new Error('Esta cuenta no existe. Añádela en Ajustes.');
+      const sessions = this.state.sessions.filter((s) => s.profile === profile);
+      const directory = profileDirectory(this.profilesRoot, profile);
+      // Keep a recoverable copy of conversations alongside the provider's local data.
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      fs.writeFileSync(
+        path.join(directory, 'agent-desk-removed-account.json'),
+        JSON.stringify({
+          profile: definition,
+          sessions,
+        }),
+        { mode: 0o600 },
+      );
+      await trash(directory);
+      const before = this.store.state;
+      const remaining = before.sessions.filter((s) => s.profile !== profile);
+      this.store.state = {
+        ...before,
+        profiles: before.profiles?.filter((p) => p.id !== profile),
+        defaultProfile:
+          before.defaultProfile === profile
+            ? before.profiles?.find((p) => p.id !== profile)?.id
+            : before.defaultProfile,
+        removedProfiles: [...(before.removedProfiles ?? []), profile],
+        sessions: remaining,
+        selectedSession: remaining.some((s) => s.id === before.selectedSession)
+          ? before.selectedSession
+          : remaining.find((s) => s.projectId === before.selectedProject)?.id,
+      };
+      try {
+        this.store.flush();
+      } catch (error) {
+        this.store.state = before;
+        throw error;
+      }
+      for (const session of sessions) this.buffers.delete(session.id);
+    });
   }
   changed() {
     this.store.schedule();
@@ -145,6 +270,7 @@ export class Manager {
     return s;
   }
   project(id: string) {
+    if (this.removingProjects.has(id)) throw new Error('Se está quitando este proyecto.');
     const p = this.state.projects.find((p) => p.id === id);
     if (!p) throw new Error('Proyecto desconocido.');
     return p;
@@ -189,7 +315,7 @@ export class Manager {
       project = { id: randomUUID(), name: path.basename(canonical), path: canonical };
       this.state.projects.push(project);
     }
-    this.select(project.id, undefined, this.state.profiles?.[0]?.id);
+    this.select(project.id);
     return project;
   }
   select(projectId: string, sessionId?: string, profile?: Profile) {
@@ -200,20 +326,24 @@ export class Manager {
           .reverse()
           .find((s) => s.projectId === projectId && (!profile || s.profile === profile));
     if (s && s.projectId !== projectId) throw new Error('La sesión pertenece a otro proyecto.');
-    const selectedProfile = profile ?? this.state.profiles?.[0]?.id;
+    const selectedProfile = profile ?? this.state.defaultProfile ?? this.state.profiles?.[0]?.id;
     if (!s && selectedProfile) s = this.newSession(projectId, selectedProfile);
     this.state.selectedProject = projectId;
     this.state.selectedSession = s?.id;
     this.changed();
     return s;
   }
-  newSession(projectId: string, profile: Profile, mode?: 'chat' | 'terminal') {
+  newSession(
+    projectId: string,
+    profile = this.state.defaultProfile ?? this.state.profiles?.[0]?.id,
+    mode?: 'chat' | 'terminal',
+  ) {
     this.project(projectId);
+    if (!profile) throw new Error('Añade una cuenta en Ajustes antes de abrir un chat.');
     if (!(this.state.profiles ?? []).some((p) => p.id === profile))
       throw new Error('Esta cuenta no existe. Añádela en Ajustes.');
-    const count =
-      this.state.sessions.filter((s) => s.projectId === projectId && s.profile === profile).length +
-      1;
+    if (this.accounts.removing(profile)) throw new Error('Se está eliminando esta cuenta.');
+    const count = this.state.sessions.filter((s) => s.projectId === projectId).length + 1;
     const previous = [...this.state.sessions]
       .reverse()
       .find((s) => s.projectId === projectId && s.profile === profile);
@@ -221,6 +351,7 @@ export class Manager {
       id: randomUUID(),
       projectId,
       profile,
+      accountLocked: false,
       title: `Sesión ${count}`,
       reference: isCodex(profile) ? undefined : randomUUID(),
       mode: isCodex(profile) ? undefined : (mode ?? 'chat'),
@@ -231,6 +362,20 @@ export class Manager {
       approvals: [],
     };
     this.state.sessions.push(s);
+    const models = [...this.state.sessions]
+      .reverse()
+      .find((other) => other.profile === profile && other.info?.models.length)?.info?.models;
+    if (models)
+      s.info = {
+        tools: [],
+        commands: [],
+        models: structuredClone(models),
+        mcpServers: [],
+        skills: [],
+        plugins: [],
+        agents: [],
+        outputStyles: [],
+      };
     this.state.selectedProject = projectId;
     this.state.selectedSession = s.id;
     this.changed();
@@ -251,37 +396,82 @@ export class Manager {
     s.mode = mode;
     this.changed();
   }
-  async removeProject(id: string) {
-    if (
-      this.state.sessions.some(
-        (s) => s.projectId === id && (active(s) || this.operations.has(s.id)),
-      )
-    )
-      throw new Error('Detén las sesiones del proyecto antes de quitarlo.');
-    await this.terminals.stop(id);
-    this.state.projects = this.state.projects.filter((p) => p.id !== id);
-    this.state.sessions = this.state.sessions.filter((s) => s.projectId !== id);
-    if (this.state.selectedProject === id) {
-      this.state.selectedProject = undefined;
-      this.state.selectedSession = undefined;
-      if (this.state.projects[0]) this.select(this.state.projects[0].id);
-    }
-    this.changed();
+  removeProject(id: string, cleanup: (sessions: Session[]) => Promise<void> = async () => {}) {
+    const pending = this.removingProjects.get(id);
+    if (pending) return pending;
+    this.project(id);
+    const sessions = this.state.sessions.filter((s) => s.projectId === id);
+    const work = Promise.resolve()
+      .then(async () => {
+        for (const s of sessions) this.modelJobs.get(s.id)?.controller.abort();
+        const earlyStops = sessions
+          .filter((s) => this.runtimes.has(s.id))
+          .map((s) => this.stopRuntime(s.id));
+        await Promise.allSettled([
+          ...earlyStops,
+          ...this.gitWork,
+          ...sessions.flatMap((s) => [
+            this.operationWork.get(s.id),
+            this.modelJobs.get(s.id)?.work,
+          ]),
+        ]);
+        const stops = await Promise.allSettled([
+          this.terminals.stop(id),
+          ...sessions.map((s) => this.stopRuntime(s.id)),
+        ]);
+        const failed = stops.find((r) => r.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+        if (sessions.some((s) => this.runtimes.has(s.id)))
+          throw new Error(
+            'No se ha confirmado el cierre de todos los agentes. Vuelve a quitar el proyecto.',
+          );
+        await cleanup(sessions);
+        for (const s of sessions) {
+          this.buffers.delete(s.id);
+          this.coordinator.unregister(s.id);
+        }
+        this.terminals.buffers.delete(`shell:${id}`);
+        this.state.projects = this.state.projects.filter((p) => p.id !== id);
+        this.state.sessions = this.state.sessions.filter((s) => s.projectId !== id);
+        if (this.state.selectedProject === id) {
+          this.state.selectedProject = undefined;
+          this.state.selectedSession = undefined;
+          if (this.state.projects[0]) this.select(this.state.projects[0].id);
+        }
+        this.store.flush();
+        this.changed();
+      })
+      .finally(() => this.removingProjects.delete(id));
+    this.removingProjects.set(id, work);
+    return work;
   }
   async exclusive<T>(id: string, fn: () => Promise<T>) {
+    const session = this.state.sessions.find((s) => s.id === id);
+    if (session && this.removingProjects.has(session.projectId))
+      throw new Error('Se está quitando este proyecto.');
     if (this.operations.has(id)) throw new Error('Hay una operación pendiente en esta sesión.');
     this.operations.add(id);
+    const work = Promise.resolve().then(fn);
+    this.operationWork.set(id, work);
     try {
-      return await fn();
+      return await work;
     } finally {
       this.operations.delete(id);
+      this.operationWork.delete(id);
     }
   }
   async start(id: string, loginOnly = false) {
     return this.exclusive(id, async () => {
+      this.modelJobs.get(id)?.controller.abort();
+      await this.modelJobs.get(id)?.work;
       const s = this.session(id),
         project = this.project(s.projectId);
-      if (this.accounts.changing(s.profile) && this.accounts.state[s.profile].busy !== 'checking')
+      if ([...this.gitJobs].some((root) => this.insideRepository(root, project.path)))
+        throw new Error('Espera a que termine la operación de Git antes de abrir el agente.');
+      if (
+        this.accounts.changing(s.profile) &&
+        (this.accounts.removing(s.profile) || this.accounts.state[s.profile].busy !== 'checking')
+      )
         throw new Error(
           'Completa la operación de esta cuenta en Ajustes antes de abrir el agente.',
         );
@@ -297,6 +487,7 @@ export class Manager {
         );
       const dir = profileDirectory(this.profilesRoot, s.profile);
       await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+      this.project(s.projectId); // Removal may have begun while the startup paths were checked.
       this.coordinator.register(s, project.path);
       s.status = 'starting';
       s.error = undefined;
@@ -336,6 +527,8 @@ export class Manager {
           this.runtimes.delete(id);
           this.coordinator.unregister(id);
         }
+        // Process cleanup may emit a generic exit reason; keep the startup cause.
+        s.error = (e as Error).message;
         s.status = 'error';
         this.changed();
         throw e;
@@ -344,6 +537,7 @@ export class Manager {
   }
   private async startClaude(s: Session, rt: Runtime, binary: string, dir: string, cwd: string) {
     const options = claudeOptions(s, { cwd, binary, profileDir: dir });
+    options.env = { ...(options.env as Record<string, string>), ...this.networkEnvironment() };
     options.mcpServers = {
       agent_desk: { type: 'stdio', ...(await this.coordinator.config(s.id)) },
     };
@@ -465,7 +659,7 @@ export class Manager {
       cols: 100,
       rows: 30,
       cwd,
-      env: { ...cleanEnv(), CLAUDE_CONFIG_DIR: dir },
+      env: { ...cleanEnv(), ...this.networkEnvironment(), CLAUDE_CONFIG_DIR: dir },
     }));
     rt.loginOnly = loginOnly;
     if (!loginOnly) s.attempted = true;
@@ -506,7 +700,7 @@ export class Manager {
         'model_provider="openai"',
       ],
       cwd,
-      { ...cleanEnv(), CODEX_HOME: dir },
+      { ...cleanEnv(), ...this.networkEnvironment(), CODEX_HOME: dir },
     ));
     rpc.on('notification', (m) => this.notification(s, m));
     rpc.on('request', (m) => this.request(s, m));
@@ -521,12 +715,9 @@ export class Manager {
       this.changed();
     });
     await rpc.initialize();
-    try {
-      await this.account(s);
-    } catch (e) {
-      s.account = undefined;
-      s.error = (e as Error).message;
-    }
+    // A failed verification is not a signed-out account. Let startup fail cleanly
+    // so a network outage cannot show the login card or leave a half-ready agent.
+    await this.account(s);
     await this.codexModels(s);
     s.status = 'ready';
     if (s.reference && s.account) await this.loadThread(s);
@@ -719,6 +910,7 @@ export class Manager {
           [
             'Comandos del escritorio: /clear /cost /context /status /mcp /model /permissions /effort /config /terminal /rename /help',
             `Comandos de Claude Code: ${(info?.commands ?? []).map((c) => '/' + c.name).join(' ')}`,
+            'Atajos: @ archivo del proyecto · ↑/↓ mensajes anteriores · ⌘V pega capturas · 1/2/3 responden permisos · ⇧⇥ modo · Esc interrumpe',
           ].join('\n'),
         );
         return true;
@@ -804,11 +996,23 @@ export class Manager {
     return false;
   }
   private usageJobs = new Map<Profile, Promise<void>>();
+  networkChanged() {
+    this.usageAttempts.clear();
+    for (const account of Object.values(this.accounts.state)) account.usage = undefined;
+    this.changed();
+  }
+  private usageAttempts = new Map<Profile, { at: number; revision: number }>();
   refreshUsage(profile: Profile): Promise<void> {
     if (this.accounts.changing(profile)) return Promise.resolve();
     const pending = this.usageJobs.get(profile);
     if (pending) return pending;
     const revision = this.accounts.revision(profile);
+    if (isCodex(profile)) {
+      const previous = this.usageAttempts.get(profile);
+      if (previous?.revision === revision && Date.now() - previous.at < 60000)
+        return Promise.resolve();
+      this.usageAttempts.set(profile, { at: Date.now(), revision });
+    }
     const publish = (usage: import('../src/subscription-usage').SubscriptionUsage) => {
       if (this.accounts.revision(profile) === revision) this.accounts.setUsage(profile, usage);
     };
@@ -836,9 +1040,7 @@ export class Manager {
         publish({
           windows: [],
           checkedAt: Date.now(),
-          unavailable: isCodex(profile)
-            ? 'Codex no pudo consultar la cuota de suscripción.'
-            : (e as Error).message,
+          unavailable: (e as Error).message,
         });
       }
     })().finally(() => this.usageJobs.delete(profile));
@@ -873,7 +1075,8 @@ export class Manager {
     });
   }
   async send(id: string, text: string, images: PreparedImage[] = []) {
-    this.session(id);
+    if (this.accounts.removing(this.session(id).profile))
+      throw new Error('Se está eliminando esta cuenta.');
     if (!this.runtimes.has(id)) await this.start(id);
     return this.exclusive(id, async () => {
       const s = this.session(id),
@@ -908,6 +1111,7 @@ export class Manager {
           };
         }
         this.coordinator.task(id, text);
+        s.accountLocked = true;
         rt.claude.send(text, images);
         if (s.title.startsWith('Sesión ') && !text.startsWith('/'))
           s.title = text.slice(0, 48) || 'Imagen adjunta';
@@ -923,6 +1127,7 @@ export class Manager {
       const decision = this.optimizeTurn(s, text, images);
       this.coordinator.task(id, text);
       s.optimization = decision;
+      s.accountLocked = true;
       s.status = 'working';
       s.error = undefined;
       this.changed();
@@ -956,26 +1161,21 @@ export class Manager {
     const s = this.session(id);
     if (isCodex(s.profile)) throw new Error('Codex no tiene esta configuración.');
     const before = mergeConfig(s.config);
-    s.config = mergeConfig({ ...before, ...patch });
+    const next = mergeConfig({ ...before, ...patch });
     const rt = this.runtimes.get(id)?.claude;
     let restart = false;
     if (rt) {
       if (patch.model !== undefined && patch.model !== before.model) await rt.setModel(patch.model);
-      if (
-        patch.permissionMode &&
-        patch.permissionMode !== before.permissionMode &&
-        !(patch.permissionMode === 'bypassPermissions' && !before.allowBypass)
-      )
-        await rt.setPermissionMode(patch.permissionMode);
+      if (patch.permissionMode) await rt.setPermissionMode(patch.permissionMode);
       if ('effort' in patch && patch.effort !== before.effort) await rt.setEffort(patch.effort);
       if (
         (patch.thinking && patch.thinking !== before.thinking) ||
         (patch.thinkingBudget !== undefined && patch.thinkingBudget !== before.thinkingBudget)
       )
         await rt.setThinking(
-          s.config.thinking !== 'disabled',
-          s.config.thinking === 'enabled' ? s.config.thinkingBudget : undefined,
-          s.config.thinkingDisplay,
+          next.thinking !== 'disabled',
+          next.thinking === 'enabled' ? next.thinkingBudget : undefined,
+          next.thinkingDisplay,
         );
       restart = Object.keys(patch).some(
         (k) =>
@@ -984,15 +1184,52 @@ export class Manager {
       );
       if (restart) s.notice = 'Algunos cambios se aplican al reabrir el agente.';
     }
+    s.config = next;
     this.changed();
     return { restart };
   }
   async refreshCodexModels(id: string) {
     const s = this.session(id);
     if (!isCodex(s.profile)) throw new Error('El catálogo pertenece a Codex.');
-    if (!this.runtimes.get(id)?.rpc)
-      throw new Error('Abre el agente Codex para consultar sus modelos.');
-    await this.codexModels(s);
+    return this.refreshModels(id);
+  }
+  async refreshModels(id: string) {
+    const s = this.session(id);
+    this.project(s.projectId);
+    if (this.modelJobs.has(id)) return this.modelJobs.get(id)!.work;
+    if (this.runtimes.get(id)?.rpc) return this.codexModels(s);
+    const controller = new AbortController();
+    s.modelsLoading = true;
+    s.modelsError = undefined;
+    this.changed();
+    const work = Promise.resolve().then(async () => {
+      try {
+        const models = await this.accounts.readModels(s.profile, controller.signal);
+        if (controller.signal.aborted || !this.state.sessions.includes(s)) return;
+        s.info ??= {
+          tools: [],
+          commands: [],
+          models: [],
+          mcpServers: [],
+          skills: [],
+          plugins: [],
+          agents: [],
+          outputStyles: [],
+        };
+        s.info.models = models;
+        if (!models.length)
+          s.modelsError = 'No hay modelos disponibles. Comprueba la cuenta y actualiza la lista.';
+      } catch (e) {
+        if (!controller.signal.aborted)
+          s.modelsError = `No se pudo consultar los modelos. ${(e as Error).message}`;
+      } finally {
+        s.modelsLoading = false;
+        this.modelJobs.delete(id);
+        this.changed();
+      }
+    });
+    this.modelJobs.set(id, { controller, work });
+    return work;
   }
   /** The official server owns the catalogue, including pagination and default reasoning effort. */
   async codexModels(s: Session) {
@@ -1064,53 +1301,61 @@ export class Manager {
     await rt.rpc!.call('turn/interrupt', { threadId: s.reference, turnId: s.turnId });
   }
   async stop(id: string) {
-    return this.exclusive(id, async () => {
-      const s = this.session(id),
-        rt = this.runtimes.get(id);
-      if (!rt) return;
-      s.status = 'stopping';
-      this.changed();
-      if (rt.rpc) {
-        await rt.rpc.stop();
-        await rt.exit;
-      } else if (rt.claude) {
-        await rt.claude.stop();
-      } else if (rt.pty) {
-        const terminal = rt.pty;
-        const signal = (signal: NodeJS.Signals) => {
-          try {
-            process.kill(-terminal.pid, signal);
-          } catch {
-            try {
-              terminal.kill(signal);
-            } catch {}
-          }
-        };
-        signal('SIGTERM');
-        const force = setTimeout(() => signal('SIGKILL'), 2500);
-        let timeout: NodeJS.Timeout | undefined;
+    return this.exclusive(id, () => this.stopRuntime(id));
+  }
+  private stopRuntime(id: string) {
+    const pending = this.stoppingRuntimes.get(id);
+    if (pending) return pending;
+    const work = this.stopRuntimeNow(id).finally(() => this.stoppingRuntimes.delete(id));
+    this.stoppingRuntimes.set(id, work);
+    return work;
+  }
+  private async stopRuntimeNow(id: string) {
+    const s = this.session(id),
+      rt = this.runtimes.get(id);
+    if (!rt) return;
+    s.status = 'stopping';
+    this.changed();
+    if (rt.rpc) {
+      await rt.rpc.stop();
+      await rt.exit;
+    } else if (rt.claude) {
+      await rt.claude.stop();
+    } else if (rt.pty) {
+      const terminal = rt.pty;
+      const signal = (signal: NodeJS.Signals) => {
         try {
-          await Promise.race([
-            rt.exit,
-            new Promise(
-              (_, reject) =>
-                (timeout = setTimeout(
-                  () =>
-                    reject(
-                      new Error(
-                        'No se ha confirmado la salida de Claude. La carpeta sigue bloqueada.',
-                      ),
-                    ),
-                  6500,
-                )),
-            ),
-          ]);
-        } finally {
-          clearTimeout(force);
-          clearTimeout(timeout);
+          process.kill(-terminal.pid, signal);
+        } catch {
+          try {
+            terminal.kill(signal);
+          } catch {}
         }
+      };
+      signal('SIGTERM');
+      const force = setTimeout(() => signal('SIGKILL'), 2500);
+      let timeout: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          rt.exit,
+          new Promise(
+            (_, reject) =>
+              (timeout = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      'No se ha confirmado la salida de Claude. La carpeta sigue bloqueada.',
+                    ),
+                  ),
+                6500,
+              )),
+          ),
+        ]);
+      } finally {
+        clearTimeout(force);
+        clearTimeout(timeout);
       }
-    });
+    }
   }
   async login(id: string) {
     const s = this.session(id),
@@ -1167,68 +1412,45 @@ export class Manager {
     s.status = s.approvals.length ? 'waiting' : 'working';
     this.changed();
   }
+  private insideRepository(root: string, folder: string) {
+    const relative = path.relative(root, folder);
+    return (
+      relative === '' ||
+      (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))
+    );
+  }
   async diff(id: string) {
+    return readGit(this.project(id).path);
+  }
+  async gitOperation(id: string, operation: GitOperation, value?: string) {
     const cwd = this.project(id).path;
+    const root = await repositoryRoot(cwd);
+    if (!root) throw new Error('Esta carpeta no es un repositorio Git.');
+    if (this.gitJobs.has(root)) throw new Error('Hay una operación de Git en curso.');
+    if (
+      operation !== 'fetch' &&
+      this.state.sessions.some(
+        (s) =>
+          this.insideRepository(root, this.project(s.projectId).path) &&
+          (this.runtimes.has(s.id) || this.operations.has(s.id)),
+      )
+    )
+      throw new Error('Detén los agentes de este repositorio antes de modificar Git.');
+    this.gitJobs.add(root);
+    const work = changeGit(cwd, operation, value);
+    this.gitWork.add(work);
     try {
-      const options = {
-        cwd,
-        env: { ...cleanEnv(), GIT_OPTIONAL_LOCKS: '0' },
-        maxBuffer: 4 * 1024 * 1024,
-        timeout: 10000,
-      };
-      const [status, unstaged, staged] = await Promise.all([
-        exec('git', ['--no-optional-locks', 'status', '--short'], options),
-        exec('git', ['--no-pager', 'diff', '--no-ext-diff', '--no-textconv', '--'], options),
-        exec(
-          'git',
-          ['--no-pager', 'diff', '--cached', '--no-ext-diff', '--no-textconv', '--'],
-          options,
-        ),
-      ]);
-      const [branch, stats] = await Promise.all([
-        exec('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], options)
-          .then((result) => result.stdout.trim())
-          .catch(() => 'HEAD separado'),
-        Promise.all([
-          exec(
-            'git',
-            ['--no-pager', 'diff', '--numstat', '--no-ext-diff', '--no-textconv', '--'],
-            options,
-          ),
-          exec(
-            'git',
-            ['--no-pager', 'diff', '--cached', '--numstat', '--no-ext-diff', '--no-textconv', '--'],
-            options,
-          ),
-        ]).catch(() => undefined),
-      ]);
-      const lines = stats
-        ?.flatMap((result) => result.stdout.split('\n'))
-        .reduce(
-          (sum, row) => {
-            const [added, removed] = row.split('\t');
-            if (/^\d+$/.test(added) && /^\d+$/.test(removed)) {
-              sum.added += Number(added);
-              sum.removed += Number(removed);
-            }
-            return sum;
-          },
-          { added: 0, removed: 0 },
-        );
-      return {
-        status: status.stdout,
-        unstaged: unstaged.stdout,
-        staged: staged.stdout,
-        branch,
-        lines,
-      };
-    } catch (e) {
-      throw new Error(
-        `No se pudo consultar Git. Comprueba que la carpeta sea un repositorio. ${(e as Error).message.slice(0, 250)}`,
-      );
+      return await work;
+    } finally {
+      this.gitJobs.delete(root);
+      this.gitWork.delete(work);
     }
   }
   async shutdown() {
+    for (const job of this.modelJobs.values()) job.controller.abort();
+    await Promise.allSettled([...this.modelJobs.values()].map((job) => job.work));
+    await Promise.allSettled([...this.removingProjects.values()]);
+    await Promise.allSettled([...this.gitWork]);
     const accountResults = await this.accounts.shutdown();
     const terminalResults = await this.terminals.shutdown();
     const results = await Promise.allSettled([...this.runtimes.keys()].map((id) => this.stop(id)));

@@ -76,7 +76,7 @@ test('cada cuota caduca por separado y la cuota de apps no sustituye a la semana
   assert.equal(currentUsageWindow(usage, '7 días', now + 1001)?.usedPercent, 81);
   assert.equal(currentUsageWindow(usage, '7 días', now + 180001), undefined);
 });
-test('el selector muestra ambas cuotas y la renovación de Claude a 5h o de Codex semanal', async () => {
+test('el selector muestra solo porcentaje restante: Claude 5h y Codex semanal', async () => {
   const React = await import('react');
   const { renderToStaticMarkup } = await import('react-dom/server');
   const { UsageSwitcher } = await import('../src/usage-switcher');
@@ -98,11 +98,8 @@ test('el selector muestra ambas cuotas y la renovación de Claude a 5h o de Code
       },
     }),
   );
-  assert.match(markup, /width:37%/);
-  assert.match(markup, /Consumo 5 horas: 37%/);
-  assert.match(markup, /Consumo semanal: 81%/);
-  assert.match(markup, /Renovación semanal: en 1d 0m/);
-  assert.doesNotMatch(markup, /usado|Reinicio en|Sin sesión|Plan no disponible/);
+  assert.match(markup, /Disponible semanal: 19%/);
+  assert.doesNotMatch(markup, /5 h|Consumo|Renovación|usage-fill|usage-reset/);
   const claude = renderToStaticMarkup(
     React.createElement(UsageSwitcher, {
       ...props,
@@ -117,10 +114,14 @@ test('el selector muestra ambas cuotas y la renovación de Claude a 5h o de Code
       },
     }),
   );
-  assert.match(claude, /Renovación de 5 horas: en 1h 0m/);
+  assert.match(claude, /Disponible de 5 horas: 63%/);
+  assert.doesNotMatch(claude, /Semanal|19%|Renovación/);
   const empty = renderToStaticMarkup(React.createElement(UsageSwitcher, props));
-  assert.doesNotMatch(empty, /usage-fill/);
-  assert.match(empty, /Consumo 5 horas: no disponible/);
-  assert.match(empty, /Consumo semanal: no disponible/);
-  assert.match(empty, /Renovación semanal: no disponible/);
+  assert.match(empty, /Disponible semanal: no disponible/);
+  assert.doesNotMatch(empty, /100%|0%/);
+  const locked = renderToStaticMarkup(
+    React.createElement(UsageSwitcher, { ...props, locked: true }),
+  );
+  assert.match(locked, /disabled=""/);
+  assert.match(locked, /Abre otra pestaña/);
 });

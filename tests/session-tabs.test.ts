@@ -22,8 +22,15 @@ test('never evicts a running agent; filters deleted and unrelated session refs',
   const sessions = [
     session('0', 'working'),
     ...['1', '2', '3', '4', '5'].map((id) => session(id)),
-    session('other', 'stopped', 'claude-1'),
+    { ...session('other', 'stopped', 'claude-1'), projectId: 'other-project' },
   ];
   const ids = openSessionTab(['missing', 'other', '0', '1', '2', '3', '4'], sessions[5], sessions);
   assert.deepEqual(ids, ['0', '2', '3', '4', '5']);
+});
+
+test('keeps Claude and Codex tabs together in the same project when an account changes', () => {
+  const sessions = [session('a'), session('b', 'stopped', 'claude-1')];
+  assert.deepEqual(openSessionTab(['a'], sessions[1], sessions), ['a', 'b']);
+  sessions[0].profile = 'claude-2';
+  assert.deepEqual(openSessionTab(['a', 'b'], sessions[0], sessions), ['b', 'a']);
 });

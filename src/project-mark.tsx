@@ -36,3 +36,25 @@ export function ProjectMark({ identity }: { identity: string }) {
     </span>
   );
 }
+/** Agent Desk's own mark: four of the project shapes on a 2×2 grid. */
+export function DeskMark({ size = 48 }: { size?: number }) {
+  return (
+    <svg
+      className="desk-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {[0, 1, 2, 3].map((shape, i) => (
+        <g
+          key={shape}
+          transform={`translate(${(i % 2) * 25 + 1.5} ${Math.floor(i / 2) * 25 + 1.5}) scale(0.875)`}
+        >
+          {shapes[shape]}
+        </g>
+      ))}
+    </svg>
+  );
+}

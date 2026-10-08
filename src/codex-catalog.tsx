@@ -9,35 +9,29 @@ export function CodexCatalogStatus({
   session: Session;
   run: (a: Action) => Promise<any>;
 }) {
-  const open = ['ready', 'working', 'waiting'].includes(session.status);
   return (
     <div className="catalog-status">
-      {!compact && (
+      {(!compact || session.modelsLoading || session.modelsError) && (
         <p role="status">
           {session.modelsLoading
-            ? 'Consultando modelos de Codex…'
+            ? 'Consultando modelos…'
             : (session.modelsError ??
-              (!open
-                ? 'Abre el agente para consultar los modelos disponibles.'
-                : !session.info?.models.length
-                  ? 'Todavía no hay modelos disponibles.'
-                  : 'La selección se aplica al próximo mensaje.'))}
+              (!session.info?.models.length
+                ? 'Todavía no hay modelos disponibles.'
+                : 'La selección se aplica al próximo mensaje.'))}
         </p>
       )}
-      {(open || compact) && (
+      {
         <button
-          disabled={!open || session.modelsLoading}
+          disabled={session.modelsLoading}
           aria-label="Actualizar modelos"
-          title={
-            session.modelsError ??
-            (!open ? 'Abre el agente para consultar modelos' : 'Actualizar modelos')
-          }
-          onClick={() => run({ type: 'refreshCodexModels', sessionId: session.id })}
+          title={session.modelsError ?? 'Actualizar modelos'}
+          onClick={() => run({ type: 'refreshModels', sessionId: session.id })}
         >
           <RefreshCw size={12} />
           {!compact && (session.modelsLoading ? 'Cargando…' : 'Actualizar modelos')}
         </button>
-      )}
+      }
     </div>
   );
 }

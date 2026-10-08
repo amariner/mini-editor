@@ -1,0 +1,476 @@
+/* 🛸🎪 AGENT DESK · CIRCO CÓSMICO 🎪🛸
+   Un circo intergaláctico dentro de una pecera holográfica a las 3 de la mañana.
+   Pega en Ajustes → Interfaz → Estilos (CSS) y pulsa Guardar.
+   Restablecer devuelve la cordura. */
+
+/* ── Paleta: nebulosa violeta, chicle fosforito, lima radiactiva y oro de feria ── */
+:root {
+  --bg: #12002b;
+  --dots: #ff2bd633;
+  --card: #1a0640;
+  --tile: #2a0a5e;
+  --tile-hover: #3b1080;
+  --line: #ff2bd6;
+  --text: #e9fff7;
+  --text-2: #c6f7ff;
+  --muted: #b98cff;
+  --faint: #7a4fd1;
+  --sel: #c6ff00;
+  --sel-text: #12002b;
+  --brand: #ff2bd6;
+  --brand-contrast: #ffffff;
+  --accent: var(--brand);
+  --field-focus: #c6ff00;
+  --danger: #ff3b3b;
+  --danger-soft: #4a0020;
+  --ok: #c6ff00;
+  --warn: #ffb300;
+  --attention: #ffd400;
+  --c-green: #c6ff00;
+  --c-blue: #3d8bff;
+  --c-cyan: #00f0ff;
+  --c-red: #ff3b3b;
+  --c-purple: #b26bff;
+  --c-orange: #ff8a00;
+  --add-bg: #c6ff0022;
+  --add-text: #c6ff00;
+  --del-bg: #ff3b3b22;
+  --del-text: #ff8fa3;
+  --code-ink: #00f0ff;
+  --code-bg: #00f0ff14;
+  --code-line: #00f0ff66;
+  --code-block: #0b001d;
+  --link: #00f0ff;
+  --tk-k: #ff2bd6;
+  --tk-s: #c6ff00;
+  --tk-c: #8a6bd1;
+  --tk-n: #ffd400;
+  --tk-f: #00f0ff;
+  --tk-t: #ff8a00;
+  --tk-p: #7dfcff;
+  --tk-v: #ffd400;
+  --tk-o: #ff2bd6;
+  --holo: conic-gradient(from var(--spin), #ff2bd6, #ffd400, #c6ff00, #00f0ff, #b26bff, #ff2bd6);
+  --shadow: 0 0 0 2px #ff2bd6, 8px 8px 0 #00f0ff, 16px 16px 0 #c6ff0055;
+  --r: 22px 6px 22px 6px;
+  --rs: 14px 4px;
+  --rx: 10px 3px;
+  --mono: 'Comic Mono', 'Courier New', Menlo, monospace;
+  font-family: 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', cursive;
+  color-scheme: dark;
+}
+
+/* Ángulo animable para todos los bordes holográficos. */
+@property --spin {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 0deg;
+}
+
+/* ── El cosmos: nebulosa que respira, estrellas a la deriva y un ovni de paso ── */
+body {
+  background:
+    radial-gradient(circle at 20% 15%, #ff2bd655, transparent 35%),
+    radial-gradient(circle at 80% 30%, #00f0ff44, transparent 35%),
+    radial-gradient(circle at 50% 90%, #c6ff0033, transparent 40%),
+    radial-gradient(1px 1px at 10% 20%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 70% 60%, #fff, transparent),
+    radial-gradient(1px 1px at 40% 80%, #ffd400, transparent),
+    radial-gradient(2px 2px at 90% 10%, #c6ff00, transparent),
+    var(--bg);
+  background-size: 160% 160%, 160% 160%, 160% 160%, 220px 220px, 340px 340px, 280px 280px, 410px 410px, auto;
+  animation: nebula 28s ease-in-out infinite alternate, holo-spin 8s linear infinite;
+}
+body::before {
+  content: '🛸';
+  position: fixed;
+  top: 12%;
+  left: -60px;
+  z-index: 9998;
+  font-size: 34px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 12px #c6ff00);
+  animation: ufo 41s linear infinite;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  background: repeating-linear-gradient(115deg, #ff2bd610 0 40px, #00f0ff10 40px 80px, #c6ff0010 80px 120px);
+  animation: shimmer 12s linear infinite;
+}
+.app {
+  text-shadow: 0 0 6px #ff2bd655;
+}
+::selection {
+  background: var(--sel);
+  color: var(--sel-text);
+  text-shadow: none;
+}
+.app svg.lucide {
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: #0b001d;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(#ff2bd6, #ffd400, #c6ff00, #00f0ff);
+  border: 3px solid #0b001d;
+  border-radius: 99px;
+}
+
+/* ── Controles: botones de feria que se tambalean y caramelos holográficos ── */
+button {
+  transition: transform 0.25s cubic-bezier(0.34, 1.8, 0.64, 1), filter 0.2s;
+}
+button:hover {
+  transform: rotate(-2deg) scale(1.06);
+  filter: hue-rotate(40deg) saturate(1.4);
+}
+button:active {
+  transform: rotate(3deg) scale(0.92);
+}
+button:focus-visible,
+a.md-link:focus-visible {
+  outline: 3px dotted #c6ff00;
+  outline-offset: 3px;
+}
+button.primary,
+button.primary:hover {
+  background: linear-gradient(120deg, #ff2bd6, #ff8a00, #ffd400);
+  color: #12002b;
+  font-weight: 800;
+  text-shadow: 0 1px 0 #fff8;
+  box-shadow: 4px 4px 0 #00f0ff, 8px 8px 0 #c6ff00;
+}
+input,
+textarea,
+select {
+  border: 2px dashed var(--faint);
+  caret-color: #c6ff00;
+}
+.modal h2,
+.modal h3,
+.settings-tabs button,
+.chip,
+.md-lang {
+  font-family: 'Papyrus', 'Marker Felt', fantasy;
+  letter-spacing: 0.06em;
+}
+.palette,
+.modal,
+.popover,
+.slash-menu {
+  border: 3px solid transparent;
+  background: linear-gradient(var(--card), var(--card)) padding-box, var(--holo) border-box;
+  box-shadow: 0 0 40px #ff2bd666, 10px 10px 0 #00f0ff55;
+  animation: holo-spin 4s linear infinite, pop-in 0.45s cubic-bezier(0.34, 1.8, 0.64, 1);
+}
+.popover button.on,
+.slash-menu button.on,
+.palette-results button.on {
+  background: linear-gradient(90deg, #ff2bd6, #b26bff);
+  color: #fff;
+}
+.toast {
+  border: 2px solid #ffd400;
+  background: #2a0a5e;
+  box-shadow: 0 0 24px #ffd40088;
+  animation: jelly 0.7s ease;
+}
+
+/* ── Barra lateral y pestañas: el foco se encuentra en la pista central ── */
+.project-block.selected,
+.sidebar.compact .project-block.selected {
+  background: linear-gradient(90deg, #ff2bd633, transparent);
+  box-shadow: inset 4px 0 0 #c6ff00;
+}
+.workspace .session-tabs-bar {
+  border-bottom: 3px solid transparent;
+  border-image: linear-gradient(90deg, #ff2bd6, #ffd400, #c6ff00, #00f0ff, #b26bff) 1;
+}
+.workspace .session-tab.selected {
+  background: var(--holo);
+  color: #12002b;
+  font-weight: 800;
+  text-shadow: none;
+  animation: holo-spin 3s linear infinite;
+}
+.session-tab .tab-waiting .tab-state {
+  animation: disco 0.8s steps(4) infinite;
+}
+
+/* ── Conversación: tú hablas en bocadillos de cómic, la IA lee la bola de cristal ── */
+.compact-conversation .bubble {
+  position: relative;
+  background: linear-gradient(135deg, #ff2bd6, #b26bff);
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 24px 24px 4px 24px;
+  box-shadow: 5px 5px 0 #00f0ff;
+  transform: rotate(-0.6deg);
+}
+.compact-conversation .bubble::before {
+  content: '👽 ';
+}
+.compact-conversation .bubble::after {
+  content: '';
+  position: absolute;
+  right: -11px;
+  bottom: -2px;
+  border: 10px solid transparent;
+  border-left-color: #fff;
+  border-bottom-color: #fff;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-family: 'Papyrus', 'Marker Felt', fantasy;
+  background: linear-gradient(90deg, #ff2bd6, #ffd400, #c6ff00, #00f0ff, #b26bff, #ff2bd6);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  animation: rainbow-slide 6s linear infinite;
+}
+.md h1::before {
+  content: '🎪 ';
+}
+.md h2::before {
+  content: '✨ ';
+}
+.md h3::before {
+  content: '🔮 ';
+}
+.md strong {
+  color: #ffd400;
+  text-shadow: 0 0 8px #ffd40099;
+}
+.md em {
+  color: #7dfcff;
+}
+.md ul > li {
+  list-style-type: '🍄 ';
+}
+.md ol > li::marker {
+  color: #c6ff00;
+  font-weight: 800;
+}
+.md :not(pre) > code,
+.compact-conversation .md :not(pre) > code {
+  border: 1px dashed #00f0ff;
+  border-radius: 8px 2px;
+}
+.md-code,
+.md-table,
+.turn-changes,
+.todo-panel {
+  border: 2px solid transparent;
+  background: linear-gradient(var(--code-block), var(--code-block)) padding-box, var(--holo) border-box;
+  box-shadow: 6px 6px 0 #ff2bd655, -3px -3px 0 #00f0ff44;
+  animation: holo-spin 10s linear infinite;
+}
+.md-table th {
+  background: #ff2bd633;
+  color: #ffd400;
+}
+.md-callout {
+  border-left: 6px double #c6ff00;
+}
+.md-link {
+  text-decoration: underline wavy #ff2bd6;
+}
+
+/* ── Registro de trabajo: cristales mágicos en vez de flechas ── */
+.response-work > summary > svg {
+  display: none;
+}
+.response-work > summary::before {
+  content: '🔮';
+  display: inline-block;
+  transition: transform 0.4s;
+}
+.response-work[open] > summary::before {
+  content: '🌀';
+  transform: rotate(360deg);
+}
+.response-work > .activity-messages,
+.tool.step > .tool-body {
+  border-left: 2px dotted #b26bff;
+}
+.tool.step > .tool-head:hover {
+  background: #ff2bd622;
+  box-shadow: inset 3px 0 0 #c6ff00;
+}
+
+/* ── Permisos: un cartel de "¡ALTO, TERRÍCOLA!" ── */
+.compact-conversation .approval,
+.approval {
+  border: 3px solid #ffd400;
+  background: repeating-linear-gradient(45deg, #ffd40014 0 14px, transparent 14px 28px), #1a0640;
+  box-shadow: 0 0 30px #ffd40066;
+  animation: wobble 2.4s ease-in-out infinite;
+}
+.approval-title > svg {
+  color: #ffd400;
+}
+.approval-title strong {
+  font-family: 'Papyrus', 'Marker Felt', fantasy;
+  color: #ffd400;
+}
+.approval-title strong::before {
+  content: '🚨 ';
+}
+
+/* ── Progreso: una bola de discoteca girando ── */
+.dock-spinner::after {
+  animation: disco 0.6s steps(4) infinite, spin 1.2s linear infinite;
+}
+
+/* ── Composer: un portal interdimensional que se enciende al escribir ── */
+.desk-input .composer,
+.desk-input .composer.enabled:focus-within {
+  border: 3px solid transparent;
+  background: linear-gradient(#12002b, #12002b) padding-box, var(--holo) border-box;
+  box-shadow: 0 0 30px #ff2bd655;
+  animation: holo-spin 6s linear infinite;
+}
+.desk-input .composer.enabled:focus-within {
+  box-shadow: 0 0 60px #c6ff0088, 0 0 120px #ff2bd655;
+  animation-duration: 1.5s;
+}
+.composer textarea {
+  border: 0;
+  caret-color: #c6ff00;
+}
+.desk-input .composer .chip-btn.on {
+  background: #c6ff00;
+  color: #12002b;
+}
+.desk-input .send {
+  background: radial-gradient(circle at 30% 30%, #fff, #ff2bd6 45%, #6a00ff);
+  box-shadow: 0 0 18px #ff2bd6;
+}
+.desk-input .send:hover {
+  transform: rotate(360deg) scale(1.15);
+  transition-duration: 0.6s;
+}
+.chat-watermark {
+  opacity: 0.18;
+  color: #ff2bd6;
+  animation: float 6s ease-in-out infinite;
+}
+
+/* ── Terminal: el fondo del acuario ── */
+.terminal-wrap,
+.terminal-wrap .xterm-viewport {
+  background-color: #0b001d !important;
+}
+
+/* ── Coreografía ── */
+@keyframes holo-spin {
+  to {
+    --spin: 360deg;
+  }
+}
+@keyframes nebula {
+  0% {
+    background-position: 0% 0%, 100% 0%, 50% 100%, 0 0, 0 0, 0 0, 0 0, 0 0;
+  }
+  100% {
+    background-position: 100% 100%, 0% 100%, 50% 0%, 220px 440px, -340px 340px, 280px -280px, -410px 410px, 0 0;
+  }
+}
+@keyframes shimmer {
+  to {
+    background-position: 480px 0;
+  }
+}
+@keyframes ufo {
+  0% {
+    transform: translate(0, 0) rotate(-8deg);
+  }
+  25% {
+    transform: translate(30vw, 30vh) rotate(8deg);
+  }
+  50% {
+    transform: translate(60vw, 5vh) rotate(-8deg);
+  }
+  75% {
+    transform: translate(85vw, 60vh) rotate(8deg);
+  }
+  100% {
+    transform: translate(110vw, 20vh) rotate(-8deg);
+  }
+}
+@keyframes rainbow-slide {
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes wobble {
+  0%,
+  100% {
+    transform: rotate(-0.5deg);
+  }
+  50% {
+    transform: rotate(0.5deg) scale(1.005);
+  }
+}
+@keyframes jelly {
+  0% {
+    transform: scale(0.6, 1.4);
+  }
+  40% {
+    transform: scale(1.2, 0.85);
+  }
+  70% {
+    transform: scale(0.95, 1.05);
+  }
+}
+@keyframes pop-in {
+  from {
+    transform: scale(0.7) rotate(-4deg);
+    opacity: 0;
+  }
+}
+@keyframes disco {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+@keyframes spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes float {
+  50% {
+    transform: translateY(-14px) rotate(3deg);
+  }
+}
+
+/* Para quien se maree: el circo se queda quieto. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  body::before {
+    display: none;
+  }
+}

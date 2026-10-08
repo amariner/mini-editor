@@ -1,8 +1,15 @@
 import type { Session } from './shared';
 
 export const MAX_SESSION_TABS = 5;
-export const sessionGroup = (s: Pick<Session, 'projectId' | 'profile'>) =>
-  `${s.projectId}:${s.profile}`;
+export const sessionGroup = (s: Pick<Session, 'projectId'>) => s.projectId;
+export const sessionAccountLocked = (
+  s: Pick<Session, 'accountLocked' | 'attempted' | 'stats' | 'messages' | 'profile' | 'reference'>,
+) =>
+  !!s.accountLocked ||
+  !!s.attempted ||
+  !!s.stats?.turns ||
+  s.messages.some((m) => m.role !== 'system') ||
+  (s.accountLocked === undefined && s.profile.startsWith('codex') && !!s.reference);
 export const sessionIsLive = (s?: Pick<Session, 'status'>) =>
   !!s && ['starting', 'terminal', 'ready', 'working', 'waiting', 'stopping'].includes(s.status);
 

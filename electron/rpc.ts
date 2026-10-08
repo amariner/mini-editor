@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
+import { codexRpcError } from './codex-errors';
 export class Rpc extends EventEmitter {
   process: ChildProcessWithoutNullStreams;
   private sequence = 0;
@@ -51,12 +52,7 @@ export class Rpc extends EventEmitter {
     if (!p) return;
     clearTimeout(p.timer);
     this.pending.delete(msg.id);
-    if (msg.error)
-      p.reject(
-        new Error(
-          `${msg.error.message} (RPC ${msg.error.code}). La función puede no estar disponible en esta versión de Codex.`,
-        ),
-      );
+    if (msg.error) p.reject(codexRpcError(msg.error.message, msg.error.code));
     else p.resolve(msg.result);
   }
   send(msg: unknown) {

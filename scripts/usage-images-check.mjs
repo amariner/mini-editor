@@ -74,12 +74,10 @@ try {
   assert.equal(await page.locator('.attachment-thumb').count(), 0);
   await page.getByRole('button', { name: 'Adjuntar imágenes', exact: true }).click();
   await page.locator('.attachment-thumb').waitFor();
-  const header = await page.locator('.topbar').boundingBox(),
-    switcher = await page.locator('.usage-switcher').boundingBox();
-  assert.ok(Math.abs(switcher.x + switcher.width / 2 - header.x - header.width / 2) < 2);
-  assert.ok(switcher.width <= 560);
-  const tools = await page.locator('.top-actions').boundingBox();
-  assert.ok(switcher.x + switcher.width < tools.x);
+  const footer = await page.locator('.composer-footer').boundingBox();
+  const switcher = await page.locator('.usage-switcher').boundingBox();
+  assert.equal(await page.locator('.topbar .usage-switcher').count(), 0);
+  assert.ok(switcher.x >= footer.x && switcher.x + switcher.width <= footer.x + footer.width);
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/47-uso-adjuntos.png' });
   // Query real official tools without authentication or a model turn.
@@ -90,7 +88,7 @@ try {
   assert.equal(state.accounts['claude-1'].usage?.windows?.length ?? 0, 0);
   assert.equal(await page.locator('.usage-fill').count(), 0);
   await call({ type: 'stop', sessionId: sid });
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('codex');
+  await page.getByRole('combobox', { name: 'Cuenta del chat' }).selectOption('codex');
   await until(async () => !Object.values((await snap()).accounts).some((a) => a.busy));
   await call({ type: 'refreshUsage', profile: 'codex' });
   assert.equal((await snap()).accounts.codex.usage?.windows?.length ?? 0, 0);
@@ -108,7 +106,7 @@ try {
   assert.deepEqual(await fs.readdir(project), []);
   assert.equal((await fs.readFile(image)).toString('base64'), png);
   console.log(
-    'PASS: native image picker, previews/removal, per-chat drafts, capability isolation, image-only send retained after real Codex auth rejection, real empty-profile usage queries for Claude/Codex, no invented quota, centered selector, compact layout. No inference calls.',
+    'PASS: native image picker, previews/removal, per-chat drafts, capability isolation, image-only send retained after real Codex auth rejection, real empty-profile usage queries for Claude/Codex, no invented quota, per-chat footer selector, compact layout. No inference calls.',
   );
 } finally {
   await app?.close();

@@ -1,6 +1,8 @@
+import { GitBar } from './git-bar';
+import type { GitSnapshot } from './git-types';
 import { isCodex } from './shared';
 import { useInterfacePreferences } from './interface-settings';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Folder,
@@ -19,12 +21,13 @@ import {
   Check,
   PanelLeftClose,
   PanelLeftOpen,
+  ArrowDown,
 } from 'lucide-react';
 import type { Action, Session, Snapshot, ImageAttachment } from './shared';
 import { permissionModes } from './shared';
 import { actionError, assertCompatibleAction, compatibleRuntime, RESTART_NOTICE } from './runtime';
 import { TerminalView, live } from './terminal';
-import { openSessionTab, sessionGroup } from './session-tabs';
+import { openSessionTab, sessionGroup, sessionAccountLocked } from './session-tabs';
 import {
   ClaudeApproval,
   CodexApproval,
@@ -36,9 +39,11 @@ import {
 import { UsageSwitcher } from './usage-switcher';
 import { EditableName } from './editable-name';
 import { useWorkspaceSplit } from './workspace-split';
-import { ProjectMark } from './project-mark';
+import { DeskMark, ProjectMark } from './project-mark';
 import { BrowserPanel } from './browser-panel';
 import { AccountsSettings } from './accounts-settings';
+import { ChatActionsContext, type ChatActions } from './markdown';
+import { applyStyles, resetStyles, savedStyles } from './custom-styles';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
 const statusLabels: Record<string, string> = {
@@ -68,17 +73,19 @@ function App() {
     [showBrowser, setShowBrowser] = useState(false),
     [browserTab, setBrowserTab] = useState<string>(),
     [showTerminalPanel, setShowTerminalPanel] = useState(false),
-    [diff, setDiff] = useState<any>(),
+    [diff, setDiff] = useState<GitSnapshot>(),
     [diffError, setDiffError] = useState(''),
     [drafts, setDrafts] = useState<Record<string, string>>({}),
     [imageDrafts, setImageDrafts] = useState<Record<string, ImageAttachment[]>>({}),
     [busy, setBusy] = useState<Record<string, boolean>>({}),
     [removeId, setRemoveId] = useState<string>(),
     [editingName, setEditingName] = useState<{ kind: 'project' | 'session'; id: string }>(),
-    [stick, setStick] = useState(true);
+    [stick, setStick] = useState(true),
+    [seen, setSeen] = useState<Record<string, number>>({});
   const appearance = useInterfacePreferences(setError);
   const list = useRef<HTMLDivElement>(null),
     diffRequest = useRef(0),
+    diffReads = useRef(0),
     navigationInFlight = useRef(false),
     recentSessions = useRef<Record<string, string>>({}),
     stateRef = useRef<Snapshot | undefined>(undefined);
@@ -91,7 +98,8 @@ function App() {
         setBrowserTab(e.tabId ?? e.sessionId);
       }
       if (e.type === 'shortcut') {
-        if (e.action === 'search') {
+        if (e.action === 'resetStyles') resetStyles();
+        else if (e.action === 'search') {
           setSearch(true);
           setQuery('');
         } else setSettings(true);
@@ -107,7 +115,7 @@ function App() {
   const project = state?.projects.find((p) => p.id === state.selectedProject),
     selectedSession = state?.sessions.find((s) => s.id === state.selectedSession),
     session = selectedSession?.id === closedSelection ? undefined : selectedSession,
-    profile = selectedSession?.profile ?? accountProfiles[0]?.id,
+    profile = selectedSession?.profile ?? state?.defaultProfile ?? accountProfiles[0]?.id,
     kind = isCodex(profile) ? 'codex' : 'claude';
   useEffect(() => {
     if (!selectedSession || selectedSession.id === closedSelection) return;
@@ -140,13 +148,13 @@ function App() {
         await run({ type: 'select', projectId: s.projectId, sessionId: remaining.at(-1) });
     }
   };
-  if (session) recentSessions.current[`${session.projectId}:${session.profile}`] = session.id;
-  const switchProfile = (projectId: string, nextProfile: Session['profile']) => {
-    const previousId = recentSessions.current[`${projectId}:${nextProfile}`];
+  if (session) recentSessions.current[session.projectId] = session.id;
+  const switchProject = (projectId: string) => {
+    const previousId = recentSessions.current[projectId];
     const sessionId = stateRef.current?.sessions.some((s) => s.id === previousId)
       ? previousId
       : undefined;
-    return run({ type: 'select', projectId: projectId, profile: nextProfile, sessionId });
+    return run({ type: 'select', projectId, sessionId });
   };
 
   const run = async (action: Action) => {
@@ -156,22 +164,27 @@ function App() {
     }
     if (
       action.type === 'newSession' &&
-      (stateRef.current?.sessions.filter(
-        (s) => s.projectId === action.projectId && s.profile === action.profile && live(s),
-      ).length ?? 0) >= 5
+      (stateRef.current?.sessions.filter((s) => s.projectId === action.projectId && live(s))
+        .length ?? 0) >= 5
     ) {
       setError(
-        'Ya hay cinco agentes abiertos en esta cuenta y proyecto. Cierra una pestaña antes de crear otra.',
+        'Ya hay cinco agentes abiertos en este proyecto. Cierra una pestaña antes de crear otra.',
       );
       return;
     }
-    const navigation = action.type === 'select' || action.type === 'newSession';
+    const navigation =
+      action.type === 'select' ||
+      action.type === 'newSession' ||
+      action.type === 'changeSessionAccount';
     if (navigation && navigationInFlight.current) return;
     if (navigation) {
       navigationInFlight.current = true;
       setNavigating(true);
     }
-    const key = ('sessionId' in action ? action.sessionId : undefined) ?? action.type;
+    const key =
+      action.type === 'refreshModels'
+        ? `models:${action.sessionId}`
+        : (('sessionId' in action ? action.sessionId : undefined) ?? action.type);
     setBusy((v) => ({ ...v, [key]: true }));
     try {
       setError('');
@@ -191,9 +204,130 @@ function App() {
         navigationInFlight.current = false;
         setNavigating(false);
       }
-      setBusy((v) => ({ ...v, [key]: false }));
+      setBusy((v) => {
+        const next = { ...v };
+        delete next[key];
+        return next;
+      });
     }
   };
+  const runRef = useRef(run);
+  runRef.current = run;
+  // Links, file paths and code blocks in the chat act on this project and its panels.
+  const chatActions = useMemo<ChatActions>(() => {
+    if (!project) return {};
+    const shell = `shell:${project.id}`;
+    return {
+      root: project.path,
+      openUrl: (url) =>
+        void runRef.current({
+          type: 'browserNew',
+          projectId: project.id,
+          sessionId: session?.id,
+          url,
+        }),
+      openPath: (path) => void runRef.current({ type: 'openPath', projectId: project.id, path }),
+      runCommand: async (command) => {
+        const fresh = !stateRef.current?.terminals?.some((t) => t.id === shell);
+        setShowTerminalPanel(true);
+        await runRef.current({ type: 'openProjectTerminal', projectId: project.id });
+        if (fresh) await new Promise((resolve) => setTimeout(resolve, 600));
+        // Bracketed paste: the shell shows the command and waits for Enter.
+        await runRef.current({
+          type: 'terminalWrite',
+          sessionId: shell,
+          data: `\x1b[200~${command}\x1b[201~`,
+        });
+        document.querySelector<HTMLElement>('.bottom-terminal .xterm-helper-textarea')?.focus();
+      },
+      showChanges: () => setShowDiff(true),
+      reuse: (text) => {
+        if (!session) return;
+        setDrafts((d) => ({ ...d, [session.id]: text }));
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus(),
+        );
+      },
+    };
+  }, [project?.id, project?.path, session?.id]);
+  // Tabs remember how much of each conversation was on screen, to flag new replies.
+  useEffect(() => {
+    if (!session) return;
+    setSeen((v) =>
+      v[session.id] === session.messages.length
+        ? v
+        : { ...v, [session.id]: session.messages.length },
+    );
+  }, [session?.id, session?.messages.length]);
+  // System notification when a background turn finishes or needs an answer.
+  const lastStatus = useRef<Record<string, { status: string; approvals: number }>>({});
+  useEffect(() => {
+    if (!state) return;
+    const previous = lastStatus.current;
+    const next: typeof previous = {};
+    for (const s of state.sessions) {
+      next[s.id] = { status: s.status, approvals: s.approvals.length };
+      const before = previous[s.id];
+      if (!before || !appearance.preferences.notifications) continue;
+      const finished = before.status === 'working' && s.status === 'ready';
+      const asks = s.approvals.length > before.approvals;
+      const focused = document.hasFocus() && s.id === state.selectedSession;
+      if ((!finished && !asks) || focused || typeof Notification === 'undefined') continue;
+      try {
+        const agent = isCodex(s.profile) ? 'Codex' : 'Claude';
+        const n = new Notification(
+          asks ? `${agent} necesita tu respuesta` : `${agent} ha terminado`,
+          {
+            body: `${state.projects.find((p) => p.id === s.projectId)?.name ?? ''} · ${s.title}`,
+            silent: !asks,
+          },
+        );
+        n.onclick = () => {
+          window.focus();
+          void runRef.current({ type: 'select', projectId: s.projectId, sessionId: s.id });
+        };
+      } catch {
+        /* notifications unavailable */
+      }
+    }
+    lastStatus.current = next;
+  }, [state]);
+  useEffect(() => {
+    if (
+      !state ||
+      !compatibleRuntime(state) ||
+      !session ||
+      session.mode === 'terminal' ||
+      session.modelsLoading ||
+      session.modelsError ||
+      session.info?.models.length
+    )
+      return;
+    if (!['stopped', 'error'].includes(session.status)) return;
+    void run({ type: 'refreshModels', sessionId: session.id });
+  }, [session?.id, session?.profile, state?.runtime?.protocol]);
+  const sessionIds = state?.sessions.map((s) => s.id).join(',');
+  useEffect(() => {
+    if (!state) return;
+    const ids = new Set(state.sessions.map((s) => s.id));
+    const projects = new Set(state.projects.map((p) => p.id));
+    const prune = <T,>(values: Record<string, T>) => {
+      const entries = Object.entries(values).filter(([id]) => ids.has(id));
+      return entries.length === Object.keys(values).length ? values : Object.fromEntries(entries);
+    };
+    setDrafts(prune);
+    setImageDrafts(prune);
+    setTabs((v) =>
+      Object.fromEntries(
+        Object.entries(v)
+          .filter(([id]) => projects.has(id))
+          .map(([id, tabs]) => [id, tabs.filter((tab) => ids.has(tab))]),
+      ),
+    );
+    for (const id of Object.keys(recentSessions.current))
+      if (!projects.has(id)) delete recentSessions.current[id];
+    setDiff(undefined);
+  }, [sessionIds]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const s = stateRef.current?.sessions.find((x) => x.id === stateRef.current?.selectedSession);
@@ -207,7 +341,7 @@ function App() {
         setSettings((v) => !v);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
-        if (s) void run({ type: 'newSession', projectId: s.projectId, profile: s.profile });
+        if (s) void run({ type: 'newSession', projectId: s.projectId });
       } else if (
         e.key === 'Tab' &&
         e.shiftKey &&
@@ -241,17 +375,27 @@ function App() {
   const refreshDiff = async () => {
     if (!project) return;
     const request = ++diffRequest.current;
+    diffReads.current++;
     setDiffError('');
     try {
       const d = await window.desk.invoke({ type: 'diff', projectId: project.id });
       if (request === diffRequest.current) setDiff(d);
     } catch (e) {
       if (request === diffRequest.current) setDiffError((e as Error).message);
+    } finally {
+      diffReads.current--;
     }
   };
   useEffect(() => {
     setStick(true);
   }, [session?.id]);
+  // A permission or question blocks the agent: bring it into view even after scrolling up.
+  const approvals = session?.approvals.length ?? 0;
+  const previousApprovals = useRef(approvals);
+  useEffect(() => {
+    if (approvals > previousApprovals.current) setStick(true);
+    previousApprovals.current = approvals;
+  }, [approvals, session?.id]);
   useEffect(() => {
     setDiff(undefined);
     setDiffError('');
@@ -260,9 +404,13 @@ function App() {
     void refreshDiff();
     const onFocus = () => void refreshDiff();
     window.addEventListener('focus', onFocus);
+    const timer = window.setInterval(() => {
+      if (!document.hidden && diffReads.current === 0) void refreshDiff();
+    }, 10000);
     return () => {
       diffRequest.current++;
       window.removeEventListener('focus', onFocus);
+      clearInterval(timer);
     };
   }, [project?.id, showDiff, session?.status, showTerminalPanel]);
   useEffect(() => {
@@ -307,6 +455,7 @@ function App() {
     lastText && 'result' in lastText ? lastText.result?.length : 0,
     session?.approvals.length,
     session?.status,
+    stick,
   ]);
   if (!state) return <div className="loading">Abriendo Agent Desk…{error}</div>;
   const results = [
@@ -325,10 +474,44 @@ function App() {
       sessionId: s.id,
     })),
   ].filter((r) => `${r.title} ${r.subtitle}`.toLowerCase().includes(query.toLowerCase()));
+  // Full-text search over conversations once the query is specific enough.
+  const needle = query.trim().toLowerCase();
+  if (needle.length >= 3)
+    for (const s of state.sessions) {
+      if (results.length >= 60) break;
+      if (results.some((r) => r.sessionId === s.id)) continue;
+      for (const m of s.messages) {
+        if (m.role !== 'user' && m.role !== 'assistant') continue;
+        const text = m.blocks
+          ? m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join(' ')
+          : m.text;
+        const at = text.toLowerCase().indexOf(needle);
+        if (at < 0) continue;
+        const start = Math.max(0, at - 40);
+        results.push({
+          key: `${s.id}:${m.id}`,
+          title: s.title,
+          subtitle: `${start ? '…' : ''}${text.slice(start, at + needle.length + 60).replace(/\s+/g, ' ')}…`,
+          projectId: s.projectId,
+          sessionId: s.id,
+        });
+        break;
+      }
+    }
   const choose = (r: (typeof results)[number]) => {
     void run({ type: 'select', projectId: r.projectId, sessionId: r.sessionId });
     setSearch(false);
   };
+  const tabState = (s: Session) =>
+    s.approvals.length || s.status === 'waiting'
+      ? 'waiting'
+      : s.status === 'working' || s.status === 'starting'
+        ? 'working'
+        : s.status === 'error' || s.error
+          ? 'error'
+          : s.id !== session?.id && (seen[s.id] ?? s.messages.length) < s.messages.length
+            ? 'unread'
+            : 'idle';
   const terminalMode = !isCodex(session?.profile) && session?.mode === 'terminal';
   const terminalSession =
     terminalMode && session ? session : state.terminals?.find((t) => t.projectId === project?.id);
@@ -446,8 +629,7 @@ function App() {
                     aria-current={p.id === project?.id ? 'page' : undefined}
                     onClick={(e) => {
                       if (e.detail < 2) {
-                        if (profile) void switchProfile(p.id, profile);
-                        else void run({ type: 'select', projectId: p.id });
+                        void switchProject(p.id);
                       }
                     }}
                     onDoubleClick={() => {
@@ -458,7 +640,9 @@ function App() {
                     <ProjectMark identity={p.path} />
                     <span className="project-label">{p.name}</span>
                     {state.sessions.some((s) => s.projectId === p.id && live(s)) && (
-                      <i className="live-dot" />
+                      <i
+                        className={`live-dot ${state.sessions.some((s) => s.projectId === p.id && s.approvals.length) ? 'waiting' : ''}`}
+                      />
                     )}
                   </button>
                 )}
@@ -508,17 +692,6 @@ function App() {
           </div>
         )}
         <header className="topbar">
-          <div className="crumb">
-            {project && profile && (
-              <UsageSwitcher
-                profiles={accountProfiles}
-                profile={profile}
-                usage={state.accounts?.[profile]?.usage}
-                disabled={navigating}
-                change={(next) => void switchProfile(project.id, next)}
-              />
-            )}
-          </div>
           <div className="top-actions">
             <button
               className={showBrowser ? 'on' : ''}
@@ -559,245 +732,288 @@ function App() {
               style={split.style}
               className={`workspace ${showDiff || showBrowser ? 'with-tools' : ''} ${split.dragging ? 'resizing' : ''}`}
             >
-              <section className="conversation">
-                <div className="session-tabs-bar">
-                  <div className="session-tabs" role="tablist" aria-label="Conversaciones">
-                    {openTabs.map((s) => (
-                      <div
-                        className={`session-tab ${live(s) ? 'running' : ''} ${s.id === session?.id ? 'selected' : ''}`}
-                        key={s.id}
-                      >
-                        {editingName?.kind === 'session' && editingName.id === s.id ? (
-                          <EditableName
-                            value={s.title}
-                            label="Nombre del chat"
-                            close={() => setEditingName(undefined)}
-                            save={(title) => void run({ type: 'rename', sessionId: s.id, title })}
-                          />
-                        ) : (
-                          <button
-                            role="tab"
-                            aria-selected={s.id === session?.id}
-                            aria-controls="conversation-content"
-                            aria-disabled={navigating}
-                            title={`${s.title} · ${live(s) ? 'Proceso abierto' : 'Proceso parado'}`}
-                            aria-description={live(s) ? 'Proceso abierto' : 'Proceso parado'}
-                            onClick={() =>
-                              run({ type: 'select', projectId: project.id, sessionId: s.id })
-                            }
-                            onDoubleClick={() => setEditingName({ kind: 'session', id: s.id })}
-                          >
-                            <span>{s.title}</span>
-                          </button>
-                        )}
-                        <button
-                          className="tab-close"
-                          aria-label={`Cerrar ${s.title}`}
-                          title="Cerrar pestaña"
-                          disabled={navigating || busy[s.id]}
-                          onClick={() => void closeTab(s)}
+              <ChatActionsContext.Provider value={chatActions}>
+                <section className="conversation">
+                  <div className="session-tabs-bar">
+                    <div className="session-tabs" role="tablist" aria-label="Conversaciones">
+                      {openTabs.map((s) => (
+                        <div
+                          className={`session-tab ${live(s) ? 'running' : ''} ${s.id === session?.id ? 'selected' : ''}`}
+                          key={s.id}
                         >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    className="icon-btn ghost new-tab"
-                    title="Nueva conversación (⌘N) · Hasta 5 pestañas por cuenta"
-                    disabled={navigating || !profile}
-                    aria-label="Nueva conversación"
-                    onClick={() =>
-                      profile && run({ type: 'newSession', projectId: project.id, profile })
-                    }
-                  >
-                    <Plus size={16} />
-                  </button>
-                </div>
-                {!session && (
-                  <div className="empty no-session">
-                    <h2>{accountProfiles.length ? 'Sin pestañas abiertas' : 'Sin cuentas'}</h2>
-                    <p>
-                      {accountProfiles.length
-                        ? 'Crea una conversación con + o recupera una anterior con ⌘K.'
-                        : 'Añade una cuenta de Claude o Codex para conversar en este proyecto.'}
-                    </p>
-                    {!accountProfiles.length && (
-                      <button className="primary" onClick={() => setSettings(true)}>
-                        <Plus size={16} /> Añadir cuenta
-                      </button>
-                    )}
-                  </div>
-                )}
-                {session && (
-                  <>
-                    {(state.coordination?.filter((a) => a.projectId === project.id).length ?? 0) >
-                      1 && (
-                      <div className="conv-head">
-                        <div className="conv-title">
-                          {(state.coordination?.filter((a) => a.projectId === project.id).length ??
-                            0) > 1 && (
-                            <span
-                              className="coordination-status"
-                              title={state.coordination
-                                ?.filter((a) => a.projectId === project.id)
-                                .map(
-                                  (a) =>
-                                    `${accountProfiles.find((p) => p.id === a.profile)?.name}: ${a.task || a.title} · ${a.paths.join(', ') || 'sin reservas'}`,
-                                )
-                                .join('\n')}
-                            >
-                              {state.coordination?.filter((a) => a.projectId === project.id).length}{' '}
-                              agentes · coordinación compartida
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {session.error && (
-                      <div className="inline-notice">
-                        <span>{session.error}</span>
-                        {session.error.includes('/login') && (
-                          <button onClick={() => run({ type: 'login', sessionId: session.id })}>
-                            Iniciar sesión
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    <div
-                      className="messages compact-conversation"
-                      id="conversation-content"
-                      role="tabpanel"
-                      aria-label={session.title}
-                      ref={list}
-                      onScroll={(e) => {
-                        const el = e.currentTarget;
-                        setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
-                      }}
-                    >
-                      {!session.messages.length && !session.approvals.length && (
-                        <div className="chat-watermark" aria-hidden="true">
-                          <span>✳</span>
-                        </div>
-                      )}
-                      {terminalMode && (
-                        <div className="inline-notice">
-                          Esta conversación usa la terminal oficial. Ábrela con el icono Terminal o
-                          crea una nueva pestaña para usar el chat.
-                        </div>
-                      )}
-                      {isCodex(session.profile) && live(session) && !session.account && (
-                        <div className="auth-card">
-                          <ShieldCheck size={22} />
-                          <h2>Conecta tu cuenta de ChatGPT</h2>
-                          <p>
-                            Inicia sesión mediante el flujo oficial de Codex. Agent Desk no solicita
-                            claves ni copia credenciales.
-                          </p>
-                          <button
-                            className="primary"
-                            disabled={
-                              session.loginPending ||
-                              session.status === 'starting' ||
-                              busy[session.id]
-                            }
-                            onClick={() => run({ type: 'login', sessionId: session.id })}
-                          >
-                            <ExternalLink size={14} />
-                            {session.loginPending
-                              ? 'Completa el acceso en el navegador'
-                              : 'Gestionar cuenta en Ajustes'}
-                          </button>
-                          {session.loginPending && (
+                          {editingName?.kind === 'session' && editingName.id === s.id ? (
+                            <EditableName
+                              value={s.title}
+                              label="Nombre del chat"
+                              close={() => setEditingName(undefined)}
+                              save={(title) => void run({ type: 'rename', sessionId: s.id, title })}
+                            />
+                          ) : (
                             <button
-                              className="quiet"
-                              onClick={() => run({ type: 'cancelLogin', sessionId: session.id })}
+                              role="tab"
+                              className={`tab-${tabState(s)}`}
+                              aria-selected={s.id === session?.id}
+                              aria-controls="conversation-content"
+                              aria-disabled={navigating}
+                              title={`${s.title} · ${live(s) ? 'Proceso abierto' : 'Proceso parado'}`}
+                              aria-description={live(s) ? 'Proceso abierto' : 'Proceso parado'}
+                              onClick={() =>
+                                run({ type: 'select', projectId: project.id, sessionId: s.id })
+                              }
+                              onDoubleClick={() => setEditingName({ kind: 'session', id: s.id })}
                             >
-                              Cancelar
+                              <i className="tab-state" aria-hidden="true" />
+                              <span>{s.title}</span>
+                            </button>
+                          )}
+                          <button
+                            className="tab-close"
+                            aria-label={`Cerrar ${s.title}`}
+                            title="Cerrar pestaña"
+                            disabled={navigating || busy[s.id]}
+                            onClick={() => void closeTab(s)}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      className="icon-btn ghost new-tab"
+                      title="Nueva conversación (⌘N) · Hasta 5 pestañas por proyecto"
+                      disabled={navigating || !profile}
+                      aria-label="Nueva conversación"
+                      onClick={() => profile && run({ type: 'newSession', projectId: project.id })}
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  {!session && (
+                    <div className="empty no-session">
+                      <h2>{accountProfiles.length ? 'Sin pestañas abiertas' : 'Sin cuentas'}</h2>
+                      <p>
+                        {accountProfiles.length
+                          ? 'Crea una conversación con + o recupera una anterior con ⌘K.'
+                          : 'Añade una cuenta de Claude o Codex para conversar en este proyecto.'}
+                      </p>
+                      {!accountProfiles.length && (
+                        <button className="primary" onClick={() => setSettings(true)}>
+                          <Plus size={16} /> Añadir cuenta
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {session && (
+                    <>
+                      {(state.coordination?.filter((a) => a.projectId === project.id).length ?? 0) >
+                        1 && (
+                        <div className="conv-head">
+                          <div className="conv-title">
+                            {(state.coordination?.filter((a) => a.projectId === project.id)
+                              .length ?? 0) > 1 && (
+                              <span
+                                className="coordination-status"
+                                title={state.coordination
+                                  ?.filter((a) => a.projectId === project.id)
+                                  .map(
+                                    (a) =>
+                                      `${accountProfiles.find((p) => p.id === a.profile)?.name}: ${a.task || a.title} · ${a.paths.join(', ') || 'sin reservas'}`,
+                                  )
+                                  .join('\n')}
+                              >
+                                {
+                                  state.coordination?.filter((a) => a.projectId === project.id)
+                                    .length
+                                }{' '}
+                                agentes · coordinación compartida
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {session.error && (
+                        <div className="inline-notice">
+                          <span>{session.error}</span>
+                          {session.error.includes('/login') && (
+                            <button onClick={() => run({ type: 'login', sessionId: session.id })}>
+                              Iniciar sesión
                             </button>
                           )}
                         </div>
                       )}
-                      <ConversationMessages session={session} kind={kind} />
-                      {session.approvals.map((a) =>
-                        a.method === 'claude/permission' ? (
-                          <ClaudeApproval key={a.id} approval={a} session={session} run={run} />
-                        ) : (
-                          <CodexApproval key={a.id} approval={a} session={session} run={run} />
-                        ),
-                      )}
-                    </div>
-                    {!terminalMode && (
-                      <>
-                        {session.todos?.length ? <TodoPanel todos={session.todos} /> : null}
-                        <ActivityDock
-                          key={`activity-${session.id}`}
-                          session={session}
-                          kind={kind}
-                        />
-                      </>
-                    )}
-                    <div className="git-summary" aria-label="Resumen de cambios del proyecto">
-                      <button
-                        className="git-summary-project"
-                        aria-label="Cambios de Git"
-                        title={
-                          diffError
-                            ? 'No se pudo consultar Git. Pulsa para ver el detalle.'
-                            : 'Ver cambios del proyecto'
-                        }
-                        aria-expanded={showDiff}
-                        onClick={() => setShowDiff((v) => !v)}
+                      <div
+                        className="messages compact-conversation"
+                        id="conversation-content"
+                        role="tabpanel"
+                        aria-label={session.title}
+                        ref={list}
+                        onScroll={(e) => {
+                          const el = e.currentTarget;
+                          setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+                        }}
                       >
-                        <span>{project.name}</span>
-                        <span className="git-summary-branch">
-                          {diff?.branch ?? (diffError ? 'Git no disponible' : 'Cambios')}
-                        </span>
-                      </button>
-                      {diff?.lines && !diffError && (
-                        <button
-                          className="git-summary-lines"
-                          aria-label={`Ver cambios: ${diff.lines.added} líneas añadidas y ${diff.lines.removed} eliminadas`}
-                          title="Líneas en cambios preparados y sin preparar. No incluye archivos sin seguimiento ni binarios."
-                          aria-expanded={showDiff}
-                          onClick={() => setShowDiff((v) => !v)}
-                        >
-                          <span className="git-added">
-                            +{diff.lines.added.toLocaleString('es-ES')}
-                          </span>
-                          <span className="git-removed">
-                            −{diff.lines.removed.toLocaleString('es-ES')}
-                          </span>
-                        </button>
+                        {!session.messages.length && !session.approvals.length && (
+                          <div className="chat-watermark" aria-hidden="true">
+                            <DeskMark size={72} />
+                          </div>
+                        )}
+                        {terminalMode && (
+                          <div className="inline-notice">
+                            Esta conversación usa la terminal oficial. Ábrela con el icono Terminal
+                            o crea una nueva pestaña para usar el chat.
+                          </div>
+                        )}
+                        {isCodex(session.profile) &&
+                          session.status === 'ready' &&
+                          !session.account && (
+                            <div className="auth-card">
+                              <ShieldCheck size={22} />
+                              <h2>Conecta tu cuenta de ChatGPT</h2>
+                              <p>
+                                Inicia sesión mediante el flujo oficial de Codex. Agent Desk no
+                                solicita claves ni copia credenciales.
+                              </p>
+                              <button
+                                className="primary"
+                                disabled={session.loginPending || busy[session.id]}
+                                onClick={() => run({ type: 'login', sessionId: session.id })}
+                              >
+                                <ExternalLink size={14} />
+                                {session.loginPending
+                                  ? 'Completa el acceso en el navegador'
+                                  : 'Gestionar cuenta en Ajustes'}
+                              </button>
+                              {session.loginPending && (
+                                <button
+                                  className="quiet"
+                                  onClick={() =>
+                                    run({ type: 'cancelLogin', sessionId: session.id })
+                                  }
+                                >
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        <ConversationMessages session={session} kind={kind} />
+                        {session.approvals.map((a, i) =>
+                          a.method === 'claude/permission' ? (
+                            <ClaudeApproval
+                              key={a.id}
+                              approval={a}
+                              session={session}
+                              run={run}
+                              index={i}
+                              total={session.approvals.length}
+                            />
+                          ) : (
+                            <CodexApproval
+                              key={a.id}
+                              approval={a}
+                              session={session}
+                              run={run}
+                              index={i}
+                              total={session.approvals.length}
+                            />
+                          ),
+                        )}
+                        {!stick && session.messages.length > 0 && (
+                          <button
+                            className="jump-latest"
+                            aria-label="Ir al final"
+                            title="Ir al final"
+                            onClick={() => {
+                              setStick(true);
+                              list.current?.scrollTo({
+                                top: list.current.scrollHeight,
+                                behavior: 'smooth',
+                              });
+                            }}
+                          >
+                            <ArrowDown size={14} />
+                          </button>
+                        )}
+                      </div>
+                      {!terminalMode && (
+                        <>
+                          {session.todos?.length &&
+                          (live(session) || session.todos.some((t) => t.status !== 'completed')) ? (
+                            <TodoPanel todos={session.todos} />
+                          ) : null}
+                          <ActivityDock
+                            key={`activity-${session.id}`}
+                            session={session}
+                            kind={kind}
+                          />
+                        </>
                       )}
-                    </div>
-                    {!terminalMode && (
-                      <>
-                        <Composer
-                          key={session.id}
-                          footerControl={terminalButton}
-                          session={session}
-                          optimization={
-                            accountProfiles.find((p) => p.id === session.profile)?.optimization
-                          }
-                          draft={drafts[session.id] ?? ''}
-                          setDraft={(v) => setDrafts((d) => ({ ...d, [session.id]: v }))}
-                          run={run}
-                          images={imageDrafts[session.id] ?? []}
-                          setImages={(images) =>
-                            setImageDrafts((d) => ({ ...d, [session.id]: images }))
-                          }
-                          onSend={(text, images) => sendText(session, text, images)}
-                          onLocalCommand={localCommand}
+                      <div className={`desk-input ${terminalMode ? 'solo' : ''}`}>
+                        <GitBar
+                          key={project.id}
+                          project={project}
+                          state={diff}
+                          error={diffError}
+                          expandedDiff={showDiff}
+                          onDiff={() => setShowDiff((v) => !v)}
+                          refresh={refreshDiff}
+                          compatible={compatibleRuntime(state)}
+                          locked={state.sessions.some((s) => s.projectId === project.id && live(s))}
                         />
-                      </>
-                    )}
-                  </>
-                )}
-                {(!session || terminalMode) && (
-                  <div className="conversation-footer">{terminalButton}</div>
-                )}
-              </section>
+                        {!terminalMode && (
+                          <>
+                            <Composer
+                              key={`${session.id}:${session.profile}`}
+                              disabled={navigating || !!busy[session.id]}
+                              accountControl={
+                                <UsageSwitcher
+                                  profiles={accountProfiles}
+                                  profile={session.profile}
+                                  usage={state.accounts?.[session.profile]?.usage}
+                                  locked={sessionAccountLocked(session)}
+                                  disabled={
+                                    navigating ||
+                                    !!busy[session.id] ||
+                                    !compatibleRuntime(state) ||
+                                    ['starting', 'stopping'].includes(session.status)
+                                  }
+                                  change={(next) =>
+                                    void run({
+                                      type: 'changeSessionAccount',
+                                      sessionId: session.id,
+                                      profile: next,
+                                    })
+                                  }
+                                />
+                              }
+                              footerControl={terminalButton}
+                              session={session}
+                              accountName={
+                                accountProfiles.find((p) => p.id === session.profile)?.name ??
+                                session.profile
+                              }
+                              optimization={
+                                accountProfiles.find((p) => p.id === session.profile)?.optimization
+                              }
+                              draft={drafts[session.id] ?? ''}
+                              setDraft={(v) => setDrafts((d) => ({ ...d, [session.id]: v }))}
+                              run={run}
+                              images={imageDrafts[session.id] ?? []}
+                              setImages={(images) =>
+                                setImageDrafts((d) => ({ ...d, [session.id]: images }))
+                              }
+                              onSend={(text, images) => sendText(session, text, images)}
+                              onLocalCommand={localCommand}
+                            />
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  {(!session || terminalMode) && (
+                    <div className="conversation-footer">{terminalButton}</div>
+                  )}
+                </section>
+              </ChatActionsContext.Provider>
               {(showDiff || showBrowser) && split.separator}
               {(showDiff || showBrowser) && (
                 <aside
@@ -824,6 +1040,8 @@ function App() {
                           <p className="muted">{diffError}</p>
                         ) : !diff ? (
                           <p className="muted">Consultando Git…</p>
+                        ) : !diff.repository ? (
+                          <p className="muted">Esta carpeta no es un repositorio Git.</p>
                         ) : !diff.status ? (
                           <div className="clean-git">
                             <Check size={22} />
@@ -831,6 +1049,7 @@ function App() {
                           </div>
                         ) : (
                           <div className="diff-body">
+                            {diff.diffError && <p className="muted">{diff.diffError}</p>}
                             <h5>Archivos</h5>
                             <pre className="code">{diff.status}</pre>
                             {[
@@ -993,19 +1212,24 @@ function App() {
           <section className="modal small" role="dialog">
             <h2>Quitar proyecto de la lista</h2>
             <p className="muted">
-              Se quitan el acceso y las referencias de sesiones. Los archivos de la carpeta
-              permanecen intactos.
+              Se detendrán todos sus chats y terminales y se borrarán sus conversaciones, adjuntos y
+              datos del navegador guardados por la app. Los archivos de la carpeta permanecen
+              intactos.
             </p>
             <div className="modal-actions">
-              <button onClick={() => setRemoveId(undefined)}>Cancelar</button>
+              <button disabled={busy.removeProject} onClick={() => setRemoveId(undefined)}>
+                Cancelar
+              </button>
               <button
                 className="danger"
-                onClick={() => {
-                  void run({ type: 'removeProject', projectId: removeId });
-                  setRemoveId(undefined);
+                disabled={busy.removeProject}
+                onClick={async () => {
+                  const id = removeId;
+                  await run({ type: 'removeProject', projectId: id });
+                  if (!stateRef.current?.projects.some((p) => p.id === id)) setRemoveId(undefined);
                 }}
               >
-                Quitar
+                {busy.removeProject ? 'Deteniendo y limpiando…' : 'Quitar proyecto y chats'}
               </button>
             </div>
           </section>
@@ -1017,4 +1241,6 @@ function App() {
     </div>
   );
 }
+// Saved user CSS applies before the first paint.
+applyStyles(savedStyles());
 createRoot(document.getElementById('root')!).render(<App />);

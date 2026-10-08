@@ -107,57 +107,6 @@ export function BrowserPanel({
   };
   return (
     <section className="tool-pane browser-pane">
-      <div className="browser-tabs-bar">
-        <div className="browser-tabs" role="tablist" aria-label="Pestañas del navegador">
-          {tabs.map((tab) => (
-            <div
-              className={`browser-tab ${tab.id === state?.id ? 'selected' : ''} ${tab.suspended ? 'suspended' : ''}`}
-              key={tab.id}
-            >
-              <button
-                role="tab"
-                aria-selected={tab.id === state?.id}
-                aria-label={title(tab)}
-                title={`${projects.find((p) => p.id === tab.projectId)?.name ?? 'Navegador'} · ${tab.title}${tab.suspended ? ' · Suspendida' : ''}`}
-                onClick={() => {
-                  select(tab.id);
-                  if (tab.suspended && tab.url) void act({ action: 'reload' }, tab.id);
-                }}
-              >
-                {tab.hostStatus ? (
-                  <i
-                    className={`host-dot ${tab.hostStatus}`}
-                    title={
-                      tab.hostStatus === 'online' ? 'Puerto disponible' : 'Puerto sin respuesta'
-                    }
-                  />
-                ) : tab.suspended ? (
-                  <Moon size={10} />
-                ) : (
-                  <Globe size={10} />
-                )}
-                <span>{title(tab)}</span>
-              </button>
-              <button
-                aria-label={`Cerrar pestaña ${title(tab)}`}
-                onClick={() => void act({ action: 'close' }, tab.id)}
-              >
-                <X size={11} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <button
-          aria-label="Nueva pestaña del navegador"
-          title="Nueva pestaña"
-          onClick={() => void newTab().catch((e) => onError(e.message))}
-        >
-          <Plus size={13} />
-        </button>
-        <button aria-label="Ocultar navegador" title="Ocultar navegador" onClick={close}>
-          <X size={14} />
-        </button>
-      </div>
       <form
         className="browser-toolbar"
         onSubmit={(e) => {
@@ -199,6 +148,13 @@ export function BrowserPanel({
           onChange={(e) => setAddress(e.target.value)}
           spellCheck={false}
         />
+        <button
+          title="Ir a la dirección"
+          aria-label="Ir a la dirección"
+          disabled={!address.trim() || busy}
+        >
+          <ArrowUpRight size={13} />
+        </button>
         <select
           aria-label="Zoom del navegador"
           title="Zoom"
@@ -222,13 +178,66 @@ export function BrowserPanel({
           <Moon size={13} />
         </button>
         <button
-          title="Ir a la dirección"
-          aria-label="Ir a la dirección"
-          disabled={!address.trim() || busy}
+          type="button"
+          aria-label="Nueva pestaña del navegador"
+          title="Nueva pestaña"
+          onClick={() => void newTab().catch((e) => onError(e.message))}
         >
-          <ArrowUpRight size={13} />
+          <Plus size={13} />
+        </button>
+        <button
+          type="button"
+          className="browser-close"
+          aria-label="Ocultar navegador"
+          title="Ocultar navegador"
+          onClick={close}
+        >
+          <X size={14} />
         </button>
       </form>
+      {tabs.length > 0 && (
+        <div className="browser-tabs-bar">
+          <div className="browser-tabs" role="tablist" aria-label="Pestañas del navegador">
+            {tabs.map((tab) => (
+              <div
+                className={`browser-tab ${tab.id === state?.id ? 'selected' : ''} ${tab.suspended ? 'suspended' : ''}`}
+                key={tab.id}
+              >
+                <button
+                  role="tab"
+                  aria-selected={tab.id === state?.id}
+                  aria-label={title(tab)}
+                  title={`${projects.find((p) => p.id === tab.projectId)?.name ?? 'Navegador'} · ${tab.title}${tab.suspended ? ' · Suspendida' : ''}`}
+                  onClick={() => {
+                    select(tab.id);
+                    if (tab.suspended && tab.url) void act({ action: 'reload' }, tab.id);
+                  }}
+                >
+                  {tab.hostStatus ? (
+                    <i
+                      className={`host-dot ${tab.hostStatus}`}
+                      title={
+                        tab.hostStatus === 'online' ? 'Puerto disponible' : 'Puerto sin respuesta'
+                      }
+                    />
+                  ) : tab.suspended ? (
+                    <Moon size={10} />
+                  ) : (
+                    <Globe size={10} />
+                  )}
+                  <span>{title(tab)}</span>
+                </button>
+                <button
+                  aria-label={`Cerrar pestaña ${title(tab)}`}
+                  onClick={() => void act({ action: 'close' }, tab.id)}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {state?.error && <p className="browser-error">{state.error}</p>}
       <div ref={host} className="browser-viewport">
         {(!state?.url || state.suspended) && (

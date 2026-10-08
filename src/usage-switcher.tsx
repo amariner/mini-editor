@@ -1,44 +1,53 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, RotateCcw } from 'lucide-react';
+import { ChevronDown, LockKeyhole } from 'lucide-react';
 import type { Profile, ProfileDefinition } from './shared';
 import { isCodex } from './shared';
-import { currentUsageWindow, resetCountdown, type SubscriptionUsage } from './subscription-usage';
+import { currentUsageWindow, type SubscriptionUsage } from './subscription-usage';
+
 export function UsageSwitcher({
   profiles,
   profile,
   usage,
   disabled,
+  locked = false,
   change,
 }: {
   profiles: ProfileDefinition[];
   profile: Profile;
   usage?: SubscriptionUsage;
   disabled: boolean;
+  locked?: boolean;
   change: (p: Profile) => void;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 10000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setNow(Date.now()), 10000);
+    return () => clearInterval(timer);
   }, []);
-  const fiveHour = currentUsageWindow(usage, '5 h', now);
-  const weekly = currentUsageWindow(usage, '7 días', now);
-  const resetWindow = isCodex(profile) ? weekly : fiveHour;
-  const resetLabel = isCodex(profile) ? 'semanal' : 'de 5 horas';
-  const countdown = resetWindow?.resetsAt
-    ? resetCountdown(resetWindow.resetsAt, now).replace('Reinicio en ', '')
-    : '—';
-  const reason =
-    usage?.unavailable ??
-    (usage?.windows.length
-      ? 'Esperando una lectura actualizada del proveedor.'
-      : 'Esperando datos oficiales de la suscripción.');
+  const codex = isCodex(profile);
+  const window = currentUsageWindow(usage, codex ? '7 días' : '5 h', now);
+  const remaining = window
+    ? Math.round(Math.max(0, Math.min(100, 100 - window.usedPercent)))
+    : undefined;
+  const period = codex ? 'semanal' : 'de 5 horas';
+  const reason = usage?.unavailable ?? 'Esperando datos oficiales actualizados de la suscripción.';
+  const label = `Disponible ${period}: ${remaining === undefined ? 'no disponible' : `${remaining}%`}`;
   return (
-    <div className="account-switcher usage-switcher" aria-label="Cuenta y consumo">
-      <div className="usage-account">
+    <div
+      className={`account-switcher usage-switcher${locked ? ' locked' : ''}`}
+      aria-label="Cuenta y disponibilidad del chat"
+    >
+      <div
+        className="usage-account"
+        title={
+          locked
+            ? 'Este chat ya ha comenzado. Abre otra pestaña para cambiar de cuenta.'
+            : 'Cuenta de este chat · Se puede cambiar antes del primer mensaje'
+        }
+      >
         <select
-          aria-label="Cuenta del proyecto"
-          disabled={disabled}
+          aria-label="Cuenta del chat"
+          disabled={disabled || locked}
           value={profile}
           onChange={(e) => change(e.target.value as Profile)}
         >
@@ -48,43 +57,19 @@ export function UsageSwitcher({
             </option>
           ))}
         </select>
-        <ChevronDown size={11} aria-hidden="true" />
-      </div>
-      <div className="usage-quotas" aria-label="Uso de la suscripción">
-        {[
-          { key: '5h', name: '5 horas', window: fiveHour },
-          { key: '7d', name: 'semanal', window: weekly },
-        ].map(({ key, name, window }) => (
-          <span
-            key={key}
-            className="usage-quota"
-            aria-label={`Consumo ${name}: ${window ? `${Math.round(window.usedPercent)}%` : 'no disponible'}`}
-            title={
-              window ? `${Math.round(window.usedPercent)}% del límite ${name} consumido` : reason
-            }
-          >
-            <span className="usage-period">{key}</span>
-            <span className="usage-value">
-              {window ? `${Math.round(window.usedPercent)}%` : '—'}
-            </span>
-            <span className="usage-track" aria-hidden="true">
-              {window && (
-                <span
-                  className="usage-fill"
-                  style={{ width: `${Math.min(100, window.usedPercent)}%` }}
-                />
-              )}
-            </span>
-          </span>
-        ))}
+        {locked ? (
+          <LockKeyhole size={11} aria-hidden="true" />
+        ) : (
+          <ChevronDown size={11} aria-hidden="true" />
+        )}
       </div>
       <span
-        className="usage-reset"
-        aria-label={`Renovación ${resetLabel}: ${countdown === '—' ? 'no disponible' : `en ${countdown}`}`}
-        title={countdown === '—' ? reason : `El límite ${resetLabel} se renueva en ${countdown}`}
+        className="usage-remaining"
+        aria-label={label}
+        title={remaining === undefined ? reason : `${remaining}% restante del límite ${period}`}
       >
-        <RotateCcw size={11} aria-hidden="true" />
-        <span>{countdown}</span>
+        <span className="usage-period">{codex ? 'Semanal' : '5 h'}</span>
+        <span className="usage-value">{remaining === undefined ? '—' : `${remaining}%`}</span>
       </span>
     </div>
   );

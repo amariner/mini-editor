@@ -37,7 +37,8 @@ test('la configuración de la interfaz se traduce a opciones del SDK sin fugas',
   assert.equal(o.env.ANTHROPIC_API_KEY, undefined);
   assert.deepEqual(o.settingSources, ['user']);
   assert.deepEqual(o.settings, { forceLoginMethod: 'claudeai' });
-  assert.equal(o.allowDangerouslySkipPermissions, undefined);
+  assert.equal(o.allowDangerouslySkipPermissions, true);
+  assert.equal(o.permissionMode, 'default', 'preparing the mode switch must not activate bypass');
   assert.equal(o.systemPrompt, undefined);
   const resumed = claudeOptions(
     {

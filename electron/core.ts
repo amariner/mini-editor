@@ -1,3 +1,4 @@
+import { proxyUpdateSchema } from './proxy';
 import { browserInput } from '../src/browser-protocol';
 import { z } from 'zod';
 import path from 'node:path';
@@ -49,6 +50,17 @@ export const optimizationSchema = z
   })
   .strict();
 export const actionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('saveProxy'), config: proxyUpdateSchema }),
+  z.object({
+    type: z.literal('testProxy'),
+    config: proxyUpdateSchema,
+    provider: z.enum(['codex', 'claude']),
+  }),
+  z.object({ type: z.literal('detectProxy') }),
+  z.object({ type: z.literal('chooseProxyCertificate') }),
+  z.object({ type: z.literal('setDefaultAccount'), profile }),
+  z.object({ type: z.literal('changeSessionAccount'), sessionId: id, profile }),
+  z.object({ type: z.literal('removeAccount'), profile, confirmed: z.literal(true) }),
   z.object({ type: z.literal('configureOptimization'), profile, optimization: optimizationSchema }),
   z.object({
     type: z.literal('addAccount'),
@@ -77,6 +89,14 @@ export const actionSchema = z.discriminatedUnion('type', [
     }),
   }),
   z.object({ type: z.literal('openProjectTerminal'), projectId: id }),
+  z.object({
+    type: z.literal('openPath'),
+    projectId: id,
+    path: z.string().trim().min(1).max(4096),
+    reveal: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal('listFiles'), projectId: id, query: z.string().max(300) }),
+  z.object({ type: z.literal('setTheme'), theme: z.enum(['system', 'light', 'dark']) }),
   ...(['accountRefresh', 'accountCancel'] as const).map((type) =>
     z.object({ type: z.literal(type), profile }),
   ),
@@ -85,6 +105,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   ),
   z.object({ type: z.literal('restartApp') }),
   z.object({ type: z.literal('refreshCodexModels'), sessionId: id }),
+  z.object({ type: z.literal('refreshModels'), sessionId: id }),
   z.object({ type: z.literal('addProject') }),
   z.object({ type: z.literal('removeProject'), projectId: id }),
   z.object({
@@ -96,13 +117,32 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('newSession'),
     projectId: id,
-    profile,
+    profile: profile.optional(),
     mode: z.enum(['chat', 'terminal']).optional(),
   }),
   ...(['start', 'stop', 'interrupt', 'login', 'cancelLogin'] as const).map((type) =>
     z.object({ type: z.literal(type), sessionId: id }),
   ),
   z.object({ type: z.literal('pickImages'), sessionId: id }),
+  z.object({
+    type: z.literal('dropImages'),
+    sessionId: id,
+    images: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1).max(255),
+            data: z
+              .string()
+              .min(1)
+              .max(6990508)
+              .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(4),
+  }),
   z.object({
     type: z.literal('discardImages'),
     sessionId: id,
@@ -151,6 +191,12 @@ export const actionSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('terminalBuffer'), sessionId: id }),
   z.object({ type: z.literal('diff'), projectId: id }),
+  z.object({
+    type: z.literal('gitOperation'),
+    projectId: id,
+    operation: z.enum(['stage', 'unstage', 'commit', 'fetch', 'pull', 'push', 'switch', 'create']),
+    value: z.string().min(1).max(4000).optional(),
+  }),
   z.object({ type: z.literal('chooseBinary'), tool: z.enum(['claude', 'codex']) }),
   z.object({ type: z.literal('chooseDirectory'), sessionId: id }),
 ]);
@@ -244,6 +290,8 @@ export function claudeOptions(
     settingSources: c.settingSources,
     settings: { forceLoginMethod: 'claudeai' },
     permissionMode: c.permissionMode,
+    // Enable switching modes later; the permissionMode above still controls every tool request.
+    allowDangerouslySkipPermissions: true,
     includePartialMessages: true,
     enableFileCheckpointing: c.fileCheckpointing,
     toolConfig: { askUserQuestion: { previewFormat: 'markdown' } },
@@ -262,8 +310,6 @@ export function claudeOptions(
   if (c.allowedTools.length) options.allowedTools = c.allowedTools;
   if (c.disallowedTools.length) options.disallowedTools = c.disallowedTools;
   if (c.additionalDirectories.length) options.additionalDirectories = c.additionalDirectories;
-  if (c.allowBypass || c.permissionMode === 'bypassPermissions')
-    options.allowDangerouslySkipPermissions = true;
   if (c.appendSystemPrompt.trim())
     options.systemPrompt = { type: 'preset', preset: 'claude_code', append: c.appendSystemPrompt };
   return options;

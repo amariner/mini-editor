@@ -64,7 +64,7 @@ test('agrupa el trabajo, conserva íntegro el historial y muestra una respuesta 
   const html = renderToStaticMarkup(
     React.createElement(ConversationMessages, { session, kind: 'claude' }),
   );
-  assert.match(html, /Ver 2 pasos/);
+  assert.match(html, /Leyó 1 archivo y ejecutó 1 comando/);
   assert.match(html, /Usa JavaScript/);
   assert.doesNotMatch(html, /class="author"/);
 });

@@ -93,7 +93,11 @@ try {
   await page.getByRole('button', { name: 'Navegador', exact: true }).click();
   await page.getByRole('button', { name: 'Navegador', exact: true }).click();
   assert.ok((await browser({ action: 'inspect' })).text.includes('Hola Agent Desk'));
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('claude-2');
+  await call({
+    type: 'newSession',
+    projectId: (await snap()).selectedProject,
+    profile: 'claude-2',
+  });
   await until(async () => (await snap()).selectedSession !== first);
   const second = (await snap()).selectedSession;
   await call({ type: 'browser', sessionId: second, input: { action: 'navigate', url } });
@@ -107,7 +111,7 @@ try {
     Buffer.from(backgroundShot.image, 'base64').length > 1000,
     'Background screenshot is empty',
   );
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('claude-1');
+  await call({ type: 'select', projectId: (await snap()).selectedProject, sessionId: first });
   await until(async () => (await snap()).selectedSession === first);
   await page.waitForTimeout(300);
   await fs.mkdir('artifacts', { recursive: true });

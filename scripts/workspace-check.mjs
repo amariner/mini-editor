@@ -90,7 +90,7 @@ try {
     (await call({ type: 'terminalBuffer', sessionId: terminalId })).data.includes('AD_PTY_OK'),
   );
   // First send starts Codex. Without auth it must preserve the draft and require official login.
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('codex');
+  await page.getByRole('combobox', { name: 'Cuenta del chat' }).selectOption('codex');
   await until(async () => {
     const s = await snap();
     return s.sessions.find((x) => x.id === s.selectedSession)?.profile === 'codex';

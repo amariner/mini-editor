@@ -155,27 +155,15 @@ export function ConfigPanel({
         <section>
           <h4>Permisos</h4>
           <Tiles
-            options={permissionModes.filter((m) => m.id !== 'bypassPermissions' || c.allowBypass)}
+            options={permissionModes}
             value={c.permissionMode}
-            onChange={(permissionMode) => set({ permissionMode })}
+            onChange={(permissionMode) =>
+              set({
+                permissionMode,
+                ...(permissionMode === 'bypassPermissions' ? { allowBypass: true } : {}),
+              })
+            }
           />
-          <label className="switch">
-            <input
-              type="checkbox"
-              checked={c.allowBypass}
-              onChange={(e) =>
-                set({
-                  allowBypass: e.target.checked,
-                  permissionMode:
-                    !e.target.checked && c.permissionMode === 'bypassPermissions'
-                      ? 'default'
-                      : c.permissionMode,
-                })
-              }
-            />
-            Permitir el modo sin permisos
-            <small>Solo para entornos aislados. Claude podrá ejecutar cualquier acción.</small>
-          </label>
           <h5>Reglas de herramientas</h5>
           <TagList
             value={c.allowedTools}

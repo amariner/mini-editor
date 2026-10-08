@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { ProjectMark } from './project-mark';
-import { Globe, Settings2, Sparkles } from 'lucide-react';
+import { Globe, Monitor, Moon, Settings2, Sparkles, Sun } from 'lucide-react';
+import type { Theme } from './shared';
+import { StyleEditor } from './custom-styles';
+const themes: { id: Theme; name: string; icon: typeof Sun }[] = [
+  { id: 'system', name: 'Sistema', icon: Monitor },
+  { id: 'light', name: 'Claro', icon: Sun },
+  { id: 'dark', name: 'Oscuro', icon: Moon },
+];
 
 type InterfacePreferences = {
   projectIconSize: number;
@@ -8,6 +15,7 @@ type InterfacePreferences = {
   chatColor: string | null;
   iconColor: string | null;
   textColor: string | null;
+  notifications: boolean;
 };
 const defaults: InterfacePreferences = {
   projectIconSize: 20,
@@ -15,6 +23,7 @@ const defaults: InterfacePreferences = {
   chatColor: null,
   iconColor: null,
   textColor: null,
+  notifications: true,
 };
 const storageKey = 'agent-desk.interface.v1';
 const iconSizes = [14, 18, 20, 24, 28];
@@ -42,6 +51,8 @@ function readPreferences(): InterfacePreferences {
         typeof saved.textColor === 'string' && /^#[\da-f]{6}$/i.test(saved.textColor)
           ? saved.textColor
           : null,
+      notifications:
+        typeof saved.notifications === 'boolean' ? saved.notifications : defaults.notifications,
     };
   } catch {
     return { ...defaults };
@@ -71,12 +82,33 @@ export function useInterfacePreferences(onError: (message: string) => void) {
 export function InterfaceSettings({
   preferences,
   update,
+  theme = 'system',
+  setTheme,
 }: {
   preferences: InterfacePreferences;
   update: (next: InterfacePreferences) => void;
+  theme?: Theme;
+  setTheme?: (theme: Theme) => void;
 }) {
   return (
     <div className="interface-settings">
+      <div className="interface-setting">
+        <span id="theme-label">Tema</span>
+        <div className="segmented theme-switch" role="radiogroup" aria-labelledby="theme-label">
+          {themes.map(({ id, name, icon: Icon }) => (
+            <button
+              key={id}
+              role="radio"
+              aria-checked={theme === id}
+              className={theme === id ? 'on' : ''}
+              disabled={!setTheme}
+              onClick={() => setTheme?.(id)}
+            >
+              <Icon size={13} /> {name}
+            </button>
+          ))}
+        </div>
+      </div>
       <label className="interface-setting">
         <span>Iconos de proyectos</span>
         <select
@@ -164,6 +196,19 @@ export function InterfaceSettings({
           />
         </div>
       </div>
+      <label className="interface-setting">
+        <span>
+          Avisos del sistema
+          <small>Cuando un chat en segundo plano termina o necesita tu respuesta</small>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="Avisos del sistema"
+          checked={preferences.notifications}
+          onChange={(e) => update({ ...preferences, notifications: e.target.checked })}
+        />
+      </label>
       <div className="interface-preview" aria-label="Vista previa de la interfaz">
         <ProjectMark identity="interface-preview" />
         <div>
@@ -176,9 +221,16 @@ export function InterfaceSettings({
           </div>
         </div>
       </div>
-      <button className="interface-reset" onClick={() => update({ ...defaults })}>
+      <button
+        className="interface-reset"
+        onClick={() => {
+          update({ ...defaults });
+          if (theme !== 'system') setTheme?.('system');
+        }}
+      >
         Restablecer
       </button>
+      <StyleEditor />
     </div>
   );
 }

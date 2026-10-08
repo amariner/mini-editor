@@ -1,0 +1,333 @@
+/* ░▒▓ AGENT DESK · TERMINAL 8-BIT ▓▒░
+   Paste in Ajustes → Interfaz → Estilos (CSS) and press Guardar.
+   It applies over the original styles; Restablecer brings them back. */
+
+/* ── Palette: phosphor green on black, amber cursor, CGA cyan/magenta for code ── */
+:root {
+  --bg: #050805;
+  --dots: #0c160c;
+  --card: #050805;
+  --tile: #0b140b;
+  --tile-hover: #102010;
+  --line: #1f4d2b;
+  --text: #39ff7a;
+  --text-2: #2fd567;
+  --muted: #22a352;
+  --faint: #156b34;
+  --sel: #39ff7a;
+  --sel-text: #050805;
+  --brand: #ffd23f;
+  --brand-contrast: #050805;
+  --accent: var(--brand);
+  --field-focus: var(--brand);
+  --danger: #ff5555;
+  --danger-soft: #2a0b0b;
+  --ok: #39ff7a;
+  --attention: #ffb000;
+  --c-green: #39ff7a;
+  --c-blue: #55ffff;
+  --c-cyan: #55ffff;
+  --c-red: #ff5555;
+  --c-purple: #ff55ff;
+  --c-orange: #ffb000;
+  --add-text: #39ff7a;
+  --del-text: #ff6e6e;
+  --code-ink: #ff79ff;
+  --code-bg: #ff55ff12;
+  --code-line: #ff55ff66;
+  --code-block: #020402;
+  --link: #55ffff;
+  --tk-k: #ff55ff;
+  --tk-s: #ffd23f;
+  --tk-c: #1f8f45;
+  --tk-n: #ff9e3d;
+  --tk-f: #55ffff;
+  --tk-t: #ffd23f;
+  --tk-p: #55ffff;
+  --tk-v: #ffb000;
+  --tk-o: #ff55ff;
+  --shadow: 4px 4px 0 #000;
+  --r: 0;
+  --rs: 0;
+  --rx: 0;
+  --mono: Monaco, 'SF Mono', Menlo, 'Courier New', monospace;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  color-scheme: dark;
+  -webkit-font-smoothing: none;
+}
+
+/* ── Pixels: square everything, hard shadows, scanlines and a soft phosphor glow ── */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+body {
+  background: var(--bg);
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, #00000038 2px 3px);
+}
+.app {
+  text-shadow: 0 0 3px #39ff7a55;
+}
+::selection {
+  background: var(--text);
+  color: var(--bg);
+  text-shadow: none;
+}
+.app svg.lucide {
+  stroke-width: 2;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ── Controls: chunky outlines, inverted blocks when selected ── */
+button:focus-visible,
+a.md-link:focus-visible {
+  outline: 2px dashed var(--brand);
+  outline-offset: 2px;
+}
+button.primary,
+button.primary:hover {
+  background: var(--text);
+  color: var(--bg);
+  text-shadow: none;
+  box-shadow: 3px 3px 0 #000;
+}
+input,
+textarea,
+select {
+  border: 1px solid var(--line);
+  caret-color: var(--brand);
+}
+kbd {
+  border: 1px solid var(--line);
+}
+.modal h2,
+.modal h3,
+.settings-tabs button,
+.chip,
+.md-lang {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.palette,
+.modal {
+  border: 2px solid var(--text);
+  box-shadow: 6px 6px 0 #000;
+}
+.popover,
+.slash-menu {
+  border: 2px solid var(--line);
+  box-shadow: 4px 4px 0 #000;
+}
+.popover button.on,
+.slash-menu button.on,
+.palette-results button.on {
+  background: var(--text);
+  color: var(--bg);
+  text-shadow: none;
+}
+.toast {
+  border: 2px solid #000;
+  box-shadow: 4px 4px 0 #000;
+  text-shadow: none;
+}
+
+/* ── Sidebar and tabs: the selection is an inverted block ── */
+.project-block.selected,
+.sidebar.compact .project-block.selected {
+  background: var(--tile);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+.workspace .session-tabs-bar {
+  border-bottom: 2px solid var(--line);
+}
+.workspace .session-tab.selected {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+  text-shadow: none;
+}
+.session-tab .tab-waiting .tab-state {
+  box-shadow: none;
+  animation: term-blink 1s steps(1) infinite;
+}
+
+/* ── Transcript: user lines are prompts, answers are terminal output ── */
+.compact-conversation .row.user {
+  align-items: flex-start;
+}
+.compact-conversation .bubble {
+  max-width: 100%;
+  padding: 2px 0 2px 10px;
+  background: transparent;
+  border-left: 2px solid var(--brand);
+  color: var(--brand);
+}
+.compact-conversation .bubble::before {
+  content: '> ';
+}
+.compact-conversation .row.user .msg-actions {
+  right: auto;
+  left: 0;
+}
+.md h1::before {
+  content: '# ';
+}
+.md h2::before {
+  content: '## ';
+}
+.md h3::before {
+  content: '### ';
+}
+.md h1,
+.md h2,
+.md h3 {
+  color: var(--brand);
+}
+.md strong {
+  color: #c8ffd8;
+}
+.md ul > li {
+  list-style-type: '■ ';
+}
+.md li::marker {
+  color: var(--brand);
+}
+.md :not(pre) > code,
+.compact-conversation .md :not(pre) > code {
+  border-style: dashed;
+}
+.md-code,
+.md-table,
+.turn-changes,
+.todo-panel {
+  border: 1px solid var(--line);
+  box-shadow: 3px 3px 0 #000;
+}
+.md-table th {
+  background: var(--tile);
+  color: var(--brand);
+}
+.md-callout {
+  border-left-width: 4px;
+}
+
+/* ── Work log: [+] / [-] tree markers instead of chevrons ── */
+.response-work > summary > svg {
+  display: none;
+}
+.response-work > summary::before {
+  content: '[+]';
+  color: var(--brand);
+}
+.response-work[open] > summary::before {
+  content: '[-]';
+}
+.response-work > .activity-messages,
+.tool.step > .tool-body {
+  border-left: 1px dashed var(--line);
+}
+.tool.step > .tool-head:hover {
+  background: var(--tile);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+
+/* ── Permission cards: amber alert box ── */
+.compact-conversation .approval,
+.approval {
+  border: 2px solid var(--attention);
+  background: #ffb0000d;
+  box-shadow: 4px 4px 0 #000;
+}
+.approval-title > svg {
+  color: var(--attention);
+}
+.approval-title strong {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--attention);
+}
+
+/* ── Live progress: a blinking block cursor ── */
+.dock-spinner::after {
+  width: 7px;
+  height: 12px;
+  transform: none;
+  animation: term-blink 1s steps(1) infinite;
+}
+@keyframes term-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-spinner::after,
+  .session-tab .tab-waiting .tab-state {
+    animation: none;
+  }
+}
+
+/* ── Desk input: a framed terminal prompt, amber while you type ── */
+.desk-input:has(.composer.enabled:focus-within) {
+  --desk-edge: var(--brand);
+}
+.desk-input .git-summary {
+  border-width: 2px;
+  border-bottom: 0;
+  background: var(--tile);
+}
+.desk-input.solo .git-summary {
+  border-bottom: 2px solid var(--desk-edge);
+}
+.desk-input .composer,
+.desk-input .composer.enabled:focus-within {
+  border-width: 2px;
+  background: var(--bg);
+  box-shadow: 4px 4px 0 #000;
+}
+.composer textarea {
+  border: 0;
+  caret-color: var(--brand);
+}
+.desk-input .composer .chip-btn.on {
+  background: var(--text);
+  color: var(--bg);
+  text-shadow: none;
+}
+.desk-input .send {
+  box-shadow: 2px 2px 0 #000;
+}
+.chat-watermark {
+  opacity: 0.12;
+  color: var(--text);
+}
+
+/* ── Integrated terminal: same black as the app ── */
+.terminal-wrap,
+.terminal-wrap .xterm-viewport {
+  background-color: var(--bg) !important;
+}

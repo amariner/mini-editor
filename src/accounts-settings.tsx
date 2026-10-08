@@ -1,5 +1,6 @@
+import { NetworkSettings } from './network-settings';
 import React, { useEffect, useState } from 'react';
-import { LogIn, LogOut, RefreshCw, X, Plus, Leaf } from 'lucide-react';
+import { LogIn, LogOut, RefreshCw, X, Plus, Leaf, Trash2 } from 'lucide-react';
 import {
   defaultOptimization,
   savingLevels,
@@ -25,16 +26,18 @@ export function AccountsSettings({
   onError: (error: string) => void;
   appearance: ReturnType<typeof useInterfacePreferences>;
 }) {
-  const [tab, setTab] = useState<'accounts' | 'interface'>('accounts');
+  const [tab, setTab] = useState<'accounts' | 'interface' | 'network'>('accounts');
   const [confirmation, setConfirmation] = useState<{
     profile: Profile;
-    type: 'accountLogin' | 'accountLogout';
+    type: 'accountLogin' | 'accountLogout' | 'removeAccount';
   }>();
   const accountProfiles = state.profiles ?? [];
   const [optimizationDrafts, setOptimizationDrafts] = useState<
     Partial<Record<Profile, TokenOptimization>>
   >({});
   const [savingProfile, setSavingProfile] = useState<Profile>();
+  const [savingDefault, setSavingDefault] = useState(false);
+  const [defaultDraft, setDefaultDraft] = useState<Profile>();
   const saveOptimization = async (profile: Profile, optimization: TokenOptimization) => {
     setSavingProfile(profile);
     const before = optimizationDrafts[profile];
@@ -53,6 +56,7 @@ export function AccountsSettings({
   const [newKind, setNewKind] = useState<'claude' | 'codex'>('claude');
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [removing, setRemoving] = useState<Profile>();
   const compatible = compatibleRuntime(state);
   useEffect(() => {
     if (compatible)
@@ -81,7 +85,7 @@ export function AccountsSettings({
           </button>
         </div>
         <div className="settings-tabs" role="tablist" aria-label="Secciones de ajustes">
-          {(['accounts', 'interface'] as const).map((id) => (
+          {(['accounts', 'interface', 'network'] as const).map((id) => (
             <button
               key={id}
               id={`settings-tab-${id}`}
@@ -93,21 +97,31 @@ export function AccountsSettings({
               onKeyDown={(e) => {
                 if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
                 e.preventDefault();
+                const sections = ['accounts', 'interface', 'network'] as const;
+                const index = sections.indexOf(id);
                 const next =
                   e.key === 'Home'
-                    ? 'accounts'
+                    ? sections[0]
                     : e.key === 'End'
-                      ? 'interface'
-                      : id === 'accounts'
-                        ? 'interface'
-                        : 'accounts';
+                      ? sections[2]
+                      : sections[(index + (e.key === 'ArrowRight' ? 1 : 2)) % sections.length];
                 setTab(next);
                 document.getElementById(`settings-tab-${next}`)?.focus();
               }}
             >
-              {id === 'accounts' ? 'Cuentas' : 'Interfaz'}
+              {id === 'accounts' ? 'Cuentas' : id === 'interface' ? 'Interfaz' : 'Red'}
             </button>
           ))}
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-network"
+          aria-labelledby="settings-tab-network"
+          hidden={tab !== 'network'}
+        >
+          {tab === 'network' && (
+            <NetworkSettings snapshot={state.proxy} compatible={compatible} run={run} />
+          )}
         </div>
         <div
           role="tabpanel"
@@ -115,7 +129,12 @@ export function AccountsSettings({
           aria-labelledby="settings-tab-interface"
           hidden={tab !== 'interface'}
         >
-          <InterfaceSettings preferences={appearance.preferences} update={appearance.update} />
+          <InterfaceSettings
+            preferences={appearance.preferences}
+            update={appearance.update}
+            theme={state.theme}
+            setTheme={compatible ? (theme) => void run({ type: 'setTheme', theme }) : undefined}
+          />
         </div>
         <div
           role="tabpanel"
@@ -194,21 +213,27 @@ export function AccountsSettings({
               const account = state.accounts?.[p.id];
               const optimization =
                 optimizationDrafts[p.id] ?? p.optimization ?? defaultOptimization;
-              const busy = account?.busy;
+              const busy = removing === p.id ? 'removing' : account?.busy;
               const status =
-                busy === 'checking'
-                  ? 'Comprobando cuenta…'
-                  : busy === 'signingIn'
-                    ? 'Completa el acceso oficial'
-                    : busy === 'signingOut'
-                      ? 'Cerrando sesión…'
-                      : busy === 'cancelling'
-                        ? 'Cancelando…'
-                        : account?.status === 'signedIn'
-                          ? 'Conectada'
-                          : account?.status === 'signedOut'
-                            ? 'Sin sesión'
-                            : 'Estado sin verificar';
+                busy === 'removing'
+                  ? 'Eliminando cuenta…'
+                  : busy === 'checking'
+                    ? 'Comprobando cuenta…'
+                    : busy === 'verifying'
+                      ? 'Validando cuenta…'
+                      : busy === 'signingIn'
+                        ? account?.loginStarting
+                          ? 'Iniciando Claude Code…'
+                          : 'Completa el acceso oficial'
+                        : busy === 'signingOut'
+                          ? 'Cerrando sesión…'
+                          : busy === 'cancelling'
+                            ? 'Cancelando…'
+                            : account?.status === 'signedIn'
+                              ? 'Conectada'
+                              : account?.status === 'signedOut'
+                                ? 'Sin sesión'
+                                : 'Estado sin verificar';
               const disabled = !compatible || !!busy || !state.tools[p.kind];
               return (
                 <section className="account-card" key={p.id} aria-label={`Cuenta ${p.name}`}>
@@ -227,8 +252,36 @@ export function AccountsSettings({
                       {account.plan ? ` · ${account.plan}` : ' · Plan no disponible'}
                     </div>
                   )}
+                  <label className="default-account-option">
+                    <input
+                      type="radio"
+                      name="default-account"
+                      aria-label={`Usar ${p.name} como cuenta predeterminada`}
+                      checked={
+                        (defaultDraft ?? state.defaultProfile ?? accountProfiles[0]?.id) === p.id
+                      }
+                      disabled={!compatible || savingDefault || busy === 'removing'}
+                      onChange={async () => {
+                        setSavingDefault(true);
+                        setDefaultDraft(p.id);
+                        try {
+                          await run({ type: 'setDefaultAccount', profile: p.id });
+                        } finally {
+                          setSavingDefault(false);
+                          setDefaultDraft(undefined);
+                        }
+                      }}
+                    />
+                    Predeterminada para chats nuevos
+                  </label>
                   {!state.tools[p.kind] && (
                     <p className="muted">Selecciona el ejecutable para conectar esta cuenta.</p>
+                  )}
+                  {account?.loginStarting && (
+                    <p className="muted" role="status">
+                      Claude puede tardar hasta un minuto en abrir el acceso en el navegador. Puedes
+                      cancelar mientras arranca.
+                    </p>
                   )}
                   {account?.error && (
                     <p className="account-error" role="alert">
@@ -255,6 +308,18 @@ export function AccountsSettings({
                       onClick={() => void run({ type: 'accountRefresh', profile: p.id })}
                     >
                       <RefreshCw size={14} />
+                    </button>
+                    <button
+                      className="danger-ghost"
+                      disabled={
+                        !compatible ||
+                        !!removing ||
+                        (!!busy && busy !== 'checking' && !account?.cancellable)
+                      }
+                      onClick={() => setConfirmation({ profile: p.id, type: 'removeAccount' })}
+                      aria-label={`Eliminar cuenta ${p.name}`}
+                    >
+                      <Trash2 size={14} /> Eliminar cuenta
                     </button>
                     <fieldset
                       className="token-settings"
@@ -307,7 +372,7 @@ export function AccountsSettings({
                       completas el acceso.
                     </p>
                   )}
-                  {account?.terminalId && (
+                  {account?.terminalId && !account.loginStarting && (
                     <div className="account-terminal">
                       <TerminalView
                         session={{
@@ -327,37 +392,66 @@ export function AccountsSettings({
             <section
               className="account-confirm"
               role="alertdialog"
-              aria-label="Confirmar cambio de cuenta"
+              aria-label={
+                confirmation.type === 'removeAccount'
+                  ? 'Confirmar eliminación de cuenta'
+                  : 'Confirmar cambio de cuenta'
+              }
             >
               <strong>
-                {confirmation.type === 'accountLogout'
-                  ? 'Cerrar sesión de'
-                  : 'Cambiar el acceso de'}{' '}
+                {confirmation.type === 'removeAccount'
+                  ? 'Eliminar cuenta'
+                  : confirmation.type === 'accountLogout'
+                    ? 'Cerrar sesión de'
+                    : 'Cambiar el acceso de'}{' '}
                 {accountProfiles.find((p) => p.id === confirmation.profile)?.name}
               </strong>
               <p>
                 {running(confirmation.profile).length
                   ? 'Se detendrán estas sesiones antes de continuar:'
-                  : 'Se actualizará únicamente la autenticación de este perfil.'}
+                  : confirmation.type === 'removeAccount'
+                    ? 'Se quitarán esta cuenta y sus conversaciones de Agent Desk.'
+                    : 'Se actualizará únicamente la autenticación de este perfil.'}
               </p>
               {running(confirmation.profile).map((s) => (
                 <div key={s.id}>
                   {state.projects.find((p) => p.id === s.projectId)?.name} · {s.title}
                 </div>
               ))}
-              <p className="muted">Las conversaciones y los archivos se conservan.</p>
+              <p className="muted">
+                {confirmation.type === 'removeAccount'
+                  ? 'Se cancelará cualquier acceso pendiente. La carpeta local del perfil y una copia de sus conversaciones se enviarán a la Papelera. Los proyectos, sus archivos y las demás cuentas se conservan. Tu cuenta del proveedor no se elimina.'
+                  : 'Las conversaciones y los archivos se conservan.'}
+              </p>
               <div className="modal-actions">
                 <button onClick={() => setConfirmation(undefined)}>Cancelar</button>
                 <button
                   className="danger"
-                  onClick={() => {
-                    void run({ ...confirmation, stopSessions: true });
+                  onClick={async () => {
+                    const action = confirmation;
                     setConfirmation(undefined);
+                    if (action.type === 'removeAccount') {
+                      setRemoving(action.profile);
+                      try {
+                        await run({
+                          type: 'removeAccount',
+                          profile: action.profile,
+                          confirmed: true,
+                        });
+                      } catch (error) {
+                        onError((error as Error).message);
+                      } finally {
+                        setRemoving(undefined);
+                      }
+                    } else
+                      void run({ type: action.type, profile: action.profile, stopSessions: true });
                   }}
                 >
-                  {confirmation.type === 'accountLogout'
-                    ? 'Confirmar cierre de sesión'
-                    : 'Detener y continuar'}
+                  {confirmation.type === 'removeAccount'
+                    ? 'Confirmar eliminación'
+                    : confirmation.type === 'accountLogout'
+                      ? 'Confirmar cierre de sesión'
+                      : 'Detener y continuar'}
                 </button>
               </div>
             </section>

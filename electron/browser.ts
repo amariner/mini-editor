@@ -1,4 +1,4 @@
-import { BrowserWindow, WebContentsView, nativeImage } from 'electron';
+import { BrowserWindow, WebContentsView, nativeImage, session as electronSession } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -18,11 +18,13 @@ export class DeskBrowser {
   private defaults = new Map<string, string>();
   private observed = new Set<string>();
   private output = new Map<string, string>();
+  private removedProjects = new Set<string>();
   constructor(
     private host: () => BrowserWindow | undefined,
     private changed: () => void,
     private opened: (id: string, sessionId: string) => void,
     private root?: string,
+    private prepareNetwork: (session: Electron.Session) => Promise<void> = async () => {},
   ) {
     if (root) {
       try {
@@ -98,7 +100,7 @@ export class DeskBrowser {
     }
   }
   async observe(projectId: string, sessionId: string, output: string) {
-    if (this.closed) return;
+    if (this.closed || this.removedProjects.has(projectId)) return;
     const text = ((this.output.get(sessionId) ?? '') + output).slice(-6000);
     this.output.set(sessionId, text);
     for (const url of localURLs(text)) {
@@ -107,12 +109,14 @@ export class DeskBrowser {
       this.observed.add(key);
       if (this.observed.size > 2000) this.observed.delete(this.observed.values().next().value!);
       if (await hostOnline(url)) {
-        if (!this.closed)
+        if (!this.closed && !this.removedProjects.has(projectId))
           await this.forSession(sessionId, projectId, { action: 'navigate', url }).catch(() => {});
       } else this.observed.delete(key);
     }
   }
   create(projectId?: string, sessionId = '', url = '') {
+    if (projectId && this.removedProjects.has(projectId))
+      throw new Error('Este proyecto se ha quitado.');
     if (this.pages.size >= 60)
       throw new Error('Hay 60 pestañas guardadas. Cierra alguna para continuar.');
     if (url) url = browserURL(url);
@@ -363,6 +367,26 @@ export class DeskBrowser {
     this.save();
     this.changed();
   }
+  async removeProject(projectId: string, sessionIds: string[]) {
+    this.removedProjects.add(projectId);
+    const tabs = this.snapshot().filter(
+      (tab) => tab.projectId === projectId || sessionIds.includes(tab.sessionId),
+    );
+    // Close first to interrupt pending navigations; never recreate tabs from queued actions.
+    for (const tab of tabs) this.close(tab.id);
+    await Promise.allSettled(tabs.map((tab) => this.queues.get(tab.id)));
+    for (const id of [...sessionIds, `shell:${projectId}`]) {
+      this.output.delete(id);
+      this.defaults.delete(id);
+    }
+    for (const key of this.observed) if (key.startsWith(projectId + ':')) this.observed.delete(key);
+    const ses = electronSession.fromPartition(`desk-browser-${projectId}`);
+    await ses.closeAllConnections();
+    await ses.clearCache();
+    await ses.clearStorageData();
+    await ses.clearAuthCache();
+    this.save();
+  }
   closeAll() {
     this.save();
     this.closed = true;
@@ -385,6 +409,7 @@ export class DeskBrowser {
     return next;
   }
   private async perform(id: string, args: ReturnType<typeof browserInput.parse>) {
+    if (!this.pages.has(id)) throw new Error('La pestaña ya no existe.');
     if (args.action === 'list') return { tabs: this.snapshot() };
     if (args.action === 'new') {
       const owner = this.pages.get(id)?.state;
@@ -404,6 +429,7 @@ export class DeskBrowser {
     const dormant = this.pages.get(id)?.state.suspended;
     const p = this.ensure(id);
     const wc = p.view!.webContents;
+    await this.prepareNetwork(wc.session);
     if (dormant && args.action !== 'navigate' && p.state.url) await wc.loadURL(p.state.url);
     if (args.action === 'zoom') {
       wc.setZoomFactor(args.factor);

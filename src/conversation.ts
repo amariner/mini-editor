@@ -32,6 +32,9 @@ function toolCounts(blocks: Block[] = []): { steps: number; errors: number } {
     { steps: 0, errors: 0 },
   );
 }
+// Codex items carry their own status (an exit code alone may be expected, like grep's 1).
+const toolFailed = (m: Message) =>
+  m.kind === 'error' || m.tool?.status === 'failed' || m.tool?.status === 'declined';
 function response(
   messages: Message[],
   pending: boolean,
@@ -80,9 +83,7 @@ function response(
       return {
         steps: count.steps + blocks.steps + Number(message.role === 'tool'),
         errors:
-          count.errors +
-          blocks.errors +
-          Number(message.role === 'tool' && message.kind === 'error'),
+          count.errors + blocks.errors + Number(message.role === 'tool' && toolFailed(message)),
       };
     },
     { steps: 0, errors: 0 },

@@ -74,7 +74,7 @@ try {
       selectedProject: 'p',
       tools: {},
       dataDir: '/tmp/compact-chat-fixture',
-      runtime: { protocol: 11 },
+      runtime: { protocol: 21 },
       coordination: [],
     };
     const listeners = new Set();
@@ -106,7 +106,7 @@ try {
   assert.equal(await page.locator('.messages .author').count(), 0);
   assert.equal(
     await progress.locator('.activity-current-text').innerText(),
-    'Bash · Revisando la estructura del proyecto',
+    'Revisando la estructura del proyecto',
   );
   const composer = await page.locator('.composer').boundingBox();
   const context = await page.locator('.git-summary').boundingBox();
@@ -115,7 +115,10 @@ try {
   assert.ok(context.y - (dock.y + dock.height) < 10);
   assert.ok(context.y + context.height <= composer.y);
   assert.ok(dock.height <= 26);
-  assert.equal(await page.locator('.task-signature').innerText(), 'Sonnet 5.5\n·\n↑— ↓—');
+  assert.equal(
+    await page.locator('.task-signature').innerText(),
+    'Personal\n5 h\n—\n·\nSonnet 5.5\n·\n↑— ↓—',
+  );
   await progress.click();
   assert.equal(await page.locator('.activity-log .tool').count(), 2);
   await page.locator('.activity-log .tool-head').first().click();
@@ -163,9 +166,9 @@ try {
   assert.equal(await progress.count(), 0);
   assert.equal(await page.locator('.response-work').count(), 1);
   assert.equal(await page.locator('.response-work').getAttribute('open'), null);
-  await page.getByText('Ver 2 pasos', { exact: true }).click();
+  await page.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
   assert.equal(await page.locator('.response-work .tool').count(), 2);
-  await page.getByText('Ver 2 pasos', { exact: true }).click();
+  await page.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
   await page.screenshot({ path: 'artifacts/chat-compacto-respuesta.png' });
   // Existing final response must remain visible while the next process starts.
   await page.evaluate(() => {

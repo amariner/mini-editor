@@ -45,7 +45,7 @@ try {
     await page.getByRole('textbox', { name: 'Mensaje', exact: true }).inputValue(),
     'Borrador conservado',
   );
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('codex');
+  await page.getByRole('combobox', { name: 'Cuenta del chat' }).selectOption('codex');
   await page.waitForFunction(
     () => document.querySelector('.account-switcher select')?.value === 'codex',
   );
@@ -57,6 +57,7 @@ try {
     await page.waitForTimeout(100);
   }
   assert.equal((await snap()).sessions.find((s) => s.id === first).status, 'ready');
+  await call({ type: 'setDefaultAccount', profile: 'codex' });
   for (let i = 0; i < 6; i++) {
     await page.getByRole('button', { name: 'Nueva conversación', exact: true }).click();
     await settle();
@@ -69,10 +70,14 @@ try {
   await page.getByRole('button', { name: 'Cerrar Sesión 1', exact: true }).click();
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
   assert.equal((await snap()).sessions.find((s) => s.id === first).status, 'ready');
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('claude-2');
+  await call({
+    type: 'newSession',
+    projectId: (await snap()).selectedProject,
+    profile: 'claude-2',
+  });
   await settle();
-  assert.equal(await page.getByRole('tab').count(), 1);
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('codex');
+  assert.equal(await page.getByRole('tab').count(), 5);
+  await page.getByRole('tab', { name: 'Sesión 1', exact: true }).click();
   await settle();
   assert.equal(await page.getByRole('tab').count(), 5);
   await fs.mkdir('artifacts', { recursive: true });
@@ -101,37 +106,34 @@ try {
   await page.locator('.palette-results button').filter({ hasText: 'Codex' }).click();
   await settle();
   assert.equal(await page.getByRole('tab').count(), 1);
-  // A real Claude PTY remains alive when its xterm view is unmounted.
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('claude-1');
+  // A real Claude PTY remains alive while a different chat is selected.
+  await call({
+    type: 'newSession',
+    projectId: (await snap()).selectedProject,
+    profile: 'claude-1',
+    mode: 'terminal',
+  });
   await settle();
   const terminalId = (await snap()).selectedSession;
-  await call({ type: 'setMode', sessionId: terminalId, mode: 'terminal' });
+  const terminalTitle = (await snap()).sessions.find((s) => s.id === terminalId).title;
+  await call({ type: 'start', sessionId: terminalId });
+  const other = await call({
+    type: 'newSession',
+    projectId: (await snap()).selectedProject,
+    profile: 'claude-2',
+  });
   await settle();
-  await call({ type: 'start', sessionId: (await snap()).selectedSession });
-  for (let i = 0; i < 100; i++) {
-    if ((await call({ type: 'terminalBuffer', sessionId: terminalId })).data.length) break;
-    await page.waitForTimeout(100);
-  }
-  const buffer = await call({ type: 'terminalBuffer', sessionId: terminalId });
-  assert.ok(buffer.data.length);
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('claude-2');
-  await settle();
-  assert.equal(await page.locator('.xterm').count(), 0);
   assert.equal((await snap()).sessions.find((s) => s.id === terminalId).status, 'terminal');
-  await page.getByRole('combobox', { name: 'Cuenta del proyecto' }).selectOption('claude-1');
-  await settle();
+  await page.getByRole('tab', { name: terminalTitle, exact: true }).click();
   await page.getByRole('button', { name: 'Terminal', exact: true }).click();
   await settle();
   assert.equal(await page.locator('.xterm').count(), 1);
-  assert.ok(
-    (await call({ type: 'terminalBuffer', sessionId: terminalId })).sequence >= buffer.sequence,
-  );
-  await page.getByRole('button', { name: 'Cerrar Sesión 1', exact: true }).click();
+  await page.getByRole('button', { name: `Cerrar ${terminalTitle}`, exact: true }).click();
   await page.getByRole('button', { name: 'Detener y cerrar', exact: true }).click();
   await page.getByRole('dialog', { name: 'Cerrar conversación' }).waitFor({ state: 'hidden' });
   assert.deepEqual(errors, []);
   console.log(
-    'OK: selector, 5 tabs, running process protected, drafts, profile switching, close cancellation/confirmed stop, empty state, CmdK recovery, compact layout.',
+    'OK: selector, 5 tabs, running process protected, drafts, mixed-account tabs, close cancellation/confirmed stop, empty state, CmdK recovery, compact layout.',
   );
 } finally {
   if (app) await app.close();

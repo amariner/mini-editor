@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Snapshot } from '../src/shared';
+import { sessionAccountLocked } from '../src/session-tabs';
 import {
   claudeConfigSchema,
   codexConfigSchema,
@@ -25,11 +26,39 @@ const block: z.ZodType<any> = z.lazy(() =>
       isError: z.boolean().optional(),
       done: z.boolean().optional(),
       elapsed: z.number().optional(),
+      ms: z.number().optional(),
       children: z.array(block).optional(),
     }),
   ]),
 );
+const toolInfo = z.object({
+  kind: z.enum(['command', 'edit', 'mcp', 'web']),
+  status: z.string().max(40).optional(),
+  command: z.string().max(20000).optional(),
+  output: z.string().max(40000).optional(),
+  exitCode: z.number().optional(),
+  durationMs: z.number().optional(),
+  actions: z
+    .array(
+      z.object({
+        type: z.string().max(40),
+        path: z.string().max(4096).optional(),
+        query: z.string().max(4096).optional(),
+      }),
+    )
+    .max(40)
+    .optional(),
+  files: z
+    .array(z.object({ path: z.string().max(4096), kind: z.string().max(40), diff: z.string() }))
+    .max(500)
+    .optional(),
+  server: z.string().max(200).optional(),
+  tool: z.string().max(200).optional(),
+  query: z.string().max(4096).optional(),
+});
 const schema = z.object({
+  defaultProfile: profileSchema.optional(),
+  removedProfiles: z.array(profileSchema).optional(),
   profiles: z
     .array(
       z.object({
@@ -50,6 +79,7 @@ const schema = z.object({
       title: z.string(),
       reference: z.string().optional(),
       attempted: z.boolean().optional(),
+      accountLocked: z.boolean().optional(),
       mode: z.enum(['chat', 'terminal']).optional(),
       config: claudeConfigSchema.partial().optional(),
       codexConfig: codexConfigSchema.partial().optional(),
@@ -85,6 +115,8 @@ const schema = z.object({
           kind: z.enum(['result', 'compact', 'info', 'error', 'command', 'warning']).optional(),
           model: z.string().optional(),
           at: z.number().optional(),
+          durationMs: z.number().optional(),
+          tool: toolInfo.optional(),
         }),
       ),
     }),
@@ -120,8 +152,12 @@ export class Store {
           ...this.state,
           ...data,
           profiles: definitions,
+          defaultProfile: definitions.some((p) => p.id === data.defaultProfile)
+            ? data.defaultProfile
+            : definitions[0]?.id,
           sessions: data.sessions.map((s) => ({
             ...s,
+            accountLocked: sessionAccountLocked(s),
             config: s.config ? mergeConfig(s.config) : undefined,
             codexConfig: isCodex(s.profile) ? mergeCodexConfig(s.codexConfig) : undefined,
             status: 'stopped',
@@ -157,6 +193,7 @@ export class Store {
           title,
           reference,
           attempted,
+          accountLocked,
           mode,
           config,
           codexConfig,
@@ -169,31 +206,38 @@ export class Store {
           title,
           reference,
           attempted,
+          accountLocked,
           mode,
           config,
           codexConfig,
           stats,
-          messages: messages.map(({ id, role, text, blocks, kind, model, at }) => ({
-            id,
-            role,
-            text,
-            blocks: blocks?.map((b) =>
-              b.type === 'tool_use'
-                ? {
-                    type: b.type,
-                    id: b.id,
-                    name: b.name,
-                    input: b.input,
-                    result: b.result,
-                    isError: b.isError,
-                    children: b.children,
-                  }
-                : { type: b.type, text: b.text },
-            ),
-            kind,
-            model,
-            at,
-          })),
+          messages: messages.map(
+            ({ id, role, text, attachments, blocks, kind, model, at, durationMs, tool }) => ({
+              id,
+              role,
+              text,
+              attachments,
+              blocks: blocks?.map((b) =>
+                b.type === 'tool_use'
+                  ? {
+                      type: b.type,
+                      id: b.id,
+                      name: b.name,
+                      input: b.input,
+                      result: b.result,
+                      isError: b.isError,
+                      ms: b.ms,
+                      children: b.children,
+                    }
+                  : { type: b.type, text: b.text },
+              ),
+              kind,
+              model,
+              at,
+              durationMs,
+              tool,
+            }),
+          ),
         }),
       ),
     };

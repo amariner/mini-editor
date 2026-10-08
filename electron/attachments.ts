@@ -18,6 +18,7 @@ export function imageType(data: Buffer) {
   throw new Error('Formato no compatible. Selecciona PNG, JPEG, GIF o WebP.');
 }
 export class Attachments {
+  private removedSessions = new Set<string>();
   private used = new Set<string>();
   private files = new Map<
     string,
@@ -29,27 +30,51 @@ export class Attachments {
   ) {}
   async add(sessionId: string, paths: string[]) {
     if (paths.length > 4) throw new Error('Puedes adjuntar hasta 4 imágenes por mensaje.');
-    const prepared = [];
+    const images = [];
     for (const filename of paths) {
       const stat = await fs.stat(filename);
       if (!stat.isFile() || stat.size > 5 * 1024 * 1024)
         throw new Error('Cada imagen debe ocupar como máximo 5 MB.');
-      const data = await fs.readFile(filename);
-      if (data.length > 5 * 1024 * 1024) throw new Error('La imagen supera 5 MB.');
+      images.push({ name: path.basename(filename), data: await fs.readFile(filename) });
+    }
+    return this.save(sessionId, images);
+  }
+  async addData(sessionId: string, images: { name: string; data: string }[]) {
+    if (!images.length || images.length > 4)
+      throw new Error('Puedes adjuntar hasta 4 imágenes por mensaje.');
+    const decoded = images.map((image) => {
+      if (image.data.length > 6990508) throw new Error('Cada imagen debe ocupar como máximo 5 MB.');
+      const data = Buffer.from(image.data, 'base64');
+      if (data.toString('base64') !== image.data)
+        throw new Error('Los datos de la imagen no son válidos.');
+      return { name: path.basename(image.name), data };
+    });
+    return this.save(sessionId, decoded);
+  }
+  private async save(sessionId: string, images: { name: string; data: Buffer }[]) {
+    if (this.removedSessions.has(sessionId)) throw new Error('Este chat se ha eliminado.');
+    const prepared = images.map(({ name, data }) => {
+      if (data.length > 5 * 1024 * 1024)
+        throw new Error('Cada imagen debe ocupar como máximo 5 MB.');
       const mediaType = imageType(data),
         id = randomUUID();
-      const attachment = { id, name: path.basename(filename), preview: this.preview(data) };
-      prepared.push({
+      return {
         sessionId,
         path: path.join(this.root, `${id}.${mediaType.split('/')[1]}`),
         mediaType,
-        attachment,
+        attachment: { id, name, preview: this.preview(data) },
         data,
-      });
-    }
+      };
+    });
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
+    try {
+      for (const p of prepared) await fs.writeFile(p.path, p.data, { mode: 0o600 });
+      if (this.removedSessions.has(sessionId)) throw new Error('Este chat se ha eliminado.');
+    } catch (error) {
+      await Promise.allSettled(prepared.map((p) => fs.rm(p.path, { force: true })));
+      throw error;
+    }
     for (const p of prepared) {
-      await fs.writeFile(p.path, p.data, { mode: 0o600 });
       const { data: _data, ...entry } = p;
       this.files.set(p.attachment.id, entry);
     }
@@ -57,6 +82,23 @@ export class Attachments {
   }
   markUsed(ids: string[]) {
     for (const id of ids) this.used.add(id);
+  }
+  async removeSessions(
+    sessions: { id: string; messages: { attachments?: ImageAttachment[] }[] }[],
+  ) {
+    const owners = new Set(sessions.map((s) => s.id));
+    for (const id of owners) this.removedSessions.add(id);
+    const ids = new Set(
+      sessions.flatMap((s) => s.messages.flatMap((m) => m.attachments?.map((a) => a.id) ?? [])),
+    );
+    for (const [id, entry] of this.files) if (owners.has(entry.sessionId)) ids.add(id);
+    for (const id of ids) {
+      if (!/^[a-f0-9-]{36}$/i.test(id)) continue;
+      for (const ext of ['png', 'jpeg', 'gif', 'webp'])
+        await fs.rm(path.join(this.root, `${id}.${ext}`), { force: true });
+      this.files.delete(id);
+      this.used.delete(id);
+    }
   }
   async discard(sessionId: string, ids: string[]) {
     for (const id of ids) {

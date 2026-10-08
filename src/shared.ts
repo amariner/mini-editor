@@ -21,6 +21,7 @@ export const savingLevels = [
   },
   { value: 3, name: 'Intenso', hint: 'Solo lo esencial y menor esfuerzo en tareas sencillas.' },
 ] as const;
+export type Theme = 'system' | 'light' | 'dark';
 export const isCodex = (profile?: string) => profile === 'codex' || !!profile?.startsWith('codex-');
 // Only used to restore state written before profiles were stored explicitly.
 export const legacyProfiles: ProfileDefinition[] = [
@@ -76,8 +77,16 @@ export const permissionModes: { id: PermissionMode; name: string; hint: string }
   { id: 'acceptEdits', name: 'Aceptar ediciones', hint: 'Edita archivos sin preguntar.' },
   { id: 'plan', name: 'Plan', hint: 'Solo lee y propone un plan antes de actuar.' },
   { id: 'auto', name: 'Automático', hint: 'Claude decide con un clasificador de seguridad.' },
-  { id: 'dontAsk', name: 'No preguntar', hint: 'Rechaza lo que necesitaría permiso.' },
-  { id: 'bypassPermissions', name: 'Sin permisos', hint: 'Omite todas las comprobaciones.' },
+  {
+    id: 'dontAsk',
+    name: 'Rechazar sin preguntar',
+    hint: 'Bloquea las acciones que necesitan permiso.',
+  },
+  {
+    id: 'bypassPermissions',
+    name: 'Omitir permisos',
+    hint: 'Autoriza automáticamente las herramientas.',
+  },
 ];
 export const efforts: { id: Effort; name: string }[] = [
   { id: 'low', name: 'Bajo' },
@@ -132,8 +141,26 @@ export type Block =
       isError?: boolean;
       done?: boolean;
       elapsed?: number;
+      /** Wall-clock start and duration, recorded by the app while the tool runs. */
+      at?: number;
+      ms?: number;
       children?: Block[];
     };
+/** Structured view of a Codex item; `text` keeps the legacy flat rendering. */
+export interface ToolInfo {
+  kind: 'command' | 'edit' | 'mcp' | 'web';
+  status?: string;
+  command?: string;
+  output?: string;
+  exitCode?: number;
+  durationMs?: number;
+  /** Codex's own parse of a shell command (read/listFiles/search/unknown). */
+  actions?: { type: string; path?: string; query?: string }[];
+  files?: { path: string; kind: string; diff: string }[];
+  server?: string;
+  tool?: string;
+  query?: string;
+}
 export interface ImageAttachment {
   id: string;
   name: string;
@@ -148,6 +175,9 @@ export interface Message {
   kind?: 'result' | 'compact' | 'info' | 'error' | 'command' | 'warning';
   model?: string;
   at?: number;
+  /** Provider-reported duration of the turn that ends with this message. */
+  durationMs?: number;
+  tool?: ToolInfo;
 }
 export interface Approval {
   id: string | number;
@@ -218,6 +248,7 @@ export interface RateLimit {
   status?: string;
 }
 export interface Session {
+  accountLocked?: boolean;
   optimization?: {
     model: string;
     effort?: string;
@@ -256,13 +287,18 @@ export interface AccountState {
   status: 'unknown' | 'signedIn' | 'signedOut';
   label?: string;
   plan?: string;
-  busy?: 'checking' | 'signingIn' | 'signingOut' | 'cancelling';
+  busy?: 'checking' | 'signingIn' | 'verifying' | 'signingOut' | 'cancelling' | 'removing';
   error?: string;
   terminalId?: string;
   cancellable?: boolean;
+  loginStarting?: boolean;
 }
 export interface Snapshot {
+  theme?: Theme;
+  proxy?: import('./proxy-types').ProxySnapshot;
+  defaultProfile?: Profile;
   profiles?: ProfileDefinition[];
+  removedProfiles?: Profile[];
   browsers?: BrowserState[];
   terminals?: { id: string; projectId: string; status: Status }[];
   coordination?: {
@@ -285,6 +321,11 @@ export interface Snapshot {
   notice?: string;
 }
 export type Action =
+  | { type: 'saveProxy'; config: import('./proxy-types').ProxyUpdate }
+  | { type: 'testProxy'; config: import('./proxy-types').ProxyUpdate; provider: 'codex' | 'claude' }
+  | { type: 'detectProxy' | 'chooseProxyCertificate' }
+  | { type: 'setDefaultAccount'; profile: Profile }
+  | { type: 'changeSessionAccount'; sessionId: string; profile: Profile }
   | { type: 'configureOptimization'; profile: Profile; optimization: TokenOptimization }
   | { type: 'addAccount'; kind: 'claude' | 'codex'; name?: string }
   | { type: 'browser'; sessionId: string; input: BrowserInput }
@@ -298,17 +339,22 @@ export type Action =
       bounds: { x: number; y: number; width: number; height: number };
     }
   | { type: 'openProjectTerminal'; projectId: string }
+  | { type: 'openPath'; projectId: string; path: string; reveal?: boolean }
+  | { type: 'listFiles'; projectId: string; query: string }
+  | { type: 'setTheme'; theme: Theme }
   | { type: 'accountRefresh' | 'accountCancel'; profile: Profile }
   | { type: 'accountLogin' | 'accountLogout'; profile: Profile; stopSessions: boolean }
+  | { type: 'removeAccount'; profile: Profile; confirmed: true }
   | { type: 'snapshot' }
   | { type: 'restartApp' }
   | { type: 'addProject' }
   | { type: 'removeProject'; projectId: string }
   | { type: 'renameProject'; projectId: string; name: string }
   | { type: 'select'; projectId: string; sessionId?: string; profile?: Profile }
-  | { type: 'newSession'; projectId: string; profile: Profile; mode?: 'chat' | 'terminal' }
+  | { type: 'newSession'; projectId: string; profile?: Profile; mode?: 'chat' | 'terminal' }
   | { type: 'start' | 'stop' | 'interrupt' | 'login' | 'cancelLogin'; sessionId: string }
   | { type: 'pickImages'; sessionId: string }
+  | { type: 'dropImages'; sessionId: string; images: { name: string; data: string }[] }
   | { type: 'discardImages'; sessionId: string; attachmentIds: string[] }
   | { type: 'refreshUsage'; profile: Profile }
   | { type: 'send'; sessionId: string; text: string; attachmentIds?: string[] }
@@ -322,6 +368,7 @@ export type Action =
     }
   | { type: 'configure'; sessionId: string; config: Partial<ClaudeConfig> }
   | { type: 'refreshCodexModels'; sessionId: string }
+  | { type: 'refreshModels'; sessionId: string }
   | { type: 'configureCodex'; sessionId: string; config: Partial<CodexConfig> }
   | { type: 'rename'; sessionId: string; title: string }
   | { type: 'setMode'; sessionId: string; mode: 'chat' | 'terminal' }
@@ -330,10 +377,16 @@ export type Action =
   | { type: 'terminalResize'; sessionId: string; cols: number; rows: number }
   | { type: 'terminalBuffer'; sessionId: string }
   | { type: 'diff'; projectId: string }
+  | {
+      type: 'gitOperation';
+      projectId: string;
+      operation: import('./git-types').GitOperation;
+      value?: string;
+    }
   | { type: 'chooseBinary'; tool: 'claude' | 'codex' }
   | { type: 'chooseDirectory'; sessionId: string };
 export type DeskEvent =
-  | { type: 'shortcut'; action: 'search' | 'settings' }
+  | { type: 'shortcut'; action: 'search' | 'settings' | 'resetStyles' }
   | { type: 'browserOpened'; sessionId: string; tabId?: string }
   | { type: 'state'; state: Snapshot }
   | { type: 'terminal'; sessionId: string; data: string; sequence: number };

@@ -20,13 +20,83 @@ function sdk() {
     pathToFileURL(createRequire(from).resolve('@anthropic-ai/claude-agent-sdk')).href,
   ));
 }
+/** Query initialization only: no prompt, conversation persistence, tools or project hooks. */
+export async function readClaudeModels(
+  binary: string,
+  cwd: string,
+  env: Record<string, string>,
+  signal: AbortSignal,
+) {
+  const { query } = await sdk();
+  signal.throwIfAborted();
+  const controller = new AbortController();
+  let wake: (() => void) | undefined;
+  let request: any;
+  const cancel = () => {
+    controller.abort();
+    wake?.();
+    request?.close();
+  };
+  signal.addEventListener('abort', cancel, { once: true });
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    request = query({
+      prompt: (async function* () {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          if (controller.signal.aborted) resolve();
+        });
+      })(),
+      options: {
+        cwd,
+        env,
+        pathToClaudeCodeExecutable: binary,
+        abortController: controller,
+        persistSession: false,
+        settingSources: [],
+        tools: [],
+        mcpServers: {},
+        permissionMode: 'dontAsk',
+      },
+    });
+    const result: any = await Promise.race([
+      request.initializationResult(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () =>
+            reject(
+              new Error('Tiempo agotado al consultar Claude. Vuelve a actualizar los modelos.'),
+            ),
+          60000,
+        );
+        controller.signal.addEventListener(
+          'abort',
+          () => reject(new Error('Consulta cancelada.')),
+          { once: true },
+        );
+      }),
+    ]);
+    return (result.models ?? []).map((m: any) => ({
+      value: m.value,
+      displayName: m.displayName,
+      description: m.description ?? '',
+      supportedEffortLevels: m.supportedEffortLevels,
+    }));
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener('abort', cancel);
+    cancel();
+  }
+}
 type Pending = { resolve: (r: unknown) => void; signal: AbortSignal };
 /** One long-lived Agent SDK query per open session. Messages are queued into its prompt stream. */
 export class ClaudeRuntime {
+  private controller = new AbortController();
   private query: any;
   private queue: any[] = [];
   private wake?: () => void;
   private closed = false;
+  private interrupted = false;
   private pending = new Map<string, Pending>();
   private pid?: number;
   stderr = '';
@@ -46,11 +116,13 @@ export class ClaudeRuntime {
   }
   async start() {
     const { query } = await sdk();
+    if (this.closed) throw new Error('Arranque de Claude cancelado.');
     const s = this.s;
     this.query = query({
       prompt: this.prompt(),
       options: {
         ...this.options,
+        abortController: this.controller,
         stderr: (d: string) => {
           this.stderr = (this.stderr + d).slice(-6000);
         },
@@ -97,7 +169,11 @@ export class ClaudeRuntime {
       reason = 'Claude Code terminó.';
     try {
       for await (const m of this.query) {
-        applyClaudeMessage(s, m);
+        // A turn stopped by the user ends in an execution error; the note already explains it.
+        const stopped =
+          m.type === 'result' && this.interrupted && m.subtype === 'error_during_execution';
+        if (m.type === 'result') this.interrupted = false;
+        applyClaudeMessage(s, stopped ? { ...m, subtype: 'success', is_error: false } : m);
         if (m.type === 'result') void this.refreshContext();
         this.changed();
       }
@@ -191,6 +267,9 @@ export class ClaudeRuntime {
     this.wake?.();
   }
   async interrupt() {
+    const busy = this.s.status === 'working' || this.s.status === 'waiting';
+    // Set before awaiting: the turn's result can arrive while the interrupt is in flight.
+    if (busy) this.interrupted = true;
     for (const [id, p] of this.pending) {
       this.pending.delete(id);
       p.resolve({
@@ -203,6 +282,7 @@ export class ClaudeRuntime {
     await this.query?.interrupt();
     this.s.activity = undefined;
     settle(this.s);
+    if (busy) note(this.s, 'info', 'Interrumpido · Escribe qué debe hacer en su lugar.');
     if (!this.s.approvals.length) this.s.status = 'ready';
   }
   async setModel(model: string) {
@@ -210,7 +290,9 @@ export class ClaudeRuntime {
     if (this.s.info) this.s.info.model = model;
   }
   async setPermissionMode(mode: string) {
-    await this.query?.setPermissionMode(mode);
+    if (!this.query)
+      throw new Error('Claude está arrancando. Vuelve a seleccionar el modo cuando esté listo.');
+    await this.query.setPermissionMode(mode);
     if (this.s.info) this.s.info.permissionMode = mode as any;
   }
   async setEffort(effort?: string) {
@@ -264,6 +346,7 @@ export class ClaudeRuntime {
   }
   async stop() {
     this.closed = true;
+    this.controller.abort();
     this.wake?.();
     try {
       for (const [id, p] of this.pending) {
@@ -274,18 +357,24 @@ export class ClaudeRuntime {
     } catch {
       /* already closed */
     }
-    await Promise.race([
-      this.exit,
-      new Promise<void>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error('No se ha confirmado la salida de Claude. La carpeta sigue bloqueada.'),
-            ),
-          8000,
-        ),
-      ),
-    ]);
+    if (!this.exit) return; // The aborted initialization is awaited by Manager's startup operation.
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.exit,
+        new Promise<void>((_, reject) => {
+          timeout = setTimeout(
+            () =>
+              reject(
+                new Error('No se ha confirmado la salida de Claude. La carpeta sigue bloqueada.'),
+              ),
+            8000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
   get processId() {
     return this.pid;

@@ -10,6 +10,7 @@ import {
   imageType,
 } from '../electron/attachments';
 import { actionSchema } from '../electron/core';
+import { Store } from '../electron/store';
 test('adjuntos de diálogo quedan aislados por chat y viajan con los formatos oficiales', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'desk-attachment-test-'));
   try {
@@ -66,6 +67,64 @@ test('adjuntos de diálogo quedan aislados por chat y viajan con los formatos of
     attachments.markUsed([sent[0].id]);
     await attachments.cleanup();
     assert.equal((await fs.stat(sentPath)).isFile(), true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+test('imágenes soltadas: tipo real, lote atómico, tamaño, aislamiento y miniaturas persistidas', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'desk-dropped-images-'));
+  try {
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6VAAAAABJRU5ErkJggg==';
+    const directory = path.join(root, 'images');
+    const attachments = new Attachments(directory, () => `data:image/png;base64,${png}`);
+    await assert.rejects(
+      attachments.addData('s', [
+        { name: 'ok.png', data: png },
+        { name: 'false.png', data: Buffer.from('not image').toString('base64') },
+      ]),
+      /Formato/,
+    );
+    await assert.rejects(fs.stat(directory));
+    await assert.rejects(
+      attachments.addData('s', [
+        { name: 'huge.png', data: Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64') },
+      ]),
+      /5 MB/,
+    );
+    await assert.rejects(
+      attachments.addData('s', [{ name: 'bad.png', data: '!!' }]),
+      /no son válidos/,
+    );
+    const images = await attachments.addData('s', [{ name: '../photo.png', data: png }]);
+    assert.equal(images[0].name, 'photo.png');
+    assert.equal((await attachments.resolve('s', [images[0].id]))[0].mediaType, 'image/png');
+    await assert.rejects(attachments.resolve('other', [images[0].id]), /no pertenece/);
+    assert.equal(
+      actionSchema.safeParse({
+        type: 'dropImages',
+        sessionId: 's',
+        images: [{ name: 'photo.png', path: '/etc/passwd' }],
+      }).success,
+      false,
+    );
+    const store = new Store(root);
+    store.state.profiles = [{ id: 'codex', kind: 'codex', name: 'Test' }];
+    store.state.sessions = [
+      {
+        id: 's',
+        projectId: 'p',
+        profile: 'codex',
+        title: 'Test',
+        status: 'stopped',
+        approvals: [],
+        messages: [{ id: 'm', role: 'user', text: '', attachments: images }],
+      },
+    ];
+    store.flush();
+    assert.deepEqual(new Store(root).state.sessions[0].messages[0].attachments, images);
+    await attachments.discard('s', [images[0].id]);
+    assert.deepEqual(await fs.readdir(directory), []);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
