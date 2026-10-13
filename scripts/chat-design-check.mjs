@@ -179,7 +179,7 @@ try {
           selectedProject: 'p',
           tools: {},
           dataDir: '/tmp/chat-design',
-          runtime: { protocol: 22 },
+          runtime: { protocol: 29 },
           coordination: [],
         };
         const listeners = new Set();
@@ -462,7 +462,7 @@ try {
       selectedProject: 'p',
       tools: {},
       dataDir: '/tmp/codex',
-      runtime: { protocol: 22 },
+      runtime: { protocol: 29 },
       coordination: [],
     };
     window.desk = {

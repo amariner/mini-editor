@@ -62,7 +62,7 @@ try {
   await page.getByRole('button', { name: 'Eliminar cuenta Antigua', exact: true }).click();
   const confirmation = page.getByRole('alertdialog', { name: 'Confirmar eliminación de cuenta' });
   await confirmation.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  assert.equal(await page.locator('.account-card').count(), 2);
+  assert.equal(await page.locator('.account-card[aria-label^="Cuenta "]').count(), 2);
   await page.getByRole('button', { name: 'Eliminar cuenta Antigua', exact: true }).click();
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/eliminar-cuenta-confirmacion.png' });
@@ -70,7 +70,7 @@ try {
   await page
     .getByRole('region', { name: 'Cuenta Antigua', exact: true })
     .waitFor({ state: 'detached' });
-  assert.equal(await page.locator('.account-card').count(), 1);
+  assert.equal(await page.locator('.account-card[aria-label^="Cuenta "]').count(), 1);
   await page.getByRole('button', { name: 'Eliminar cuenta Otra', exact: true }).click();
   await confirmation.getByRole('button', { name: 'Confirmar eliminación', exact: true }).click();
   await page.getByText('No hay cuentas. Pulsa «Añadir cuenta» para crear la primera.').waitFor();

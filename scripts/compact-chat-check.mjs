@@ -74,7 +74,7 @@ try {
       selectedProject: 'p',
       tools: {},
       dataDir: '/tmp/compact-chat-fixture',
-      runtime: { protocol: 22 },
+      runtime: { protocol: 29 },
       coordination: [],
     };
     const listeners = new Set();

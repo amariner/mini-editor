@@ -91,7 +91,7 @@ try {
   await page.screenshot({ path: 'artifacts/codex-permisos-menu.png' });
   await page.getByRole('button', { name: /^Acceso total Puede escribir/ }).click();
   await poll((s) => s.codexConfig?.sandbox === 'danger-full-access');
-  assert.match(await menu.innerText(), /Acceso total/);
+  await menu.filter({ hasText: 'Acceso total' }).waitFor();
   await call({ type: 'start', sessionId: 's' });
   await call({ type: 'send', sessionId: 's', text: 'Primera tarea' });
   await poll((s) => s.status === 'ready');

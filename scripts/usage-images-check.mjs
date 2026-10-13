@@ -92,8 +92,8 @@ try {
   await until(async () => !Object.values((await snap()).accounts).some((a) => a.busy));
   await call({ type: 'refreshUsage', profile: 'codex' });
   assert.equal((await snap()).accounts.codex.usage?.windows?.length ?? 0, 0);
-  await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).click();
-  await page.locator('.attachment-thumb').waitFor();
+  // Changing the account before the first send keeps the chat's draft image.
+  assert.equal(await page.locator('.attachment-thumb').count(), 1);
   await page.getByRole('button', { name: 'Enviar', exact: true }).click();
   await page.getByRole('button', { name: 'Gestionar cuenta en Ajustes', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Cerrar error', exact: true }).click();

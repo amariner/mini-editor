@@ -48,7 +48,7 @@ try {
     false,
   );
   await page.getByRole('button', { name: 'Añadir cuenta', exact: true }).click();
-  assert.equal(await page.locator('.account-card').count(), 0);
+  assert.equal(await page.locator('.account-card[aria-label^="Cuenta "]').count(), 0);
   await page.getByText('No hay cuentas. Pulsa «Añadir cuenta» para crear la primera.').waitFor();
   await page.getByRole('button', { name: 'Cerrar ajustes' }).click();
   await app.close();
@@ -128,7 +128,7 @@ try {
   assert.equal(state.sessions.find((s) => s.profile === codex.id).status, 'stopped');
   assert.equal(state.sessions.find((s) => s.profile === claude.id).status, 'ready');
   await call({ type: 'stop', sessionId: state.sessions.find((s) => s.profile === claude.id).id });
-  const icons = await page.locator('.composer-chips .chip-btn').allTextContents();
+  const icons = await page.locator('.composer-chips .chip-btn:not(.labeled)').allTextContents();
   assert.ok(icons.every((x) => !x.trim()));
   await page.getByRole('button', { name: 'Navegador', exact: true }).click();
   const tabs = await page.locator('.session-tabs-bar').boundingBox();
