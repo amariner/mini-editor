@@ -35,7 +35,7 @@ try {
       selectedProject: 'p',
       tools: {},
       dataDir: '/tmp/interface-fixture',
-      runtime: { protocol: 21 },
+      runtime: { protocol: 22 },
       coordination: [],
     };
     const listeners = new Set();

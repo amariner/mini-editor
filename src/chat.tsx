@@ -6,6 +6,11 @@ import {
   type ProviderKind,
   isCodex,
 } from './shared';
+import {
+  codexApprovalChoices,
+  codexPermissionLabel,
+  codexPermissionModes,
+} from './codex-permissions';
 import { readDroppedFiles } from './image-drop';
 import { conversationEntries, currentActivity, working } from './conversation';
 import { CodexCatalogStatus } from './codex-catalog';
@@ -55,13 +60,7 @@ import type {
   Attachment,
   TokenOptimization,
 } from './shared';
-import {
-  codexApprovals,
-  efforts,
-  permissionModes,
-  defaultOptimization,
-  savingLevels,
-} from './shared';
+import { efforts, permissionModes, defaultOptimization, savingLevels } from './shared';
 import { CodeBlock, Markdown, useChatActions } from './markdown';
 import { antigravityDenied } from './antigravity-permissions';
 import {
@@ -1241,9 +1240,10 @@ export function CodexApproval({
   const questions = approval.method === 'item/tool/requestUserInput',
     unsupported = approval.method === 'mcpServer/elicitation/request';
   const p = approval.params;
-  const available = p.availableDecisions;
+  const choices = codexApprovalChoices(approval.method, p);
+  const permissions = approval.method === 'item/permissions/requestApproval';
   const item = session.messages.find((m) => m.id === p.itemId);
-  const decide = (decision: 'accept' | 'decline') =>
+  const decide = (decision: 'accept' | 'always' | 'decline') =>
     run({
       type: 'approve',
       sessionId: session.id,
@@ -1251,19 +1251,16 @@ export function CodexApproval({
       decision,
       answers: decision === 'accept' ? answers : undefined,
     });
-  const canAccept = !unsupported && !(available && !available.includes('accept'));
   return (
     <section
       className="approval"
       aria-label="Solicitud de Codex"
       onKeyDown={(e) => {
         const n = digit(e);
-        if (n === 1 && canAccept && !questions) {
+        const choice = n ? choices[n - 1] : undefined;
+        if (!questions && choice) {
           e.preventDefault();
-          void decide('accept');
-        } else if (n === 2 && !questions) {
-          e.preventDefault();
-          void decide('decline');
+          void decide(choice.decision);
         }
       }}
     >
@@ -1274,11 +1271,13 @@ export function CodexApproval({
             ? 'Codex necesita tu respuesta'
             : unsupported
               ? 'Solicitud MCP no compatible'
-              : item?.tool?.kind === 'edit'
-                ? 'Codex quiere modificar archivos'
-                : p.command
-                  ? 'Codex quiere ejecutar un comando'
-                  : 'Codex necesita tu aprobación'}
+              : permissions
+                ? 'Codex solicita acceso adicional'
+                : item?.tool?.kind === 'edit'
+                  ? 'Codex quiere modificar archivos'
+                  : p.command
+                    ? 'Codex quiere ejecutar un comando'
+                    : 'Codex necesita tu aprobación'}
         </strong>
         <Counter index={index} total={total} />
       </div>
@@ -1310,6 +1309,21 @@ export function CodexApproval({
             />
           </label>
         ))
+      ) : permissions ? (
+        <div className="approval-preview">
+          {p.permissions?.network?.enabled && <p>Acceso a la red</p>}
+          {(['read', 'write'] as const).map((access) =>
+            p.permissions?.fileSystem?.[access]?.map((path: string) => (
+              <p key={`${access}:${path}`}>
+                {access === 'read' ? 'Leer' : 'Escribir'}: <code>{path}</code>
+              </p>
+            )),
+          )}
+          <details>
+            <summary>Ver todos los accesos solicitados</summary>
+            <pre className="code">{JSON.stringify(p.permissions, null, 2)}</pre>
+          </details>
+        </div>
       ) : p.command ? (
         <CodeBlock code={String(p.command)} lang="bash" />
       ) : item?.tool ? (
@@ -1323,23 +1337,47 @@ export function CodexApproval({
         </pre>
       )}
       {p.cwd && <p className="muted">Directorio: {p.cwd}</p>}
+      {p.grantRoot && (
+        <p className="muted">
+          Carpeta solicitada: <code>{p.grantRoot}</code>
+        </p>
+      )}
+      {p.networkApprovalContext && (
+        <p className="muted">
+          Acceso de red: <code>{p.networkApprovalContext.host}</code>
+        </p>
+      )}
+      {p.additionalPermissions && (
+        <pre className="code">{JSON.stringify(p.additionalPermissions, null, 2)}</pre>
+      )}
+      {permissions && (
+        <p className="muted">
+          Elige cuánto tiempo permitir estos accesos. No cambia el modo general del chat.
+        </p>
+      )}
       <div className="approval-actions">
-        {!unsupported && (
+        {questions ? (
           <button
             ref={primary}
             className="primary"
-            disabled={available && !available.includes('accept')}
+            disabled={(p.questions ?? []).some((q: any) => !answers[q.id]?.trim())}
             onClick={() => void decide('accept')}
           >
-            {!questions && <kbd aria-hidden="true">1</kbd>}
-            {questions ? 'Enviar respuesta' : 'Aprobar una vez'}
+            Enviar respuesta
           </button>
-        )}
-        {!questions && (
-          <button className="danger" onClick={() => void decide('decline')}>
-            <kbd aria-hidden="true">2</kbd>
-            Rechazar
-          </button>
+        ) : (
+          choices.map((choice, i) => (
+            <button
+              key={choice.decision}
+              ref={i === 0 ? primary : undefined}
+              className={choice.decision === 'decline' ? 'danger' : i === 0 ? 'primary' : ''}
+              title={choice.hint}
+              onClick={() => void decide(choice.decision)}
+            >
+              <kbd aria-hidden="true">{i + 1}</kbd>
+              {choice.label}
+            </button>
+          ))
         )}
         <button className="quiet" onClick={() => run({ type: 'interrupt', sessionId: session.id })}>
           Interrumpir
@@ -1741,6 +1779,11 @@ export function Composer({
   const context = claude ? session.stats?.contextPercent : undefined;
   return (
     <div className="composer-area">
+      {!claude && session.notice && (
+        <p className="codex-permission-timing" role="status">
+          {session.notice}
+        </p>
+      )}
       {menu && (
         <div
           className="slash-menu"
@@ -2143,57 +2186,47 @@ export function Composer({
                   )}
                 </Popover>
                 {(() => {
-                  const full =
-                    session.codexConfig?.sandbox === 'danger-full-access' &&
-                    session.codexConfig.approvalPolicy === 'never';
-                  const policy = codexApprovals.find(
-                    (a) => a.id === session.codexConfig?.approvalPolicy,
-                  );
+                  const label = codexPermissionLabel(session.codexConfig);
+                  const full = label === 'Acceso total';
                   return (
                     <Popover
-                      label={full ? 'Acceso total' : (policy?.name ?? 'Aprobaciones')}
-                      icon={full || policy?.id === 'never' ? ShieldAlert : ShieldCheck}
-                      text={
-                        full ? 'Acceso total' : policy?.id === 'never' ? policy.name : undefined
-                      }
-                      title="Política de aprobación"
+                      label={label}
+                      icon={full ? ShieldAlert : ShieldCheck}
+                      text={label}
+                      title="Permisos de Codex"
                     >
                       {(close) => (
                         <>
-                          <button
-                            className={full ? 'on' : ''}
-                            onClick={() => {
-                              void run({
-                                type: 'configureCodex',
-                                sessionId: session.id,
-                                config: { sandbox: 'danger-full-access', approvalPolicy: 'never' },
-                              });
-                              close();
-                            }}
-                          >
-                            <strong>Acceso total</strong>
-                          </button>
-                          {codexApprovals.map((a) => (
+                          {codexPermissionModes.map((m) => (
                             <button
-                              key={a.id}
-                              className={a.id === session.codexConfig?.approvalPolicy ? 'on' : ''}
-                              onClick={() => {
-                                void run({
+                              key={m.name}
+                              className={
+                                m.sandbox === session.codexConfig?.sandbox &&
+                                m.approvalPolicy === session.codexConfig?.approvalPolicy
+                                  ? 'on'
+                                  : ''
+                              }
+                              aria-pressed={
+                                m.sandbox === session.codexConfig?.sandbox &&
+                                m.approvalPolicy === session.codexConfig?.approvalPolicy
+                              }
+                              onClick={async () => {
+                                const result = await run({
                                   type: 'configureCodex',
                                   sessionId: session.id,
-                                  config: {
-                                    approvalPolicy: a.id,
-                                    ...(session.codexConfig?.sandbox === 'danger-full-access'
-                                      ? { sandbox: 'workspace-write' as const }
-                                      : {}),
-                                  },
+                                  config: { sandbox: m.sandbox, approvalPolicy: m.approvalPolicy },
                                 });
-                                close();
+                                if (result) close();
                               }}
                             >
-                              <strong>{a.name}</strong>
+                              <strong>{m.name}</strong>
+                              <small>{m.hint}</small>
                             </button>
                           ))}
+                          <small className="codex-permission-timing">
+                            Se aplica al siguiente mensaje. Una acción pendiente se autoriza en su
+                            propia solicitud.
+                          </small>
                         </>
                       )}
                     </Popover>
