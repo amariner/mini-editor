@@ -1,11 +1,18 @@
-import { isCodex } from './shared';
-import { readDroppedImages } from './image-drop';
+import { ReadAloudButton } from './read-aloud-button';
+import {
+  providerNames,
+  providerKind,
+  isConnectedProvider,
+  type ProviderKind,
+  isCodex,
+} from './shared';
+import { readDroppedFiles } from './image-drop';
 import { conversationEntries, currentActivity, working } from './conversation';
 import { CodexCatalogStatus } from './codex-catalog';
 import { signatureModel, reportedTokens, compactTokens } from './task-signature';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ImagePlus,
+  Paperclip,
   X,
   Square,
   ChevronDown,
@@ -45,7 +52,7 @@ import type {
   Message,
   Session,
   SlashCommand,
-  ImageAttachment,
+  Attachment,
   TokenOptimization,
 } from './shared';
 import {
@@ -56,6 +63,7 @@ import {
   savingLevels,
 } from './shared';
 import { CodeBlock, Markdown, useChatActions } from './markdown';
+import { antigravityDenied } from './antigravity-permissions';
 import {
   duration,
   fileChanges,
@@ -330,6 +338,17 @@ function BlockDetail({ b }: { b: ToolBlock }) {
 function MessageDetail({ m }: { m: Message }) {
   const t = m.tool;
   if (!t) return <Output text={m.text} error={m.kind === 'error'} />;
+  if (antigravityDenied(m))
+    return (
+      <div className="permission-detail">
+        <p>Esta acción no se ha ejecutado. Antigravity requiere tu autorización.</p>
+        {t.command && <pre className="code">{t.command}</pre>}
+        <details>
+          <summary>Detalles técnicos</summary>
+          <Output text={t.output} />
+        </details>
+      </div>
+    );
   if (t.kind === 'command')
     return (
       <>
@@ -368,13 +387,14 @@ function MessageDetail({ m }: { m: Message }) {
 const MONO = new Set<StepKind>(['command', 'search', 'list', 'read', 'edit', 'create']);
 function StepRow({ step }: { step: Step }) {
   const [open, setOpen] = useState(false);
+  const permission = antigravityDenied(step.message);
   const Icon = ICONS[step.kind];
   const target = step.kind === 'command' ? step.label || step.detail : step.label;
   const ms =
     step.ms ?? (step.running ? undefined : step.block?.elapsed && step.block.elapsed * 1000);
   return (
     <div
-      className={`tool step k-${step.kind} ${step.running ? 'running' : ''} ${step.error ? 'failed' : ''}`}
+      className={`tool step k-${step.kind} ${step.running ? 'running' : ''} ${permission ? 'permission-blocked' : step.error ? 'failed' : ''}`}
     >
       <button
         className="tool-head"
@@ -385,7 +405,9 @@ function StepRow({ step }: { step: Step }) {
         <span className="tool-icon" aria-hidden="true">
           <Icon size={13} />
         </span>
-        <span className="tool-name">{VERBS[step.kind][step.running ? 1 : 0]}</span>
+        <span className="tool-name">
+          {permission ? 'No ejecutado' : VERBS[step.kind][step.running ? 1 : 0]}
+        </span>
         <span className={`tool-summary ${MONO.has(step.kind) ? 'mono' : ''}`}>{target}</span>
         {(step.added || step.removed) && !step.running ? (
           <span className="step-lines">
@@ -398,6 +420,8 @@ function StepRow({ step }: { step: Step }) {
             <i className="spinner" />
             {step.block?.elapsed ? `${Math.round(step.block.elapsed)} s` : ''}
           </span>
+        ) : permission ? (
+          <span className="tool-state">Sin permiso</span>
         ) : step.error ? (
           <span className="tool-state error">{step.exit ? `exit ${step.exit}` : 'Error'}</span>
         ) : step.exit ? (
@@ -452,6 +476,8 @@ function WorkFeed({ items }: { items: ReturnType<typeof workItems> }) {
 }
 function SystemNote({ m }: { m: Message }) {
   const kind = m.kind ?? 'info';
+  // The contextual permission card replaces this older CLI recovery instruction.
+  if (kind === 'warning' && m.text.startsWith('Gemini necesita permiso')) return null;
   if (kind === 'compact')
     return (
       <div className="row system compact" role="note">
@@ -472,6 +498,28 @@ function SystemNote({ m }: { m: Message }) {
     </div>
   );
 }
+export function AttachmentPreview({ attachment: file }: { attachment: Attachment }) {
+  if (file.preview) return <img src={file.preview} alt={file.name} title={file.name} />;
+  const size =
+    file.size == null
+      ? ''
+      : file.size < 1024 * 1024
+        ? `${Math.ceil(file.size / 1024)} KB`
+        : `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+  const extension = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : 'ARCHIVO';
+  return (
+    <div className="attachment-file" title={file.name}>
+      <FileText size={22} aria-hidden="true" />
+      <div>
+        <strong>{file.name}</strong>
+        <span>
+          {extension}
+          {size ? ` · ${size}` : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
 function UserMessage({ m }: { m: Message }) {
   const { reuse } = useChatActions();
   const long = m.text.length > 900 || m.text.split('\n').length > 14;
@@ -482,7 +530,7 @@ function UserMessage({ m }: { m: Message }) {
         {m.attachments?.length ? (
           <div className="message-images">
             {m.attachments.map((i) => (
-              <img key={i.id} src={i.preview} alt={i.name} title={i.name} />
+              <AttachmentPreview key={i.id} attachment={i} />
             ))}
           </div>
         ) : null}
@@ -523,7 +571,7 @@ export function MessageView({
   showAuthor = true,
 }: {
   m: Message;
-  kind: 'claude' | 'codex';
+  kind: ProviderKind;
   showAuthor?: boolean;
 }) {
   if (m.role === 'user') return <UserMessage m={m} />;
@@ -534,7 +582,7 @@ export function MessageView({
       {showAuthor && (
         <div className="author">
           <span className={`glyph ${kind}`}>{kind === 'codex' ? '◈' : '✳'}</span>
-          {kind === 'codex' ? 'Codex' : 'Claude'}
+          {providerNames[kind]}
           {m.model && <span className="model-tag">{prettyModel(m.model)}</span>}
         </div>
       )}
@@ -608,15 +656,24 @@ function ResponseGroup({
   kind,
 }: {
   entry: Extract<ReturnType<typeof conversationEntries>[number], { type: 'response' }>;
-  kind: 'claude' | 'codex';
+  kind: ProviderKind;
 }) {
   const { root } = useChatActions();
   const items = workItems(entry.work, root);
+  const progress = items.filter((w) => w.type === 'text');
+  const details = items.filter((w) => w.type !== 'text');
   const steps = items.flatMap((w) => (w.type === 'step' ? [w.step] : []));
+  const blocked = steps.filter((step) => antigravityDenied(step.message)).length;
+  const errors = Math.max(0, entry.errors - blocked);
   const ms = [...entry.messages].reverse().find((m) => m.durationMs)?.durationMs;
   const model = prettyModel(entry.answer?.model ?? entry.messages.find((m) => m.model)?.model);
   const summary =
-    summarize(steps) || (items.some((w) => w.type === 'thinking') ? 'Razonó' : 'Ver actividad');
+    summarize(steps.filter((step) => !antigravityDenied(step.message))) ||
+    (blocked
+      ? `${blocked} ${blocked === 1 ? 'acción sin ejecutar' : 'acciones sin ejecutar'}`
+      : items.some((w) => w.type === 'thinking')
+        ? 'Razonó'
+        : 'Ver actividad');
   const time = duration(ms);
   const text = entry.answer ? answerText(entry.answer) : '';
   const at = entry.answer?.at ?? [...entry.messages].reverse().find((m) => m.at)?.at;
@@ -625,26 +682,37 @@ function ResponseGroup({
     : '';
   return (
     <div className="response-group">
-      {entry.work.length > 0 && (
-        <details className={`response-work ${entry.errors ? 'has-errors' : ''}`}>
+      {progress.map((w) => (
+        <div className="row assistant progress-message" key={w.id}>
+          <Markdown text={w.text} />
+        </div>
+      ))}
+      {!entry.pending && details.length > 0 && (
+        <details className={`response-work ${errors ? 'has-errors' : ''}`}>
           <summary>
             <span>{summary}</span>
             {time && <span className="work-time">{time}</span>}
-            {entry.errors ? (
+            {blocked > 0 && <span className="work-permissions">Requiere permiso</span>}
+            {errors ? (
               <span className="work-errors">
-                {entry.errors} {entry.errors === 1 ? 'error' : 'errores'}
+                {errors} {errors === 1 ? 'error' : 'errores'}
               </span>
             ) : null}
             <ChevronRight size={12} />
           </summary>
-          <WorkFeed items={items} />
+          <WorkFeed items={details} />
         </details>
       )}
       {entry.answer && <MessageView m={entry.answer} kind={kind} showAuthor={false} />}
-      <TurnChanges messages={entry.messages} />
-      {(text || model || clock) && (
+      {!entry.pending && <TurnChanges messages={entry.messages} />}
+      {!entry.pending && (text || model || clock) && (
         <div className="msg-actions response-actions">
-          {text && <CopyButton text={text} label="Copiar respuesta" />}
+          {text && (
+            <>
+              <CopyButton text={text} label="Copiar respuesta" />
+              <ReadAloudButton text={text} />
+            </>
+          )}
           <span className="msg-meta">
             {[model, !entry.work.length && time ? time : '', clock].filter(Boolean).join(' · ')}
           </span>
@@ -653,19 +721,12 @@ function ResponseGroup({
     </div>
   );
 }
-export function ConversationMessages({
-  session,
-  kind,
-}: {
-  session: Session;
-  kind: 'claude' | 'codex';
-}) {
+export function ConversationMessages({ session, kind }: { session: Session; kind: ProviderKind }) {
   return (
     <>
       {conversationEntries(session).map((entry) => {
         if (entry.type === 'message')
           return <MessageView key={entry.id} m={entry.message} kind={kind} />;
-        if (entry.pending) return null;
         return <ResponseGroup key={entry.id} entry={entry} kind={kind} />;
       })}
     </>
@@ -702,7 +763,7 @@ function turnStart(session: Session) {
   turnStarts[session.id] = { key, at: Date.now() };
   return turnStarts[session.id].at;
 }
-export function ActivityDock({ session, kind }: { session: Session; kind: 'claude' | 'codex' }) {
+export function ActivityDock({ session, kind }: { session: Session; kind: ProviderKind }) {
   const [open, setOpen] = useState(false);
   const { root } = useChatActions();
   const active = working(session);
@@ -738,7 +799,7 @@ export function ActivityDock({ session, kind }: { session: Session; kind: 'claud
     <div className={`activity-dock ${waiting ? 'waiting' : ''}`}>
       {open && activity && (
         <div className="activity-log" id={`activity-${session.id}`}>
-          <WorkFeed items={items} />
+          <WorkFeed items={items.filter((w) => w.type !== 'text')} />
         </div>
       )}
       <button
@@ -1081,6 +1142,87 @@ export function ClaudeApproval({
     </section>
   );
 }
+export function ProviderApproval({
+  approval,
+  session,
+  run,
+}: {
+  approval: Approval;
+  session: Session;
+  run: (a: Action) => Promise<any>;
+}) {
+  const externalRead = approval.method === 'provider/read-external';
+  const readScope = approval.input as { path?: string; directory?: string } | undefined;
+  return (
+    <section className="approval" aria-label="Permiso solicitado">
+      <div className="approval-title">
+        <ShieldAlert size={15} />
+        <strong>{approval.title ?? 'Permiso solicitado'}</strong>
+      </div>
+      {externalRead ? (
+        <>
+          <p>El modelo solicita leer esta ruta:</p>
+          <pre className="provider-approval-content">{readScope?.path}</pre>
+          {readScope?.directory !== readScope?.path && (
+            <>
+              <p>Carpeta que puedes autorizar para este chat:</p>
+              <pre className="provider-approval-content">{readScope?.directory}</pre>
+            </>
+          )}
+          <p>
+            Autorizar la carpeta incluye sus subcarpetas, solo para lectura. Se recuerda hasta
+            detener el chat o reiniciar la app. El contenido leído se envía al modelo.
+          </p>
+        </>
+      ) : (
+        <pre className="provider-approval-content">
+          {JSON.stringify(approval.input ?? approval.params, null, 2)}
+        </pre>
+      )}
+      <div className="approval-actions">
+        <button
+          className="primary"
+          onClick={() =>
+            void run({
+              type: 'approve',
+              sessionId: session.id,
+              requestId: approval.id,
+              decision: 'accept',
+            })
+          }
+        >
+          Permitir una vez
+        </button>
+        {externalRead && (
+          <button
+            onClick={() =>
+              void run({
+                type: 'approve',
+                sessionId: session.id,
+                requestId: approval.id,
+                decision: 'always',
+              })
+            }
+          >
+            Permitir carpeta en este chat
+          </button>
+        )}
+        <button
+          onClick={() =>
+            void run({
+              type: 'approve',
+              sessionId: session.id,
+              requestId: approval.id,
+              decision: 'decline',
+            })
+          }
+        >
+          Rechazar
+        </button>
+      </div>
+    </section>
+  );
+}
 export function CodexApproval({
   approval,
   session,
@@ -1323,9 +1465,9 @@ export function Composer({
   draft: string;
   setDraft: (v: string) => void;
   run: Run;
-  images: ImageAttachment[];
-  setImages: (images: ImageAttachment[]) => void;
-  onSend: (text: string, images: ImageAttachment[]) => Promise<boolean>;
+  images: Attachment[];
+  setImages: (images: Attachment[]) => void;
+  onSend: (text: string, images: Attachment[]) => Promise<boolean>;
   onLocalCommand: (name: string, arg: string) => boolean;
   footerControl?: React.ReactNode;
 }) {
@@ -1343,7 +1485,8 @@ export function Composer({
   const imagesRef = useRef(images);
   imagesRef.current = images;
   const sendingRef = useRef(false);
-  const claude = !isCodex(session.profile);
+  const connected = isConnectedProvider(session.profile);
+  const claude = providerKind(session.profile) === 'claude';
   const config = session.config;
   const signature = signatureModel(session, optimization, !!draft.trim() || !!images.length);
   const tokens = reportedTokens(session);
@@ -1358,11 +1501,11 @@ export function Composer({
     });
   const chooseModel = async (model: string) => {
     const changed = await run({
-      type: claude ? 'configure' : 'configureCodex',
+      type: connected ? 'configureProvider' : claude ? 'configure' : 'configureCodex',
       sessionId: session.id,
       config: { model },
     });
-    if (changed) await optimize({ autoModel: false });
+    if (changed && !connected) await optimize({ autoModel: false });
   };
   const autoOption = (close: () => void) => (
     <button
@@ -1388,22 +1531,12 @@ export function Composer({
     setPicking(true);
     setImageError('');
     try {
-      if (files && imagesRef.current.length + files.length > 4)
-        throw new Error('Puedes adjuntar hasta 4 imágenes por mensaje.');
-      const chosen: ImageAttachment[] | undefined = await run(
+      const chosen: Attachment[] | undefined = await run(
         files
-          ? { type: 'dropImages', sessionId: session.id, images: await readDroppedImages(files) }
+          ? { type: 'dropImages', sessionId: session.id, images: await readDroppedFiles(files) }
           : { type: 'pickImages', sessionId: session.id },
       );
       if (chosen?.length) {
-        if (imagesRef.current.length + chosen.length > 4) {
-          await run({
-            type: 'discardImages',
-            sessionId: session.id,
-            attachmentIds: chosen.map((i) => i.id),
-          });
-          throw new Error('Puedes adjuntar hasta 4 imágenes por mensaje.');
-        }
         const next = [...imagesRef.current, ...chosen];
         imagesRef.current = next;
         setImages(next);
@@ -1450,7 +1583,7 @@ export function Composer({
       e.stopPropagation();
       reset();
       if (!enabled || sendingRef.current || pickingRef.current) {
-        setImageError('Espera a que el chat esté disponible para adjuntar imágenes.');
+        setImageError('Espera a que el chat esté disponible para adjuntar archivos.');
         return;
       }
       void attach(Array.from(e.dataTransfer?.files ?? []));
@@ -1667,10 +1800,10 @@ export function Composer({
           <div className="attachment-list">
             {images.map((i) => (
               <div className="attachment-thumb" key={i.id}>
-                <img src={i.preview} alt={i.name} title={i.name} />
+                <AttachmentPreview attachment={i} />
                 <button
                   aria-label={`Quitar ${i.name}`}
-                  title="Quitar imagen"
+                  title="Quitar archivo"
                   disabled={sending || picking}
                   onClick={() => {
                     setImages(images.filter((x) => x.id !== i.id));
@@ -1707,10 +1840,8 @@ export function Composer({
           }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onPaste={(e) => {
-            // Screenshots pasted with ⌘V become attachments; text pastes stay untouched.
-            const pasted = Array.from(e.clipboardData.files).filter((f) =>
-              f.type.startsWith('image/'),
-            );
+            // File pastes become attachments; ordinary text pastes stay untouched.
+            const pasted = Array.from(e.clipboardData.files);
             if (!pasted.length) return;
             e.preventDefault();
             void attach(
@@ -1780,39 +1911,79 @@ export function Composer({
           <div className="composer-chips">
             <button
               className="chip-btn attach-image"
-              aria-label="Adjuntar imágenes"
-              title="Adjuntar imágenes · PNG, JPEG, GIF, WebP · Hasta 4 de 5 MB"
-              disabled={!enabled || sending || picking || images.length >= 4}
+              aria-label="Adjuntar archivos"
+              title="Adjuntar archivos · PDF, CSV, Office, texto, código e imágenes"
+              disabled={!enabled || sending || picking}
               onClick={() => void attach()}
             >
-              <ImagePlus size={15} />
+              <Paperclip size={15} />
             </button>
-            <Popover
-              label={
-                savingLevels.find((l) => l.value === optimization.level)?.name ?? 'Desactivado'
-              }
-              icon={Leaf}
-              active={optimization.level > 0}
-              title="Ahorro de tokens"
-            >
-              {(close) => (
-                <>
-                  {savingLevels.map((level) => (
+            {!connected && (
+              <Popover
+                label={
+                  savingLevels.find((l) => l.value === optimization.level)?.name ?? 'Desactivado'
+                }
+                icon={Leaf}
+                active={optimization.level > 0}
+                title="Ahorro de tokens"
+              >
+                {(close) => (
+                  <>
+                    {savingLevels.map((level) => (
+                      <button
+                        key={level.value}
+                        className={optimization.level === level.value ? 'on' : ''}
+                        onClick={() => {
+                          void optimize({ level: level.value });
+                          close();
+                        }}
+                      >
+                        <strong>{level.name}</strong>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </Popover>
+            )}
+            {connected ? (
+              <Popover
+                label={
+                  session.info?.models.find((m) => m.value === session.providerConfig?.model)
+                    ?.displayName ??
+                  session.providerConfig?.model ??
+                  'Modelo'
+                }
+                icon={Sparkles}
+                title="Modelo"
+              >
+                {(close) => (
+                  <>
                     <button
-                      key={level.value}
-                      className={optimization.level === level.value ? 'on' : ''}
+                      disabled={working}
                       onClick={() => {
-                        void optimize({ level: level.value });
+                        void chooseModel('default');
                         close();
                       }}
                     >
-                      <strong>{level.name}</strong>
+                      Predeterminado
                     </button>
-                  ))}
-                </>
-              )}
-            </Popover>
-            {claude ? (
+                    {(session.info?.models ?? []).map((m) => (
+                      <button
+                        key={m.value}
+                        disabled={working}
+                        onClick={() => {
+                          void chooseModel(m.value);
+                          close();
+                        }}
+                      >
+                        <strong>{m.displayName}</strong>
+                      </button>
+                    ))}
+                    <CodexCatalogStatus session={session} run={run} compact />
+                  </>
+                )}
+              </Popover>
+            ) : claude ? (
               <>
                 <Popover
                   label={

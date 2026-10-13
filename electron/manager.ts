@@ -1,8 +1,18 @@
 import { readGit, changeGit, repositoryRoot } from './git';
 import type { GitOperation } from '../src/git-types';
-import { codexImageContent, type PreparedImage } from './attachments';
+import { codexAttachmentContent, type PreparedAttachment } from './attachments';
 import { codexUsage, claudeUsage } from '../src/subscription-usage';
-import { isCodex, defaultOptimization, type TokenOptimization } from '../src/shared';
+import {
+  providerKind,
+  providerNames,
+  isConnectedProvider,
+  type ProviderKind,
+  type ModelSelection,
+  type ProviderConfig,
+  isCodex,
+  defaultOptimization,
+  type TokenOptimization,
+} from '../src/shared';
 import { sessionAccountLocked } from '../src/session-tabs';
 import { savingInstructions, turnOptimization } from './token-optimization';
 import { fetchCodexModels, selectCodexConfig, resolveCodexModel } from './codex-models';
@@ -42,9 +52,21 @@ import {
   mergeConfig,
   profileDirectory,
 } from './core';
+import type { ProviderServices } from './openrouter';
+import type { ProviderRuntime } from './provider-runtime';
+import { OpenRouterRuntime } from './openrouter-runtime';
+import { GeminiRuntime, geminiRpc, geminiAccount } from './gemini';
+import {
+  AntigravityRuntime,
+  antigravityEnv,
+  isAntigravity,
+  linkedAntigravity,
+} from './antigravity';
 const exec = promisify(execFile);
 type Runtime = {
-  pendingImages?: import('../src/shared').ImageAttachment[];
+  provider?: ProviderRuntime;
+  pendingImages?: import('../src/shared').Attachment[];
+  pendingUserText?: string;
   rpc?: Rpc;
   pty?: pty.IPty;
   claude?: ClaudeRuntime;
@@ -88,6 +110,7 @@ export class Manager {
     private emit: (e: DeskEvent) => void,
     readonly profilesRoot = root,
     private networkEnvironment: () => Record<string, string> = () => ({}),
+    services: ProviderServices = {},
   ) {
     this.store = new Store(root);
     this.terminals = new ProjectTerminals(this.emit, () => this.changed());
@@ -114,13 +137,15 @@ export class Manager {
         this.changed();
       },
       this.networkEnvironment,
+      services,
+      (profile) => this.state.profiles?.find((p) => p.id === profile)?.googleCloudProject,
     );
     for (const p of this.state.profiles ?? []) this.accounts.register(p.id);
   }
   get state() {
     return this.store.state;
   }
-  addAccount(kind: 'claude' | 'codex', name?: string) {
+  addAccount(kind: ProviderKind, name?: string) {
     const definitions = (this.state.profiles ??= []);
     if (definitions.length >= 100) throw new Error('Has alcanzado el límite de 100 perfiles.');
     let index = 1;
@@ -136,7 +161,7 @@ export class Manager {
     if (index > 9999) throw new Error('No quedan identificadores disponibles para este proveedor.');
     const definition: ProfileDefinition = {
       id: idAt(index),
-      name: name?.trim() || `${kind === 'claude' ? 'Claude' : 'Codex'} ${index}`,
+      name: name?.trim() || `${providerNames[kind]} ${index}`,
       kind,
     };
     definitions.push(definition);
@@ -180,7 +205,7 @@ export class Manager {
       const previous = [...this.state.sessions]
         .reverse()
         .find((s) => s.projectId === session.projectId && s.profile === profile);
-      const sameProvider = isCodex(profile) === isCodex(session.profile);
+      const sameProvider = providerKind(profile) === providerKind(session.profile);
       const next: Session = {
         id,
         projectId: session.projectId,
@@ -190,11 +215,15 @@ export class Manager {
         status: 'stopped',
         messages: [],
         approvals: [],
-        reference: isCodex(profile) ? undefined : randomUUID(),
+        providerConfig: isConnectedProvider(profile)
+          ? ((sameProvider ? session : previous)?.providerConfig ?? { model: 'default' })
+          : undefined,
+        reference: isCodex(profile) || isConnectedProvider(profile) ? undefined : randomUUID(),
         mode: isCodex(profile) ? undefined : 'chat',
-        config: isCodex(profile)
-          ? undefined
-          : mergeConfig((sameProvider ? session : previous)?.config),
+        config:
+          isCodex(profile) || isConnectedProvider(profile)
+            ? undefined
+            : mergeConfig((sameProvider ? session : previous)?.config),
         codexConfig: isCodex(profile)
           ? mergeCodexConfig((sameProvider ? session : previous)?.codexConfig)
           : undefined,
@@ -276,10 +305,27 @@ export class Manager {
     return p;
   }
   async discover() {
-    for (const name of ['claude', 'codex'] as const) {
+    for (const name of ['claude', 'codex', 'gemini', 'freebuff'] as const) {
+      if (name === 'gemini') {
+        const directory = path.join(this.profilesRoot, 'tools/antigravity');
+        if (fs.existsSync(directory)) {
+          const installed = fs
+            .readdirSync(directory)
+            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+            .map((v) => path.join(directory, v, 'agy'))
+            .find((p) => fs.existsSync(p));
+          if (installed) {
+            this.state.tools.gemini = installed;
+            continue;
+          }
+        }
+      }
       if (this.state.tools[name] && fs.existsSync(this.state.tools[name]!)) continue;
       const home = cleanEnv().HOME ?? '';
       const paths = [
+        ...(name === 'freebuff'
+          ? [path.join(this.profilesRoot, 'tools/freebuff/node_modules/.bin/freebuff')]
+          : []),
         path.resolve('node_modules/.bin', name),
         ...cleanEnv()
           .PATH.split(':')
@@ -353,9 +399,15 @@ export class Manager {
       profile,
       accountLocked: false,
       title: `Sesión ${count}`,
-      reference: isCodex(profile) ? undefined : randomUUID(),
-      mode: isCodex(profile) ? undefined : (mode ?? 'chat'),
-      config: isCodex(profile) ? undefined : mergeConfig(previous?.config),
+      providerConfig: isConnectedProvider(profile)
+        ? (previous?.providerConfig ?? { model: 'default' })
+        : undefined,
+      reference: isCodex(profile) || isConnectedProvider(profile) ? undefined : randomUUID(),
+      mode: isCodex(profile) ? undefined : isConnectedProvider(profile) ? 'chat' : (mode ?? 'chat'),
+      config:
+        isCodex(profile) || isConnectedProvider(profile)
+          ? undefined
+          : mergeConfig(previous?.config),
       codexConfig: isCodex(profile) ? mergeCodexConfig(previous?.codexConfig) : undefined,
       status: 'stopped',
       messages: [],
@@ -391,10 +443,15 @@ export class Manager {
   }
   setMode(id: string, mode: 'chat' | 'terminal') {
     const s = this.session(id);
-    if (isCodex(s.profile)) throw new Error('Codex solo tiene chat.');
+    if (
+      providerKind(s.profile) !== 'claude' &&
+      !(providerKind(s.profile) === 'gemini' && isAntigravity(this.state.tools.gemini))
+    )
+      throw new Error('Este proveedor solo tiene chat.');
     if (active(s)) throw new Error('Detén la sesión antes de cambiar entre chat y terminal.');
     s.mode = mode;
     this.changed();
+    return true;
   }
   removeProject(id: string, cleanup: (sessions: Session[]) => Promise<void> = async () => {}) {
     const pending = this.removingProjects.get(id);
@@ -431,6 +488,7 @@ export class Manager {
           this.coordinator.unregister(s.id);
         }
         this.terminals.buffers.delete(`shell:${id}`);
+        this.terminals.buffers.delete(`freebuff:${id}`);
         this.state.projects = this.state.projects.filter((p) => p.id !== id);
         this.state.sessions = this.state.sessions.filter((s) => s.projectId !== id);
         if (this.state.selectedProject === id) {
@@ -460,80 +518,183 @@ export class Manager {
       this.operationWork.delete(id);
     }
   }
-  async start(id: string, loginOnly = false) {
+  async continueAntigravity(id: string) {
     return this.exclusive(id, async () => {
-      this.modelJobs.get(id)?.controller.abort();
-      await this.modelJobs.get(id)?.work;
-      const s = this.session(id),
-        project = this.project(s.projectId);
-      if ([...this.gitJobs].some((root) => this.insideRepository(root, project.path)))
-        throw new Error('Espera a que termine la operación de Git antes de abrir el agente.');
+      const s = this.session(id);
       if (
-        this.accounts.changing(s.profile) &&
-        (this.accounts.removing(s.profile) || this.accounts.state[s.profile].busy !== 'checking')
+        providerKind(s.profile) !== 'gemini' ||
+        !isAntigravity(this.state.tools.gemini) ||
+        !s.reference?.startsWith('agy:')
       )
-        throw new Error(
-          'Completa la operación de esta cuenta en Ajustes antes de abrir el agente.',
-        );
-      if (this.runtimes.has(id)) return;
-      const binary = this.state.tools[isCodex(s.profile) ? 'codex' : 'claude'];
-      if (!binary)
-        throw new Error(
-          `${isCodex(s.profile) ? 'Codex' : 'Claude Code'} no está instalado. Selecciona su ejecutable en Ajustes.`,
-        );
+        throw new Error('Este chat no tiene una conversación de Antigravity para continuar.');
+      if (s.mode === 'terminal' && this.runtimes.get(id)?.pty) return true;
+      if (['working', 'waiting', 'starting', 'stopping'].includes(s.status))
+        throw new Error('Espera a que termine el turno antes de revisar los permisos.');
+      const previousMode = s.mode;
+      await this.stopRuntime(id);
+      s.mode = 'terminal';
+      try {
+        await this.startRuntime(id, false, true);
+        s.messages.push({
+          id: 'agy-handoff:' + randomUUID(),
+          role: 'system',
+          kind: 'info',
+          text: 'La tarea continúa en el panel de Gemini. Revisa allí las solicitudes de permiso.',
+          at: Date.now(),
+        });
+        this.changed();
+        return true;
+      } catch (error) {
+        s.mode = previousMode;
+        this.changed();
+        throw error;
+      }
+    });
+  }
+  async start(id: string, loginOnly = false) {
+    return this.exclusive(id, () => this.startRuntime(id, loginOnly));
+  }
+  private async startRuntime(id: string, loginOnly = false, continueTask = false) {
+    this.modelJobs.get(id)?.controller.abort();
+    await this.modelJobs.get(id)?.work;
+    const s = this.session(id),
+      project = this.project(s.projectId);
+    if ([...this.gitJobs].some((root) => this.insideRepository(root, project.path)))
+      throw new Error('Espera a que termine la operación de Git antes de abrir el agente.');
+    if (
+      this.accounts.changing(s.profile) &&
+      (this.accounts.removing(s.profile) || this.accounts.state[s.profile].busy !== 'checking')
+    )
+      throw new Error('Completa la operación de esta cuenta en Ajustes antes de abrir el agente.');
+    if (this.runtimes.has(id)) return;
+    if (isConnectedProvider(s.profile)) {
       if ((await fs.promises.realpath(project.path)) !== project.path)
-        throw new Error(
-          'La carpeta ha cambiado de ubicación. Quita el proyecto y vuelve a añadirlo.',
-        );
-      const dir = profileDirectory(this.profilesRoot, s.profile);
-      await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-      this.project(s.projectId); // Removal may have begun while the startup paths were checked.
-      this.coordinator.register(s, project.path);
+        throw new Error('La carpeta ha cambiado de ubicación.');
+      const rt: Runtime = { buffer: '', sequence: 0 };
+      this.runtimes.set(id, rt);
       s.status = 'starting';
       s.error = undefined;
-      s.approvals = [];
-      s.activity = undefined;
       this.changed();
-      const rt: Runtime = {
-        buffer: this.buffers.get(id)?.data ?? '',
-        sequence: this.buffers.get(id)?.sequence ?? 0,
-      };
-      this.runtimes.set(id, rt);
       try {
-        if (isCodex(s.profile)) await this.startCodex(s, rt, binary, dir, project.path);
-        else if ((s.mode ?? 'chat') === 'chat' && !loginOnly)
-          await this.startClaude(s, rt, binary, dir, project.path);
-        else await this.startTerminal(s, rt, binary, dir, project.path, loginOnly);
-      } catch (e) {
-        s.error = (e as Error).message;
-        if (rt.rpc) {
-          try {
-            await rt.rpc.stop();
-            await rt.exit;
-          } catch {
-            s.status = 'stopping';
+        if (providerKind(s.profile) === 'openrouter') {
+          if (!(await this.accounts.openrouter.key(s.profile)))
+            throw new Error('Conecta OpenRouter en Ajustes con tu clave API.');
+          await this.refreshModels(id);
+          if (!s.info?.models.length)
+            throw new Error(s.modelsError ?? 'Selecciona modelos en Ajustes.');
+          rt.provider = new OpenRouterRuntime(
+            s,
+            project.path,
+            this.accounts.openrouter,
+            () => this.changed(),
+            () => this.selectedModels(s.profile),
+            () => savingInstructions(this.optimization(s.profile).level),
+          );
+        } else {
+          const binary = this.state.tools.gemini,
+            dir = profileDirectory(this.profilesRoot, s.profile);
+          if (!binary) throw new Error('No se encontró Gemini CLI.');
+          if (isAntigravity(binary)) {
+            if ((await linkedAntigravity(this.profilesRoot)) !== s.profile)
+              throw new Error('Vincula tu cuenta de Antigravity en Ajustes.');
+            if (s.mode === 'terminal') {
+              await this.startAntigravityTerminal(s, rt, binary, project.path, continueTask);
+              return;
+            }
+            const runtime = new AntigravityRuntime(
+              s,
+              binary,
+              project.path,
+              this.networkEnvironment(),
+              () => this.changed(),
+            );
+            rt.provider = runtime;
+            await runtime.start();
             this.changed();
-            throw e;
+            return;
           }
+          if ((await geminiAccount(dir)).status !== 'signedIn')
+            throw new Error('Conecta tu cuenta Google en Ajustes.');
+          const rpc = await geminiRpc(
+            binary,
+            dir,
+            this.networkEnvironment(),
+            project.path,
+            this.state.profiles?.find((p) => p.id === s.profile)?.googleCloudProject,
+          );
+          const gemini = new GeminiRuntime(s, rpc, project.path, () => this.changed());
+          rt.provider = gemini;
+          await gemini.start();
         }
-        if (rt.claude) {
-          try {
-            await rt.claude.stop();
-          } catch {
-            /* the exit handler releases the lock when the process is confirmed gone */
-          }
-        }
-        if (!rt.pty && this.runtimes.get(id) === rt) {
-          this.runtimes.delete(id);
-          this.coordinator.unregister(id);
-        }
-        // Process cleanup may emit a generic exit reason; keep the startup cause.
-        s.error = (e as Error).message;
+        s.status = 'ready';
+        this.changed();
+        return;
+      } catch (e) {
+        await rt.provider?.stop();
+        this.runtimes.delete(id);
         s.status = 'error';
+        s.error = (e as Error).message;
         this.changed();
         throw e;
       }
-    });
+    }
+    const binary = this.state.tools[isCodex(s.profile) ? 'codex' : 'claude'];
+    if (!binary)
+      throw new Error(
+        `${isCodex(s.profile) ? 'Codex' : 'Claude Code'} no está instalado. Selecciona su ejecutable en Ajustes.`,
+      );
+    if ((await fs.promises.realpath(project.path)) !== project.path)
+      throw new Error(
+        'La carpeta ha cambiado de ubicación. Quita el proyecto y vuelve a añadirlo.',
+      );
+    const dir = profileDirectory(this.profilesRoot, s.profile);
+    await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+    this.project(s.projectId); // Removal may have begun while the startup paths were checked.
+    this.coordinator.register(s, project.path);
+    s.status = 'starting';
+    s.error = undefined;
+    s.approvals = [];
+    s.activity = undefined;
+    this.changed();
+    const rt: Runtime = {
+      buffer: this.buffers.get(id)?.data ?? '',
+      sequence: this.buffers.get(id)?.sequence ?? 0,
+    };
+    this.runtimes.set(id, rt);
+    try {
+      if (isCodex(s.profile)) await this.startCodex(s, rt, binary, dir, project.path);
+      else if ((s.mode ?? 'chat') === 'chat' && !loginOnly)
+        await this.startClaude(s, rt, binary, dir, project.path);
+      else await this.startTerminal(s, rt, binary, dir, project.path, loginOnly);
+    } catch (e) {
+      s.error = (e as Error).message;
+      if (rt.rpc) {
+        try {
+          await rt.rpc.stop();
+          await rt.exit;
+        } catch {
+          s.status = 'stopping';
+          this.changed();
+          throw e;
+        }
+      }
+      if (rt.claude) {
+        try {
+          await rt.claude.stop();
+        } catch {
+          /* the exit handler releases the lock when the process is confirmed gone */
+        }
+      }
+      if (!rt.pty && this.runtimes.get(id) === rt) {
+        this.runtimes.delete(id);
+        this.coordinator.unregister(id);
+      }
+      // Process cleanup may emit a generic exit reason; keep the startup cause.
+      s.error = (e as Error).message;
+      s.status = 'error';
+      this.changed();
+      throw e;
+    }
   }
   private async startClaude(s: Session, rt: Runtime, binary: string, dir: string, cwd: string) {
     const options = claudeOptions(s, { cwd, binary, profileDir: dir });
@@ -687,6 +848,48 @@ export class Manager {
     s.status = 'terminal';
     this.changed();
   }
+  private async startAntigravityTerminal(
+    s: Session,
+    rt: Runtime,
+    binary: string,
+    cwd: string,
+    continueTask = false,
+  ) {
+    const args: string[] = [];
+    if (s.reference?.startsWith('agy:')) args.push('--conversation', s.reference.slice(4));
+    else if (s.attempted && s.reference) throw new Error('Crea un chat nuevo para Antigravity.');
+    if (s.providerConfig?.model && s.providerConfig.model !== 'default')
+      args.push('--model', s.providerConfig.model);
+    if (continueTask)
+      args.push(
+        '--prompt-interactive',
+        'Continúa la tarea anterior. Si necesitas permisos, solicítalos para que pueda revisarlos aquí.',
+      );
+    const terminal = (rt.pty = pty.spawn(binary, args, {
+      cwd,
+      env: antigravityEnv(this.networkEnvironment()),
+      name: 'xterm-256color',
+      cols: 100,
+      rows: 30,
+    }));
+    rt.exit = new Promise((resolve, reject) =>
+      terminal.onExit(({ exitCode }) => {
+        void this.exited(s, `Antigravity terminó (${exitCode}).`, terminal.pid).then(
+          resolve,
+          reject,
+        );
+      }),
+    );
+    rt.exit.catch(() => {});
+    terminal.onData((data) => {
+      rt.buffer = (rt.buffer + data).slice(-2_000_000);
+      rt.sequence++;
+      this.buffers.set(s.id, { data: rt.buffer, sequence: rt.sequence });
+      this.emit({ type: 'terminal', sessionId: s.id, data, sequence: rt.sequence });
+    });
+    s.status = 'terminal';
+    this.changed();
+  }
   private async startCodex(s: Session, rt: Runtime, binary: string, dir: string, cwd: string) {
     const rpc = (rt.rpc = new Rpc(
       binary,
@@ -809,7 +1012,9 @@ export class Manager {
         for (const item of turn.items ?? []) {
           const m = messageFromItem(item);
           if (m) {
-            m.attachments = s.messages.find((old) => old.id === m.id)?.attachments;
+            const previous = s.messages.find((old) => old.id === m.id);
+            m.attachments = previous?.attachments;
+            if (previous?.attachments?.length) m.text = previous.text;
             restored.push(m);
           }
         }
@@ -854,13 +1059,27 @@ export class Manager {
       this.accounts.setUsage(s.profile, usage);
       return;
     }
+    const previousUser =
+      p?.item?.type === 'userMessage'
+        ? s.messages.find((m) => m.id === p.item.id && m.attachments?.length)
+        : undefined;
+    const previousUserText = previousUser?.text;
     applyCodexEvent(s, method, p);
+    if (previousUser) {
+      const updated = s.messages.find((m) => m.id === p.item.id);
+      if (updated) {
+        updated.attachments = previousUser.attachments;
+        updated.text = previousUserText!;
+      }
+    }
     if (p?.item?.type === 'userMessage' && (!p.threadId || p.threadId === s.reference)) {
       const rt = this.runtime(s.id),
         message = s.messages.find((m) => m.id === p.item.id);
       if (message && rt.pendingImages?.length) {
         message.attachments = rt.pendingImages;
+        message.text = rt.pendingUserText ?? message.text;
         rt.pendingImages = undefined;
+        rt.pendingUserText = undefined;
       }
     }
     this.changed();
@@ -1004,6 +1223,14 @@ export class Manager {
   private usageAttempts = new Map<Profile, { at: number; revision: number }>();
   refreshUsage(profile: Profile): Promise<void> {
     if (this.accounts.changing(profile)) return Promise.resolve();
+    if (providerKind(profile) === 'openrouter') {
+      const last = this.usageAttempts.get(profile),
+        revision = this.accounts.revision(profile);
+      if (last?.revision === revision && Date.now() - last.at < 60000) return Promise.resolve();
+      this.usageAttempts.set(profile, { at: Date.now(), revision });
+      return this.accounts.refresh(profile);
+    }
+    if (providerKind(profile) === 'gemini') return Promise.resolve();
     const pending = this.usageJobs.get(profile);
     if (pending) return pending;
     const revision = this.accounts.revision(profile);
@@ -1057,7 +1284,7 @@ export class Manager {
     this.changed();
     return account.optimization;
   }
-  private optimizeTurn(s: Session, text: string, images: PreparedImage[]) {
+  private optimizeTurn(s: Session, text: string, images: PreparedAttachment[]) {
     const base = isCodex(s.profile)
       ? resolveCodexModel(mergeCodexConfig(s.codexConfig), s.info?.models ?? [])
       : mergeConfig(s.config);
@@ -1074,13 +1301,20 @@ export class Manager {
       previousEffort: s.optimization?.effort,
     });
   }
-  async send(id: string, text: string, images: PreparedImage[] = []) {
+  async send(id: string, text: string, images: PreparedAttachment[] = []) {
     if (this.accounts.removing(this.session(id).profile))
       throw new Error('Se está eliminando esta cuenta.');
     if (!this.runtimes.has(id)) await this.start(id);
     return this.exclusive(id, async () => {
       const s = this.session(id),
         rt = this.runtime(id);
+      if (rt.provider) {
+        if (s.status !== 'ready') throw new Error('Espera a que termine la respuesta.');
+        await rt.provider.send(text, images);
+        if (s.title.startsWith('Sesión ')) s.title = text.slice(0, 48) || 'Archivo adjunto';
+        this.changed();
+        return true;
+      }
       if (rt.claude) {
         if (!['ready', 'working', 'waiting'].includes(s.status))
           throw new Error('La sesión no está preparada.');
@@ -1114,7 +1348,7 @@ export class Manager {
         s.accountLocked = true;
         rt.claude.send(text, images);
         if (s.title.startsWith('Sesión ') && !text.startsWith('/'))
-          s.title = text.slice(0, 48) || 'Imagen adjunta';
+          s.title = text.slice(0, 48) || 'Archivo adjunto';
         this.changed();
         return true;
       }
@@ -1133,16 +1367,17 @@ export class Manager {
       this.changed();
       try {
         rt.pendingImages = images.map((i) => i.attachment);
+        rt.pendingUserText = text;
         await rt.rpc!.call('turn/start', {
           threadId: s.reference,
-          input: codexImageContent(text, images),
+          input: codexAttachmentContent(text, images),
           ...codexParams(
             { ...mergeCodexConfig(s.codexConfig), model: decision.model, effort: decision.effort },
             this.project(s.projectId).path,
           ).turn,
         });
         s.optimization = decision;
-        if (s.title.startsWith('Sesión ')) s.title = text.slice(0, 48) || 'Imagen adjunta';
+        if (s.title.startsWith('Sesión ')) s.title = text.slice(0, 48) || 'Archivo adjunto';
         this.changed();
         return true;
       } catch (e) {
@@ -1159,7 +1394,8 @@ export class Manager {
   }
   async configure(id: string, patch: Partial<ClaudeConfig>) {
     const s = this.session(id);
-    if (isCodex(s.profile)) throw new Error('Codex no tiene esta configuración.');
+    if (providerKind(s.profile) !== 'claude')
+      throw new Error('Esta configuración solo pertenece a Claude.');
     const before = mergeConfig(s.config);
     const next = mergeConfig({ ...before, ...patch });
     const rt = this.runtimes.get(id)?.claude;
@@ -1193,6 +1429,48 @@ export class Manager {
     if (!isCodex(s.profile)) throw new Error('El catálogo pertenece a Codex.');
     return this.refreshModels(id);
   }
+  async selectedModels(profile: Profile, signal?: AbortSignal) {
+    const models = await this.accounts.readModels(profile, signal ?? new AbortController().signal);
+    const selection = this.state.profiles?.find((p) => p.id === profile)?.modelSelection;
+    if (providerKind(profile) !== 'openrouter') return models;
+    return models.filter(
+      (m) => selection?.models.includes(m.value) && (!selection.freeOnly || m.free),
+    );
+  }
+  async selectProviderModels(profile: Profile, selection: ModelSelection) {
+    const p = this.state.profiles?.find((p) => p.id === profile);
+    if (!p || p.kind !== 'openrouter' || this.accounts.changing(profile))
+      throw new Error('La cuenta no está disponible.');
+    if (
+      this.state.sessions.some(
+        (s) =>
+          s.profile === profile &&
+          ['working', 'waiting', 'starting', 'stopping'].includes(s.status),
+      )
+    )
+      throw new Error('Espera a que termine la tarea antes de cambiar los modelos.');
+    p.modelSelection = { ...selection, models: [...new Set(selection.models)] };
+    this.store.flush();
+    for (const s of this.state.sessions.filter((s) => s.profile === profile)) {
+      s.info = undefined;
+      s.modelsError = undefined;
+      if (!selection.models.includes(s.providerConfig?.model ?? ''))
+        s.providerConfig = { model: 'default' };
+    }
+    this.changed();
+    return true;
+  }
+  async configureProvider(id: string, config: ProviderConfig) {
+    const s = this.session(id);
+    if (!isConnectedProvider(s.profile)) throw new Error('Proveedor incompatible.');
+    if (['working', 'waiting', 'starting', 'stopping'].includes(s.status))
+      throw new Error('Espera a que termine la respuesta.');
+    if (config.model !== 'default' && !s.info?.models.some((m) => m.value === config.model))
+      throw new Error('Actualiza el catálogo y elige un modelo disponible.');
+    s.providerConfig = config;
+    this.changed();
+    return true;
+  }
   async refreshModels(id: string) {
     const s = this.session(id);
     this.project(s.projectId);
@@ -1204,7 +1482,7 @@ export class Manager {
     this.changed();
     const work = Promise.resolve().then(async () => {
       try {
-        const models = await this.accounts.readModels(s.profile, controller.signal);
+        const models = await this.selectedModels(s.profile, controller.signal);
         if (controller.signal.aborted || !this.state.sessions.includes(s)) return;
         s.info ??= {
           tools: [],
@@ -1287,6 +1565,10 @@ export class Manager {
   async interrupt(id: string) {
     const s = this.session(id),
       rt = this.runtime(id);
+    if (rt.provider) {
+      await rt.provider.interrupt();
+      return;
+    }
     if (rt.pty) {
       rt.pty.write('\x03');
       return;
@@ -1316,7 +1598,14 @@ export class Manager {
     if (!rt) return;
     s.status = 'stopping';
     this.changed();
-    if (rt.rpc) {
+    if (rt.provider) {
+      await rt.provider.stop();
+      this.runtimes.delete(id);
+      this.coordinator.unregister(id);
+      s.status = 'stopped';
+      s.approvals = [];
+      this.changed();
+    } else if (rt.rpc) {
       await rt.rpc.stop();
       await rt.exit;
     } else if (rt.claude) {
@@ -1362,6 +1651,7 @@ export class Manager {
       rt = this.runtimes.get(id);
     if (this.accounts.changing(s.profile))
       throw new Error('Ya hay una operación de cuenta en Ajustes.');
+    if (isConnectedProvider(s.profile)) throw new Error('Gestiona esta cuenta en Ajustes.');
     if (!isCodex(s.profile)) {
       if (rt?.pty) {
         if (!rt.loginOnly) rt.pty.write('/login\r');
@@ -1399,6 +1689,10 @@ export class Manager {
   ) {
     const s = this.session(id),
       rt = this.runtime(id);
+    if (rt.provider) {
+      rt.provider.approve(requestId, decision);
+      return;
+    }
     if (rt.claude) {
       rt.claude.approve(requestId, decision, answers, message);
       this.changed();

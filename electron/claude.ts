@@ -1,4 +1,4 @@
-import { claudeImageContent, type PreparedImage } from './attachments';
+import { claudeAttachmentContent, type PreparedAttachment } from './attachments';
 import { browserInput } from '../src/browser-protocol';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -247,7 +247,7 @@ export class ClaudeRuntime {
       throw new Error('Esta versión de Claude Code no permite consultar la cuota desde el chat.');
     return method.call(this.query, { skipBehaviors: true });
   }
-  send(text: string, images: PreparedImage[] = []) {
+  send(text: string, images: PreparedAttachment[] = []) {
     const s = this.s;
     s.messages.push({
       id: `u-${randomUUID()}`,
@@ -261,7 +261,10 @@ export class ClaudeRuntime {
     s.activity = 'Enviando…';
     this.queue.push({
       type: 'user',
-      message: { role: 'user', content: images.length ? claudeImageContent(text, images) : text },
+      message: {
+        role: 'user',
+        content: images.length ? claudeAttachmentContent(text, images) : text,
+      },
       parent_tool_use_id: null,
     });
     this.wake?.();

@@ -7,7 +7,7 @@ import { turnOptimization, savingInstructions } from '../electron/token-optimiza
 import { actionSchema } from '../electron/core';
 import { Store } from '../electron/store';
 import { Manager } from '../electron/manager';
-import type { ModelInfo } from '../src/shared';
+import type { ModelInfo, Message } from '../src/shared';
 const models: ModelInfo[] = ['haiku', 'sonnet', 'opus'].map((value) => ({
   value,
   displayName: value,
@@ -216,4 +216,31 @@ test('rechazar un control Claude no envía la tarea y permite recuperar el model
     ['effort', 'high'],
     ['send', base.text],
   ]);
+});
+
+test('Codex conserva el texto visible y los adjuntos al recibir eventos repetidos del mensaje', async () => {
+  const { manager, session, calls } = harness('codex');
+  const file = {
+    attachment: {
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      name: 'ventas.csv',
+      mediaType: 'text/csv',
+      size: 3,
+    },
+    path: '/tmp/private/ventas.csv',
+    mediaType: 'text/csv',
+    data: '',
+  };
+  await manager.send('s', 'Resume las ventas', [file]);
+  const sent = calls.find(([method]) => method === 'turn/start')![1] as any;
+  assert.ok(sent.input[0].text.includes(file.path));
+  const params = {
+    threadId: session.reference,
+    item: { id: 'user-files', type: 'userMessage', content: sent.input },
+  };
+  manager.notification(session, { method: 'item/started', params });
+  manager.notification(session, { method: 'item/completed', params });
+  const message = session.messages.find((m: Message) => m.id === 'user-files')!;
+  assert.equal(message.text, 'Resume las ventas');
+  assert.deepEqual(message.attachments, [file.attachment]);
 });

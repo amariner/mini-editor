@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Markdown, linkTarget } from '../src/markdown';
+import { Markdown, linkTarget, ChatActionsContext } from '../src/markdown';
 import { highlight } from '../src/highlight';
 const html = (text: string) => renderToStaticMarkup(React.createElement(Markdown, { text }));
 const tokens = (code: string, lang: string) =>
@@ -86,4 +86,28 @@ test('resaltado ligero: palabras clave, cadenas, comentarios y comandos', () => 
   );
   assert.equal(tokens('if this is prose', 'md'), '<code>if this is prose</code>');
   assert.match(tokens('+añadido\n-quitado', 'diff'), /tk-add">\+añadido\n<.*tk-del">-quitado/s);
+});
+
+test('rutas de entregables entre comillas de código se revelan sin enlaces anidados ni comandos ejecutables', () => {
+  const render = (source: string) =>
+    renderToStaticMarkup(
+      React.createElement(
+        ChatActionsContext.Provider,
+        { value: { revealPath: () => {} } },
+        React.createElement(Markdown, { text: source }),
+      ),
+    );
+  const out = render('Entregable: `informes-adicionales/butech/seguimiento.pdf` (3 páginas).');
+  assert.match(out, /class="md-link path"/);
+  assert.match(out, /Mostrar en carpeta/);
+  assert.match(out, /<code>informes-adicionales\/butech\/seguimiento.pdf<\/code><\/a>/);
+  assert.match(render('`/tmp/Mis informes/caída.pdf`'), /class="md-link path"/);
+  assert.match(render('`src/chat.tsx:12:3`'), /class="md-link path"/);
+  assert.doesNotMatch(
+    render('`npm run build` y `python scripts/report.py` y `origin/main`'),
+    /<a /,
+  );
+  const labelled = render('[`docs/informe.pdf`](docs/informe.pdf)');
+  assert.equal((labelled.match(/<a /g) ?? []).length, 1);
+  assert.doesNotMatch(render('[mal](javascript:alert(1))'), /<a /);
 });

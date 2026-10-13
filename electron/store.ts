@@ -1,4 +1,4 @@
-import { isCodex, legacyProfiles } from '../src/shared';
+import { isCodex, isConnectedProvider, providerKind, legacyProfiles } from '../src/shared';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -10,6 +10,8 @@ import {
   mergeCodexConfig,
   mergeConfig,
   profileSchema,
+  modelSelectionSchema,
+  providerConfigSchema,
   optimizationSchema,
 } from './core';
 const block: z.ZodType<any> = z.lazy(() =>
@@ -64,7 +66,9 @@ const schema = z.object({
       z.object({
         id: profileSchema,
         name: z.string().trim().min(1).max(40),
-        kind: z.enum(['claude', 'codex']),
+        kind: z.enum(['claude', 'codex', 'openrouter', 'gemini']),
+        modelSelection: modelSelectionSchema.optional(),
+        googleCloudProject: z.string().max(100).optional(),
         optimization: optimizationSchema.optional(),
       }),
     )
@@ -83,9 +87,12 @@ const schema = z.object({
       mode: z.enum(['chat', 'terminal']).optional(),
       config: claudeConfigSchema.partial().optional(),
       codexConfig: codexConfigSchema.partial().optional(),
+      providerConfig: providerConfigSchema.optional(),
       stats: z
         .object({
           tokensReported: z.boolean().optional(),
+          costReported: z.boolean().optional(),
+          costEstimated: z.boolean().optional(),
           cost: z.number(),
           turns: z.number(),
           inputTokens: z.number(),
@@ -106,10 +113,12 @@ const schema = z.object({
               z.object({
                 id: z.string(),
                 name: z.string(),
-                preview: z.string().startsWith('data:image/').max(2000000),
+                preview: z.string().startsWith('data:image/').max(2000000).optional(),
+                mediaType: z.string().optional(),
+                size: z.number().nonnegative().optional(),
               }),
             )
-            .max(4)
+
             .optional(),
           blocks: z.array(block).optional(),
           kind: z.enum(['result', 'compact', 'info', 'error', 'command', 'warning']).optional(),
@@ -123,7 +132,12 @@ const schema = z.object({
   ),
   selectedProject: z.string().optional(),
   selectedSession: z.string().optional(),
-  tools: z.object({ claude: z.string().optional(), codex: z.string().optional() }),
+  tools: z.object({
+    claude: z.string().optional(),
+    codex: z.string().optional(),
+    gemini: z.string().optional(),
+    freebuff: z.string().optional(),
+  }),
 });
 export class Store {
   state: Snapshot;
@@ -144,7 +158,7 @@ export class Store {
         const definitions = data.profiles ?? legacyProfiles.map((p) => ({ ...p }));
         if (
           new Set(definitions.map((p) => p.id)).size !== definitions.length ||
-          definitions.some((p) => (isCodex(p.id) ? 'codex' : 'claude') !== p.kind) ||
+          definitions.some((p) => providerKind(p.id) !== p.kind) ||
           data.sessions.some((s) => !definitions.some((p) => p.id === s.profile))
         )
           throw new Error('Perfiles no válidos.');
@@ -164,6 +178,7 @@ export class Store {
             approvals: [],
             messages: s.messages.map((m) => ({
               ...m,
+              tool: m.tool?.status === 'inProgress' ? { ...m.tool, status: 'failed' } : m.tool,
               blocks: m.blocks?.map((b: any) =>
                 b.type === 'tool_use' ? { ...b, done: true, final: true } : { ...b, final: true },
               ),
@@ -197,6 +212,7 @@ export class Store {
           mode,
           config,
           codexConfig,
+          providerConfig,
           stats,
           messages,
         }) => ({
@@ -210,6 +226,7 @@ export class Store {
           mode,
           config,
           codexConfig,
+          providerConfig,
           stats,
           messages: messages.map(
             ({ id, role, text, attachments, blocks, kind, model, at, durationMs, tool }) => ({

@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserInput, browserURL } from '../src/browser-protocol';
+import {
+  browserInput,
+  browserURL,
+  browserPartition,
+  externalBrowserURL,
+  isAuthenticationURL,
+} from '../src/browser-protocol';
 import { actionSchema } from '../electron/core';
 import { isCoordinationApproval } from '../electron/coordination';
 test('browser URLs accept local previews and reject privileged schemes and credentials', () => {
@@ -74,4 +80,45 @@ test('pestañas explícitas, zoom acotado y operaciones de memoria', () => {
     true,
   );
   assert.equal(actionSchema.safeParse({ type: 'browserNew', projectId: 'project' }).success, true);
+});
+
+test('perfiles persistentes por proyecto y salida externa sin reutilizar OAuth', () => {
+  assert.equal(browserPartition('p'), 'persist:desk-browser-p');
+  assert.notEqual(browserPartition('p'), browserPartition('q'));
+  assert.equal(
+    externalBrowserURL('https://app.example/reports?q=mes'),
+    'https://app.example/reports?q=mes',
+  );
+  assert.equal(
+    externalBrowserURL(
+      'https://accounts.google.com/o/oauth2/v2/auth?state=private',
+      'https://app.example/reports',
+    ),
+    'https://app.example/',
+  );
+  assert.equal(
+    externalBrowserURL('https://app.example/api/auth/callback/google?code=private&state=test'),
+    'https://app.example/',
+  );
+  assert.equal(
+    externalBrowserURL('https://app.example/login?callbackUrl=%2Freport'),
+    'https://app.example/',
+  );
+  assert.equal(
+    externalBrowserURL('https://accounts.google.com/signin'),
+    'https://accounts.google.com/',
+  );
+  assert.equal(isAuthenticationURL('https://not-google.example/accounts.google.com'), false);
+  assert.throws(() => externalBrowserURL('file:///tmp/file'));
+  assert.throws(() => externalBrowserURL('https://user:secret@example.com/'));
+  assert.equal(actionSchema.safeParse({ type: 'browserOpenExternal', tabId: 'tab' }).success, true);
+  assert.equal(
+    actionSchema.safeParse({ type: 'browserOpenExternal', tabId: 'tab', url: 'file:///etc/passwd' })
+      .success,
+    false,
+  );
+  assert.equal(
+    browserInput.safeParse({ action: 'openExternal', url: 'https://example.com' }).success,
+    false,
+  );
 });

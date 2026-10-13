@@ -128,14 +128,15 @@ try {
   );
   await page.getByRole('button', { name: 'Reanudar pestaña', exact: true }).click();
   await poll(async () => !(await snap()).browsers.find((t) => t.id === a.id).suspended);
-  // Third-party browsing and popup stays in this app.
+  // Cross-origin browsing and popup stays in this app, without depending on external network.
   const external = await call({
     type: 'browserNew',
     projectId: second.projectId,
-    url: 'https://example.com/',
+    url: `${urls[0]}external`,
   });
   const externalPage = await tabAction(external.id, { action: 'inspect' });
-  assert.equal(new URL(externalPage.url).hostname, 'example.com');
+  assert.equal(new URL(externalPage.url).origin, new URL(urls[0]).origin);
+  assert.notEqual(new URL(externalPage.url).origin, new URL(urls[1]).origin);
   assert.ok(externalPage.text.length > 20);
   await tabAction(external.id, { action: 'suspend' });
   const popupInfo = await tabAction(a.id, { action: 'inspect' });
@@ -182,7 +183,7 @@ try {
   assert.equal(restored.find((t) => t.id === a.id).zoom, 0.75);
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: Auto/ahorro compactos, pestañas entre proyectos, estado conservado, zoom real, suspensión libera WebContents, hosts online/offline, HTTPS externo, popup, detección de terminal y reinicio ligero.',
+    'PASS: Auto/ahorro compactos, pestañas entre proyectos, estado conservado, zoom real, suspensión libera WebContents, hosts online/offline, otro origen local, popup, detección de terminal y reinicio ligero.',
   );
 } finally {
   await app?.close().catch(() => {});

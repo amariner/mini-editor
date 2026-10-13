@@ -4,9 +4,22 @@ import path from 'node:path';
 import { z } from 'zod';
 import { hostOnline, localURLs } from './browser-hosts';
 import { randomUUID } from 'node:crypto';
-import { browserInput, browserURL, type BrowserState } from '../src/browser-protocol';
+import {
+  browserInput,
+  browserURL,
+  browserPartition,
+  externalBrowserURL,
+  isAuthenticationURL,
+  type BrowserState,
+} from '../src/browser-protocol';
 type Rect = { x: number; y: number; width: number; height: number };
-type Entry = { view?: WebContentsView; state: BrowserState; used: number; sequence: number };
+type Entry = {
+  view?: WebContentsView;
+  state: BrowserState;
+  used: number;
+  sequence: number;
+  openerId?: string;
+};
 export class DeskBrowser {
   private pages = new Map<string, Entry>();
   private queues = new Map<string, Promise<unknown>>();
@@ -14,7 +27,7 @@ export class DeskBrowser {
   private monitor?: NodeJS.Timeout;
   private checking = false;
   private closed = false;
-  private securedSessions = new WeakSet<object>();
+  private securedSessions = new Set<Electron.Session>();
   private defaults = new Map<string, string>();
   private observed = new Set<string>();
   private output = new Map<string, string>();
@@ -35,6 +48,7 @@ export class DeskBrowser {
               sessionId: z.string().max(150),
               projectId: z.string().optional(),
               url: z.string().max(4096),
+              externalUrl: z.string().max(4096).optional(),
               title: z.string().max(500),
               zoom: z.number().min(0.25).max(3),
             }),
@@ -43,6 +57,7 @@ export class DeskBrowser {
           .parse(JSON.parse(fs.readFileSync(path.join(root, 'browser-tabs.json'), 'utf8')));
         for (const state of saved) {
           if (state.url) browserURL(state.url);
+          if (state.externalUrl) browserURL(state.externalUrl);
           this.pages.set(state.id, {
             state: {
               ...state,
@@ -67,14 +82,17 @@ export class DeskBrowser {
   }
   private save() {
     if (!this.root || this.closed) return;
-    const saved = this.snapshot().map(({ id, sessionId, projectId, url, title, zoom }) => ({
-      id,
-      sessionId,
-      projectId,
-      url,
-      title,
-      zoom,
-    }));
+    const saved = this.snapshot()
+      .filter((p) => p.url !== 'about:blank')
+      .map(({ id, sessionId, projectId, url, title, zoom, externalUrl }) => ({
+        id,
+        sessionId,
+        projectId,
+        url: isAuthenticationURL(url) ? externalBrowserURL(url, externalUrl) : url,
+        externalUrl,
+        title,
+        zoom,
+      }));
     const file = path.join(this.root, 'browser-tabs.json');
     fs.writeFileSync(file + '.tmp', JSON.stringify(saved), { mode: 0o600 });
     fs.renameSync(file + '.tmp', file);
@@ -129,6 +147,7 @@ export class DeskBrowser {
         sessionId,
         projectId,
         url,
+        externalUrl: url ? externalBrowserURL(url) : undefined,
         zoom: 1,
         title: 'Nueva página',
         suspended: true,
@@ -184,7 +203,7 @@ export class DeskBrowser {
   snapshot() {
     return [...this.pages.values()].map((p) => p.state);
   }
-  private ensure(id: string): Entry {
+  private ensure(id: string, inherited?: Electron.WebContentsViewConstructorOptions): Entry {
     const existing = this.pages.get(id);
     if (existing?.view && !existing.view.webContents.isDestroyed()) {
       existing.used = Date.now();
@@ -194,8 +213,15 @@ export class DeskBrowser {
     if (live >= 6)
       throw new Error('Hay seis páginas cargadas. Suspende una pestaña para liberar memoria.');
     const view = new WebContentsView({
+      ...(inherited?.webContents ? { webContents: inherited.webContents } : {}),
       webPreferences: {
-        partition: `desk-browser-${existing?.state.projectId ?? 'personal'}`,
+        ...inherited?.webPreferences,
+        partition: browserPartition(existing?.state.projectId),
+        session: electronSession.fromPartition(browserPartition(existing?.state.projectId)),
+        preload: undefined,
+        nodeIntegrationInWorker: false,
+        nodeIntegrationInSubFrames: false,
+        webviewTag: false,
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -256,7 +282,7 @@ export class DeskBrowser {
     }
     const guard = (event: { preventDefault: () => void }, url: string) => {
       try {
-        browserURL(url);
+        if (url !== 'about:blank') browserURL(url);
       } catch {
         event.preventDefault();
         entry.state.error = 'Esta dirección no está permitida en la vista previa.';
@@ -267,16 +293,38 @@ export class DeskBrowser {
     wc.on('will-redirect', guard);
     wc.setWindowOpenHandler(({ url }) => {
       try {
-        const safe = browserURL(url);
-        const tab = this.create(entry.state.projectId, entry.state.sessionId, safe);
-        void this.action(tab.id, { action: 'navigate', url: safe }).catch(() => {});
-      } catch {}
-      return { action: 'deny' };
+        const safe = !url || url === 'about:blank' ? 'about:blank' : browserURL(url);
+        if (this.pages.size >= 60 || [...this.pages.values()].filter((p) => p.view).length >= 6)
+          throw new Error('Cierra o suspende una pestaña antes de abrir otra ventana.');
+        return {
+          action: 'allow',
+          outlivesOpener: true,
+          createWindow: (options) => {
+            // Let Chromium perform the navigation: preserve POST bodies, window.opener,
+            // sessionStorage cloning and postMessage rather than cancel/reload the URL.
+            const tab = this.create(entry.state.projectId, entry.state.sessionId);
+            const child = this.ensure(tab.id, options);
+            child.openerId = id;
+            child.state.url = safe;
+            child.state.externalUrl =
+              safe === 'about:blank'
+                ? entry.state.externalUrl
+                : externalBrowserURL(safe, entry.state.externalUrl || entry.state.url);
+            this.save();
+            this.changed();
+            return child.view!.webContents;
+          },
+        };
+      } catch (error) {
+        entry.state.error = (error as Error).message;
+        this.changed();
+        return { action: 'deny' };
+      }
     });
     const update = () => {
       if (wc.isDestroyed()) return;
       Object.assign(entry.state, {
-        url: wc.getURL() && wc.getURL() !== 'about:blank' ? wc.getURL() : entry.state.url,
+        url: wc.getURL() || entry.state.url,
         title: wc.getTitle() || 'Nueva página',
         loading: wc.isLoading(),
         canGoBack: wc.navigationHistory.canGoBack(),
@@ -288,10 +336,17 @@ export class DeskBrowser {
     wc.on('did-stop-loading', update);
     wc.on('did-navigate', () => {
       update();
+      if (entry.state.url !== 'about:blank')
+        entry.state.externalUrl = externalBrowserURL(entry.state.url, entry.state.externalUrl);
       this.save();
       void this.checkHosts();
     });
-    wc.on('did-navigate-in-page', update);
+    wc.on('did-navigate-in-page', () => {
+      update();
+      if (entry.state.url !== 'about:blank')
+        entry.state.externalUrl = externalBrowserURL(entry.state.url, entry.state.externalUrl);
+      this.save();
+    });
     wc.on('page-title-updated', () => {
       update();
       this.save();
@@ -306,6 +361,17 @@ export class DeskBrowser {
       if (this.pages.get(id)?.view === view) {
         entry.view = undefined;
         entry.state.suspended = true;
+        if (entry.openerId) {
+          if (host && !host.isDestroyed()) host.contentView.removeChildView(view);
+          this.pages.delete(id);
+          for (const [owner, tab] of this.defaults) if (tab === id) this.defaults.delete(owner);
+          if (this.visible === id) {
+            this.visible = undefined;
+            const opener = this.pages.get(entry.openerId);
+            if (opener) this.opened(opener.state.id, opener.state.sessionId);
+          }
+          this.save();
+        }
         this.changed();
       }
     });
@@ -350,8 +416,9 @@ export class DeskBrowser {
     if (p.view) {
       const host = this.host();
       if (host && !host.isDestroyed()) host.contentView.removeChildView(p.view);
-      p.view.webContents.close({ waitForBeforeUnload: false });
+      const wc = p.view.webContents;
       p.view = undefined;
+      wc.close({ waitForBeforeUnload: false });
     }
     p.state.suspended = true;
     p.state.loading = false;
@@ -380,14 +447,14 @@ export class DeskBrowser {
       this.defaults.delete(id);
     }
     for (const key of this.observed) if (key.startsWith(projectId + ':')) this.observed.delete(key);
-    const ses = electronSession.fromPartition(`desk-browser-${projectId}`);
+    const ses = electronSession.fromPartition(browserPartition(projectId));
     await ses.closeAllConnections();
     await ses.clearCache();
     await ses.clearStorageData();
     await ses.clearAuthCache();
     this.save();
   }
-  closeAll() {
+  async closeAll() {
     this.save();
     this.closed = true;
     clearInterval(this.monitor);
@@ -395,6 +462,19 @@ export class DeskBrowser {
     this.pages.clear();
     this.output.clear();
     this.observed.clear();
+    await Promise.allSettled(
+      [...this.securedSessions].map(async (session) => {
+        session.flushStorageData();
+        await session.cookies.flushStore();
+      }),
+    );
+  }
+  externalURL(id: string) {
+    const state = this.pages.get(id)?.state;
+    if (!state?.url) throw new Error('Abre primero una página.');
+    return state.url === 'about:blank' && state.externalUrl
+      ? browserURL(state.externalUrl)
+      : externalBrowserURL(state.url, state.externalUrl);
   }
   action(id: string, input: unknown): Promise<any> {
     const args = browserInput.parse(input);
@@ -442,6 +522,7 @@ export class DeskBrowser {
     if (args.action === 'navigate') {
       p.state.error = undefined;
       p.state.url = browserURL(args.url);
+      p.state.externalUrl = externalBrowserURL(p.state.url);
       this.save();
       await wc.loadURL(p.state.url);
       wc.setZoomFactor(p.state.zoom);

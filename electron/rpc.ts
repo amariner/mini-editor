@@ -11,7 +11,13 @@ export class Rpc extends EventEmitter {
   >();
   closed = false;
   stderr = '';
-  constructor(binary: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
+  constructor(
+    binary: string,
+    args: string[],
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+    private jsonRpc = false,
+  ) {
     super();
     this.process = spawn(binary, args, {
       cwd,
@@ -57,7 +63,9 @@ export class Rpc extends EventEmitter {
   }
   send(msg: unknown) {
     if (this.closed) throw new Error('El servidor está detenido.');
-    this.process.stdin.write(JSON.stringify(msg) + '\n');
+    this.process.stdin.write(
+      JSON.stringify(this.jsonRpc ? { jsonrpc: '2.0', ...(msg as object) } : msg) + '\n',
+    );
   }
   call(method: string, params: unknown = {}, timeout = 30000): Promise<any> {
     const id = ++this.sequence;

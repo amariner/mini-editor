@@ -51,7 +51,7 @@ try {
   await app.evaluate(({ dialog }, filename) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filename] });
   }, image);
-  await page.getByRole('button', { name: 'Adjuntar imágenes', exact: true }).click();
+  await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).click();
   await page.locator('.attachment-thumb img').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Enviar', exact: true }).isEnabled(), true);
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Revisa esta imagen');
@@ -72,7 +72,7 @@ try {
   await call({ type: 'discardImages', sessionId: sid, attachmentIds: selected.map((i) => i.id) });
   await page.getByRole('button', { name: 'Quitar muestra.png', exact: true }).click();
   assert.equal(await page.locator('.attachment-thumb').count(), 0);
-  await page.getByRole('button', { name: 'Adjuntar imágenes', exact: true }).click();
+  await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).click();
   await page.locator('.attachment-thumb').waitFor();
   const footer = await page.locator('.composer-footer').boundingBox();
   const switcher = await page.locator('.usage-switcher').boundingBox();
@@ -92,7 +92,7 @@ try {
   await until(async () => !Object.values((await snap()).accounts).some((a) => a.busy));
   await call({ type: 'refreshUsage', profile: 'codex' });
   assert.equal((await snap()).accounts.codex.usage?.windows?.length ?? 0, 0);
-  await page.getByRole('button', { name: 'Adjuntar imágenes', exact: true }).click();
+  await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).click();
   await page.locator('.attachment-thumb').waitFor();
   await page.getByRole('button', { name: 'Enviar', exact: true }).click();
   await page.getByRole('button', { name: 'Gestionar cuenta en Ajustes', exact: true }).waitFor();

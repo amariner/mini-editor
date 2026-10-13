@@ -83,6 +83,33 @@ test('progreso activo en el dock; no oculta una respuesta terminada durante arra
     assert.equal(tail.type === 'response' && tail.answer?.id, 'a3');
   }
 });
+test('los mensajes de progreso se leen en el chat durante el turno y permanecen al terminar', () => {
+  for (const kind of ['claude', 'codex'] as const) {
+    const session = fixture();
+    if (kind === 'codex') {
+      session.messages = [
+        session.messages[0],
+        { id: 'a1', role: 'assistant', text: 'Voy a revisar el proyecto.' },
+        { id: 't1', role: 'tool', text: '$ ls' },
+        { id: 'a2', role: 'assistant', text: 'Ya encontré la causa.' },
+      ];
+    }
+    session.status = 'working';
+    const render = () =>
+      renderToStaticMarkup(React.createElement(ConversationMessages, { session, kind }));
+    const active = render();
+    assert.match(active, /progress-message/);
+    assert.match(active, /Voy a revisar el proyecto\./);
+    assert.doesNotMatch(active, /<details|class="tool|Revisar archivos/);
+    session.status = 'waiting';
+    assert.match(render(), /Voy a revisar el proyecto\./);
+    session.status = 'ready';
+    const finished = render();
+    assert.equal(finished.split('Voy a revisar el proyecto.').length - 1, 1);
+    assert.ok(finished.indexOf('Voy a revisar el proyecto.') < finished.indexOf('<details'));
+    assert.match(finished, kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
+  }
+});
 test('texto antes de herramientas y después de herramientas del mismo mensaje se separa sin pérdidas', () => {
   const session = fixture();
   session.messages = [

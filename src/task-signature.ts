@@ -1,9 +1,13 @@
-import { isCodex, type Session, type TokenOptimization } from './shared';
+import { isConnectedProvider, isCodex, type Session, type TokenOptimization } from './shared';
 
 export function signatureModel(s: Session, optimization: TokenOptimization, hasDraft: boolean) {
   const active = ['working', 'waiting', 'stopping'].includes(s.status);
   if (optimization.autoModel && !active && (hasDraft || !s.optimization)) return 'Auto';
-  const manual = isCodex(s.profile) ? s.codexConfig?.model : s.config?.model;
+  const manual = isConnectedProvider(s.profile)
+    ? s.providerConfig?.model
+    : isCodex(s.profile)
+      ? s.codexConfig?.model
+      : s.config?.model;
   const value = (active || optimization.autoModel ? s.optimization?.model : undefined) ?? manual;
   const models = s.info?.models ?? [];
   const selected =

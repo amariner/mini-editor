@@ -12,27 +12,64 @@ export class ProjectTerminals {
     private changed: () => void,
   ) {}
   snapshot() {
-    return [...this.processes.keys()].map((id) => ({
+    const ids = new Set([
+      ...this.processes.keys(),
+      ...[...this.buffers.keys()].filter((id) => id.startsWith('freebuff:')),
+    ]);
+    return [...ids].map((id) => ({
       id,
-      projectId: id.slice(6),
-      status: 'terminal' as const,
+      projectId: id.slice(id.indexOf(':') + 1),
+      kind: id.startsWith('freebuff:') ? ('freebuff' as const) : ('shell' as const),
+      status: this.processes.has(id) ? ('terminal' as const) : ('stopped' as const),
     }));
   }
   open(project: Project) {
     const id = `shell:${project.id}`;
+    // -f avoids loading the user's shell customizations for this local terminal.
+    this.spawn(
+      id,
+      project,
+      process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash',
+      ['-f'],
+      cleanEnv(),
+    );
+  }
+  openFreebuff(project: Project, binary?: string, network: Record<string, string> = {}) {
+    if (!binary)
+      throw new Error(
+        'No se encontró Freebuff CLI. Selecciona su ejecutable en Ajustes → Herramientas y datos locales.',
+      );
+    // Only launch the official interactive product. No prompts, login tokens, headless flags,
+    // trust bypasses or inference requests: the person operates the CLI directly.
+    this.spawn(`freebuff:${project.id}`, project, binary, [], { ...cleanEnv(), ...network });
+  }
+  private spawn(
+    id: string,
+    project: Project,
+    binary: string,
+    args: string[],
+    env: Record<string, string>,
+  ) {
+    if (this.pending.has(id)) throw new Error('Espera a que termine de cerrarse la terminal.');
     if (this.processes.has(id)) return;
-    // -f avoids changing/loading the user's shell customizations for this local terminal.
-    const terminal = pty.spawn(process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash', ['-f'], {
+    const terminal = pty.spawn(binary, args, {
       name: 'xterm-256color',
       cwd: project.path,
       cols: 100,
       rows: 30,
-      env: cleanEnv(),
+      env,
     });
     this.buffers.set(id, { data: '', sequence: 0 });
     const exit = new Promise<void>((resolve) =>
-      terminal.onExit(() => {
+      terminal.onExit(({ exitCode }) => {
         this.processes.delete(id);
+        if (id.startsWith('freebuff:')) {
+          const prior = this.buffers.get(id)!;
+          const data = `\r\nFreebuff ha terminado (código ${exitCode}). Puedes volver a abrirlo desde este panel.\r\n`;
+          const sequence = prior.sequence + 1;
+          this.buffers.set(id, { data: (prior.data + data).slice(-2_000_000), sequence });
+          this.emit({ type: 'terminal', sessionId: id, data, sequence });
+        }
         this.changed();
         resolve();
       }),
@@ -46,8 +83,18 @@ export class ProjectTerminals {
     });
     this.changed();
   }
-  stop(projectId: string) {
-    const id = `shell:${projectId}`;
+  async stop(projectId: string) {
+    const results = await Promise.allSettled([
+      this.stopId(`shell:${projectId}`),
+      this.stopFreebuff(projectId),
+    ]);
+    const failed = results.find((r) => r.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+  }
+  stopFreebuff(projectId: string) {
+    return this.stopId(`freebuff:${projectId}`);
+  }
+  private stopId(id: string) {
     if (this.pending.has(id)) return this.pending.get(id)!;
     const rt = this.processes.get(id);
     if (!rt) return Promise.resolve();
@@ -59,6 +106,6 @@ export class ProjectTerminals {
     return result;
   }
   async shutdown() {
-    return Promise.allSettled([...this.processes.keys()].map((id) => this.stop(id.slice(6))));
+    return Promise.allSettled([...this.processes.keys()].map((id) => this.stopId(id)));
   }
 }

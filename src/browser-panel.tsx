@@ -4,6 +4,7 @@ import {
   ArrowRight,
   RefreshCw,
   Globe,
+  ExternalLink,
   X,
   ArrowUpRight,
   Plus,
@@ -11,6 +12,7 @@ import {
   Play,
 } from 'lucide-react';
 import type { BrowserInput, BrowserState } from './browser-protocol';
+import { isAuthenticationURL } from './browser-urls';
 export function BrowserPanel({
   tabs,
   selected,
@@ -97,6 +99,17 @@ export function BrowserPanel({
       setBusy(false);
     }
   };
+  const openExternal = async () => {
+    if (!state) return;
+    setBusy(true);
+    try {
+      await window.desk.invoke({ type: 'browserOpenExternal', tabId: state.id });
+    } catch (error) {
+      onError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const title = (tab: BrowserState) => {
     if (!tab.url) return 'Nueva página';
     try {
@@ -154,6 +167,15 @@ export function BrowserPanel({
           disabled={!address.trim() || busy}
         >
           <ArrowUpRight size={13} />
+        </button>
+        <button
+          type="button"
+          aria-label="Abrir en Chrome"
+          title="Abrir en Chrome (o en el navegador predeterminado si no está instalado)"
+          disabled={!state?.url || busy}
+          onClick={() => void openExternal()}
+        >
+          <ExternalLink size={14} />
         </button>
         <select
           aria-label="Zoom del navegador"
@@ -236,6 +258,17 @@ export function BrowserPanel({
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {state?.url && isAuthenticationURL(state.url) && (
+        <div className="browser-login-hint">
+          <span>
+            Si el acceso falla aquí, inicia sesión en Chrome. Las sesiones de ambos navegadores son
+            independientes.
+          </span>
+          <button disabled={busy} onClick={() => void openExternal()}>
+            Abrir web en Chrome
+          </button>
         </div>
       )}
       {state?.error && <p className="browser-error">{state.error}</p>}

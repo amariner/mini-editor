@@ -313,7 +313,7 @@ export function stepFromMessage(m: Message, root?: string): Step {
       : t.server === 'agent_desk' && t.tool === 'coordinate'
         ? 'coordinate'
         : 'tool',
-    label: browser ? 'Navegador' : `${t.server} · ${t.tool}`,
+    label: browser ? 'Navegador' : [t.server, t.tool].filter(Boolean).join(' · ') || 'Herramienta',
   };
 }
 export type WorkItem =

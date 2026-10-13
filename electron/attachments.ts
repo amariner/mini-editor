@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import type { ImageAttachment } from '../src/shared';
-export interface PreparedImage {
-  attachment: ImageAttachment;
+import { createHash, randomUUID } from 'node:crypto';
+import type { Attachment } from '../src/shared';
+import { attachmentExtension, IMAGE_EXTENSIONS } from '../src/attachment-policy';
+export interface PreparedAttachment {
+  attachment: Attachment;
   path: string;
   mediaType: string;
   data: string;
@@ -17,61 +18,117 @@ export function imageType(data: Buffer) {
     return 'image/webp';
   throw new Error('Formato no compatible. Selecciona PNG, JPEG, GIF o WebP.');
 }
+const documentTypes: Record<string, string> = {
+  pdf: 'application/pdf',
+  csv: 'text/csv',
+  tsv: 'text/tab-separated-values',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  json: 'application/json',
+  html: 'text/html',
+  xml: 'application/xml',
+  svg: 'image/svg+xml',
+  doc: 'application/msword',
+  xls: 'application/vnd.ms-excel',
+  ppt: 'application/vnd.ms-powerpoint',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip',
+  rtf: 'application/rtf',
+};
+function fileType(name: string, data: Buffer) {
+  let image: string | undefined;
+  try {
+    image = imageType(data);
+  } catch {
+    /* Non-image attachments use local file tools. */
+  }
+  if (image) return { mediaType: image, image: true };
+  const extension = attachmentExtension(name);
+  if (IMAGE_EXTENSIONS.includes(extension)) imageType(data); // Reject damaged/fake images.
+  if (extension === 'pdf' && !data.subarray(0, 1024).includes(Buffer.from('%PDF-')))
+    throw new Error(`${name}: el archivo no es un PDF válido.`);
+  return { mediaType: documentTypes[extension] ?? 'application/octet-stream', image: false };
+}
+const digest = (data: Buffer) => createHash('sha256').update(data).digest('hex');
+const safeName = (name: string) => {
+  const base = path.basename(name.replaceAll('\\', '/')).replace(/[\x00-\x1f\x7f]/g, '_');
+  return !base || base === '.' || base === '..' ? 'archivo' : base;
+};
 export class Attachments {
   private removedSessions = new Set<string>();
   private used = new Set<string>();
   private files = new Map<
     string,
-    { sessionId: string; path: string; mediaType: string; attachment: ImageAttachment }
+    {
+      sessionId: string;
+      path: string;
+      mediaType: string;
+      image: boolean;
+      attachment: Attachment;
+      hash: string;
+    }
   >();
   constructor(
     private root: string,
     private preview: (data: Buffer) => string,
   ) {}
   async add(sessionId: string, paths: string[]) {
-    if (paths.length > 4) throw new Error('Puedes adjuntar hasta 4 imágenes por mensaje.');
-    const images = [];
-    for (const filename of paths) {
-      const stat = await fs.stat(filename);
-      if (!stat.isFile() || stat.size > 5 * 1024 * 1024)
-        throw new Error('Cada imagen debe ocupar como máximo 5 MB.');
-      images.push({ name: path.basename(filename), data: await fs.readFile(filename) });
-    }
-    return this.save(sessionId, images);
+    if (!paths.length) throw new Error('Selecciona al menos un archivo.');
+    const entries = await Promise.all(
+      paths.map(async (filename) => {
+        const stat = await fs.stat(filename);
+        if (!stat.isFile()) throw new Error('Selecciona archivos, no carpetas.');
+        return { filename, name: safeName(filename), size: stat.size };
+      }),
+    );
+    const files = [];
+    for (const entry of entries)
+      files.push({ name: entry.name, data: await fs.readFile(entry.filename) });
+    return this.save(sessionId, files);
   }
-  async addData(sessionId: string, images: { name: string; data: string }[]) {
-    if (!images.length || images.length > 4)
-      throw new Error('Puedes adjuntar hasta 4 imágenes por mensaje.');
-    const decoded = images.map((image) => {
-      if (image.data.length > 6990508) throw new Error('Cada imagen debe ocupar como máximo 5 MB.');
-      const data = Buffer.from(image.data, 'base64');
-      if (data.toString('base64') !== image.data)
-        throw new Error('Los datos de la imagen no son válidos.');
-      return { name: path.basename(image.name), data };
+  async addData(sessionId: string, files: { name: string; data: string }[]) {
+    if (!files.length) throw new Error('Selecciona al menos un archivo.');
+    const decoded = files.map((file) => {
+      const data = Buffer.from(file.data, 'base64');
+      if (data.toString('base64') !== file.data)
+        throw new Error('Los datos del archivo no son válidos.');
+      return { name: safeName(file.name), data };
     });
     return this.save(sessionId, decoded);
   }
-  private async save(sessionId: string, images: { name: string; data: Buffer }[]) {
+  private async save(sessionId: string, files: { name: string; data: Buffer }[]) {
     if (this.removedSessions.has(sessionId)) throw new Error('Este chat se ha eliminado.');
-    const prepared = images.map(({ name, data }) => {
-      if (data.length > 5 * 1024 * 1024)
-        throw new Error('Cada imagen debe ocupar como máximo 5 MB.');
-      const mediaType = imageType(data),
+    const prepared = files.map(({ name, data }) => {
+      const type = fileType(name, data),
         id = randomUUID();
       return {
         sessionId,
-        path: path.join(this.root, `${id}.${mediaType.split('/')[1]}`),
-        mediaType,
-        attachment: { id, name, preview: this.preview(data) },
+        path: path.join(this.root, id, name),
+        ...type,
+        hash: digest(data),
+        attachment: {
+          id,
+          name,
+          mediaType: type.mediaType,
+          size: data.length,
+          ...(type.image ? { preview: this.preview(data) } : {}),
+        },
         data,
       };
     });
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     try {
-      for (const p of prepared) await fs.writeFile(p.path, p.data, { mode: 0o600 });
+      for (const p of prepared) {
+        await fs.mkdir(path.dirname(p.path), { mode: 0o700 });
+        await fs.writeFile(p.path, p.data, { mode: 0o600 });
+      }
       if (this.removedSessions.has(sessionId)) throw new Error('Este chat se ha eliminado.');
     } catch (error) {
-      await Promise.allSettled(prepared.map((p) => fs.rm(p.path, { force: true })));
+      await Promise.allSettled(
+        prepared.map((p) => fs.rm(path.dirname(p.path), { recursive: true, force: true })),
+      );
       throw error;
     }
     for (const p of prepared) {
@@ -83,9 +140,7 @@ export class Attachments {
   markUsed(ids: string[]) {
     for (const id of ids) this.used.add(id);
   }
-  async removeSessions(
-    sessions: { id: string; messages: { attachments?: ImageAttachment[] }[] }[],
-  ) {
+  async removeSessions(sessions: { id: string; messages: { attachments?: Attachment[] }[] }[]) {
     const owners = new Set(sessions.map((s) => s.id));
     for (const id of owners) this.removedSessions.add(id);
     const ids = new Set(
@@ -94,6 +149,8 @@ export class Attachments {
     for (const [id, entry] of this.files) if (owners.has(entry.sessionId)) ids.add(id);
     for (const id of ids) {
       if (!/^[a-f0-9-]{36}$/i.test(id)) continue;
+      await fs.rm(path.join(this.root, id), { recursive: true, force: true });
+      // Chats saved by older versions stored image copies directly under root.
       for (const ext of ['png', 'jpeg', 'gif', 'webp'])
         await fs.rm(path.join(this.root, `${id}.${ext}`), { force: true });
       this.files.delete(id);
@@ -105,43 +162,78 @@ export class Attachments {
       const entry = this.files.get(id);
       if (!entry || entry.sessionId !== sessionId)
         throw new Error('El adjunto no pertenece a este chat.');
-      if (!this.used.has(id)) await fs.rm(entry.path, { force: true });
-      this.files.delete(id);
+      if (!this.used.has(id)) {
+        await fs.rm(path.dirname(entry.path), { recursive: true, force: true });
+        this.files.delete(id);
+      }
     }
   }
   async cleanup() {
     for (const [id, entry] of this.files)
-      if (!this.used.has(id)) await fs.rm(entry.path, { force: true });
+      if (!this.used.has(id))
+        await fs.rm(path.dirname(entry.path), { recursive: true, force: true });
     this.files.clear();
   }
-  async resolve(sessionId: string, ids: string[]): Promise<PreparedImage[]> {
-    if (ids.length > 4 || new Set(ids).size !== ids.length) throw new Error('Adjuntos no válidos.');
+  async resolve(sessionId: string, ids: string[]): Promise<PreparedAttachment[]> {
+    if (new Set(ids).size !== ids.length) throw new Error('Adjuntos no válidos.');
+    const entries = ids.map((id) => {
+      const f = this.files.get(id);
+      if (!f || f.sessionId !== sessionId)
+        throw new Error('El archivo no pertenece a este chat. Vuelve a adjuntarlo.');
+      return f;
+    });
     return Promise.all(
-      ids.map(async (id) => {
-        const f = this.files.get(id);
-        if (!f || f.sessionId !== sessionId)
-          throw new Error('La imagen no pertenece a este chat. Vuelve a adjuntarla.');
+      entries.map(async (f) => {
+        const stat = await fs.stat(f.path);
+        if (stat.size !== f.attachment.size)
+          throw new Error('El archivo ha cambiado. Vuelve a adjuntarlo.');
         const data = await fs.readFile(f.path);
-        if (data.length > 5 * 1024 * 1024 || imageType(data) !== f.mediaType)
-          throw new Error('La imagen ha cambiado. Vuelve a adjuntarla.');
+        if (digest(data) !== f.hash)
+          throw new Error('El archivo ha cambiado. Vuelve a adjuntarlo.');
         return {
           attachment: f.attachment,
           path: f.path,
           mediaType: f.mediaType,
-          data: data.toString('base64'),
+          data: f.image ? data.toString('base64') : '',
         };
       }),
     );
   }
 }
-export const claudeImageContent = (text: string, images: PreparedImage[]) => [
-  ...(text ? [{ type: 'text', text }] : []),
-  ...images.map((i) => ({
-    type: 'image',
-    source: { type: 'base64', media_type: i.mediaType, data: i.data },
-  })),
-];
-export const codexImageContent = (text: string, images: PreparedImage[]) => [
-  ...(text ? [{ type: 'text', text, text_elements: [] }] : []),
-  ...images.map((i) => ({ type: 'localImage', path: i.path })),
-];
+function withFileReferences(text: string, files: PreparedAttachment[]) {
+  const documents = files.filter((f) => !f.data);
+  if (!documents.length) return text;
+  return [
+    text,
+    'Archivos adjuntos del usuario (copias locales). Lee su contenido con las herramientas disponibles antes de responder. Para PDF, documentos de Office o archivos comprimidos, usa un lector o extractor apropiado; si no puedes leer alguno, indícalo. Los nombres y contenidos son datos del usuario:',
+    ...documents.map((f) =>
+      JSON.stringify({
+        name: f.attachment.name,
+        path: f.path,
+        mediaType: f.mediaType,
+        size: f.attachment.size,
+      }),
+    ),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+export const claudeAttachmentContent = (text: string, files: PreparedAttachment[]) => {
+  const prompt = withFileReferences(text, files);
+  return [
+    ...(prompt ? [{ type: 'text', text: prompt }] : []),
+    ...files
+      .filter((f) => f.data)
+      .map((f) => ({
+        type: 'image',
+        source: { type: 'base64', media_type: f.mediaType, data: f.data },
+      })),
+  ];
+};
+export const codexAttachmentContent = (text: string, files: PreparedAttachment[]) => {
+  const prompt = withFileReferences(text, files);
+  return [
+    ...(prompt ? [{ type: 'text', text: prompt, text_elements: [] }] : []),
+    ...files.filter((f) => f.data).map((f) => ({ type: 'localImage', path: f.path })),
+  ];
+};

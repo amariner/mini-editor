@@ -1,5 +1,5 @@
 import { codexUsage, type SubscriptionUsage } from '../src/subscription-usage';
-import { isCodex } from '../src/shared';
+import { providerKind, isCodex } from '../src/shared';
 import fs from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify, stripVTControlCharacters } from 'node:util';
@@ -11,6 +11,17 @@ import { claudeAccount, codexAccount } from './account-state';
 import { cleanEnv, profileDirectory } from './core';
 import { reapGroup } from './processes';
 import type { AccountState, Profile, DeskEvent } from '../src/shared';
+import { OpenRouterService, type ProviderServices } from './openrouter';
+import { geminiAccount, geminiLogout, geminiRpc, initializeGemini, geminiModels } from './gemini';
+import {
+  isAntigravity,
+  antigravityEnv,
+  antigravityModels,
+  antigravityAccount,
+  connectAntigravity,
+  disconnectAntigravity,
+  linkedAntigravity,
+} from './antigravity';
 const exec = promisify(execFile);
 // Cold Claude startup can take over 40 seconds on macOS before any auth output.
 const CLAUDE_AUTH_TIMEOUT_MS = 60000;
@@ -18,6 +29,7 @@ const CLAUDE_AUTH_TIMEOUT_MS = 60000;
 type Check = { cancelled: boolean; stop?: () => Promise<void>; work?: Promise<void> };
 
 type Login = {
+  antigravity?: boolean;
   rpc?: Rpc;
   loginId?: string;
   terminal?: pty.IPty;
@@ -26,6 +38,7 @@ type Login = {
   startupTimer?: ReturnType<typeof setTimeout>;
 };
 export class Accounts {
+  readonly openrouter: OpenRouterService;
   readonly state = {} as Record<Profile, AccountState>;
   readonly logins = new Map<Profile, Login>();
   readonly buffers = new Map<string, { data: string; sequence: number }>();
@@ -39,12 +52,16 @@ export class Accounts {
   }
   constructor(
     private root: string,
-    private tools: () => { claude?: string; codex?: string },
+    private tools: () => { claude?: string; codex?: string; gemini?: string },
     private changed: () => void,
     private emit: (event: DeskEvent) => void,
     private prepare: (profile: Profile, stopSessions: boolean) => Promise<void>,
     private networkEnvironment: () => Record<string, string> = () => ({}),
-  ) {}
+    services: ProviderServices = {},
+    private googleProject: (profile: Profile) => string | undefined = () => undefined,
+  ) {
+    this.openrouter = new OpenRouterService(root, services);
+  }
   register(profile: Profile) {
     this.state[profile] ??= { status: 'unknown' };
   }
@@ -60,7 +77,10 @@ export class Accounts {
   }
   private update(profile: Profile, patch: Partial<AccountState>) {
     if (!this.state[profile] || this.checks.get(profile)?.cancelled) return;
-    if (patch.status === 'signedOut' || patch.status === 'unknown') patch.usage = undefined;
+    if (patch.status === 'signedOut' || patch.status === 'unknown') {
+      patch.usage = undefined;
+      patch.apiUsage = undefined;
+    }
     Object.assign(this.state[profile], patch);
     this.changed();
   }
@@ -136,9 +156,45 @@ export class Accounts {
       throw error;
     }
   }
-  async readModels(profile: Profile, signal: AbortSignal) {
+  async readModels(
+    profile: Profile,
+    signal: AbortSignal,
+  ): Promise<import('../src/shared').ModelInfo[]> {
     if (!this.state[profile] || this.removing(profile))
       throw new Error('La cuenta no está disponible.');
+    if (providerKind(profile) === 'openrouter') return this.openrouter.catalog(profile, signal);
+    if (providerKind(profile) === 'gemini') {
+      const agy = this.tools().gemini;
+      if (isAntigravity(agy)) {
+        if ((await linkedAntigravity(this.root)) !== profile)
+          throw new Error('Vincula Antigravity en Ajustes → Cuentas.');
+        return antigravityModels(agy!, this.networkEnvironment(), signal);
+      }
+      const dir = profileDirectory(this.root, profile);
+      if ((await geminiAccount(dir)).status !== 'signedIn')
+        throw new Error('Conecta tu cuenta de Google en Ajustes.');
+      const binary = this.tools().gemini;
+      if (!binary) throw new Error('No se encontró Gemini CLI.');
+      const rpc = await geminiRpc(
+        binary,
+        dir,
+        this.networkEnvironment(),
+        dir,
+        this.googleProject(profile),
+      );
+      const cancel = () => {
+        void rpc.stop().catch(() => {});
+      };
+      signal.addEventListener('abort', cancel, { once: true });
+      try {
+        signal.throwIfAborted();
+        await initializeGemini(rpc);
+        return geminiModels(await rpc.call('session/new', { cwd: dir, mcpServers: [] }, 90000));
+      } finally {
+        signal.removeEventListener('abort', cancel);
+        await rpc.stop();
+      }
+    }
     const ctx = await this.context(profile);
     signal.throwIfAborted();
     if (!isCodex(profile)) return readClaudeModels(ctx.binary, ctx.cwd, ctx.env, signal);
@@ -285,7 +341,45 @@ export class Accounts {
       });
     });
   }
+  async connectOpenRouter(profile: Profile, apiKey: string) {
+    return this.job(profile, 'signingIn', async () => {
+      await this.prepare(profile, false);
+      const apiUsage = await this.openrouter.connect(profile, apiKey);
+      this.update(profile, { status: 'signedIn', label: 'OpenRouter', plan: 'API', apiUsage });
+      return true;
+    });
+  }
   private async read(profile: Profile, check?: Check) {
+    if (providerKind(profile) === 'openrouter') {
+      const apiUsage = await this.openrouter.usage(profile);
+      this.update(profile, {
+        status: apiUsage ? 'signedIn' : 'signedOut',
+        label: apiUsage ? 'OpenRouter' : undefined,
+        plan: apiUsage ? 'API' : undefined,
+        apiUsage,
+        error: undefined,
+      });
+      return;
+    }
+    if (providerKind(profile) === 'gemini') {
+      if (isAntigravity(this.tools().gemini)) {
+        this.update(profile, {
+          error: undefined,
+          ...(await antigravityAccount(
+            this.root,
+            profile,
+            this.tools().gemini!,
+            this.networkEnvironment(),
+          )),
+        });
+        return;
+      }
+      this.update(profile, {
+        error: undefined,
+        ...(await geminiAccount(profileDirectory(this.root, profile))),
+      });
+      return;
+    }
     if (isCodex(profile)) {
       const rpc = await this.rpc(profile, check);
       try {
@@ -314,6 +408,85 @@ export class Accounts {
     return this.job(profile, 'signingIn', async () => {
       await this.prepare(profile, stopSessions);
       this.update(profile, { status: 'unknown', label: undefined, plan: undefined });
+      if (providerKind(profile) === 'openrouter')
+        throw new Error('Introduce la clave API en la configuración de OpenRouter.');
+      if (providerKind(profile) === 'gemini') {
+        const binary = this.tools().gemini;
+        if (!binary) throw new Error('No se encontró Gemini CLI.');
+        const dir = profileDirectory(this.root, profile);
+        if (isAntigravity(binary)) {
+          const linked = await linkedAntigravity(this.root);
+          if (
+            (linked && linked !== profile) ||
+            [...this.logins.keys()].some((p) => providerKind(p) === 'gemini')
+          )
+            throw new Error(
+              'Antigravity permite una vinculación Google en Agent Desk. Desvincula la otra cuenta primero.',
+            );
+          try {
+            await connectAntigravity(this.root, profile, binary, this.networkEnvironment());
+            await this.read(profile);
+            return;
+          } catch {
+            /* No verified session: let the user complete the official interactive flow. */
+          }
+          await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+          const terminal = pty.spawn(binary, [], {
+            cwd: dir,
+            env: antigravityEnv(this.networkEnvironment()),
+            name: 'xterm-256color',
+            cols: 90,
+            rows: 24,
+          });
+          const login: Login = { terminal, antigravity: true };
+          const terminalId = `account:${profile}`;
+          this.logins.set(profile, login);
+          this.buffers.set(terminalId, { data: '', sequence: 0 });
+          terminal.onData((data) => {
+            const buffer = this.buffers.get(terminalId);
+            if (!buffer) return;
+            buffer.data = (buffer.data + data).slice(-150000);
+            buffer.sequence++;
+            this.emit({ type: 'terminal', sessionId: terminalId, data, sequence: buffer.sequence });
+          });
+          login.exited = new Promise((resolve) =>
+            terminal.onExit(({ exitCode }) => {
+              resolve();
+              if (!login.cancelling)
+                void this.finish(
+                  profile,
+                  login,
+                  exitCode === 0 ? undefined : 'Antigravity no completó el acceso.',
+                );
+            }),
+          );
+          this.update(profile, { terminalId, cancellable: true });
+          return;
+        }
+        await geminiLogout(dir);
+        const rpc = await geminiRpc(
+          binary,
+          dir,
+          this.networkEnvironment(),
+          dir,
+          this.googleProject(profile),
+        );
+        const login: Login = { rpc };
+        this.logins.set(profile, login);
+        this.update(profile, { cancellable: true });
+        void this.track(
+          (async () => {
+            try {
+              await initializeGemini(rpc);
+              await rpc.call('authenticate', { methodId: 'oauth-personal' }, 600000);
+              await this.finish(profile, login);
+            } catch (e) {
+              if (!login.cancelling) await this.finish(profile, login, (e as Error).message);
+            }
+          })(),
+        );
+        return;
+      }
       if (isCodex(profile)) {
         const rpc = await this.rpc(profile);
         const login: Login = { rpc };
@@ -460,6 +633,13 @@ export class Accounts {
       if (error) this.update(profile, { error });
       else if (!this.closing && refresh && (!cancel || isCodex(profile))) {
         try {
+          if (login.antigravity)
+            await connectAntigravity(
+              this.root,
+              profile,
+              this.tools().gemini!,
+              this.networkEnvironment(),
+            );
           await this.read(profile);
         } catch (e) {
           this.update(profile, { status: 'unknown', error: (e as Error).message });
@@ -480,6 +660,26 @@ export class Accounts {
   async logout(profile: Profile, stopSessions: boolean) {
     return this.job(profile, 'signingOut', async () => {
       await this.prepare(profile, stopSessions);
+      if (providerKind(profile) === 'openrouter') {
+        await this.openrouter.disconnect(profile);
+        this.update(profile, {
+          status: 'signedOut',
+          label: undefined,
+          plan: undefined,
+          apiUsage: undefined,
+        });
+        return;
+      }
+      if (providerKind(profile) === 'gemini') {
+        if (isAntigravity(this.tools().gemini)) {
+          await disconnectAntigravity(this.root, profile);
+          this.update(profile, { status: 'signedOut', label: undefined, plan: undefined });
+          return;
+        }
+        await geminiLogout(profileDirectory(this.root, profile));
+        this.update(profile, { status: 'signedOut', label: undefined, plan: undefined });
+        return;
+      }
       if (isCodex(profile)) {
         const rpc = await this.rpc(profile);
         try {
@@ -528,6 +728,7 @@ export class Accounts {
       return await this.job(profile, 'removing', async () => {
         await this.prepare(profile, true);
         await commit();
+        if (providerKind(profile) === 'gemini') await disconnectAntigravity(this.root, profile);
         this.buffers.delete(`account:${profile}`);
         delete this.state[profile];
         this.changed();

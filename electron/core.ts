@@ -6,7 +6,7 @@ import type { ClaudeConfig, CodexConfig, Session, Profile } from '../src/shared'
 import { defaultClaudeConfig, defaultCodexConfig } from '../src/shared';
 export const profileSchema = z
   .string()
-  .regex(/^(claude-[1-9][0-9]{0,3}|codex(?:-[1-9][0-9]{0,3})?)$/)
+  .regex(/^((?:claude|openrouter|gemini)-[1-9][0-9]{0,3}|codex(?:-[1-9][0-9]{0,3})?)$/)
   .transform((v) => v as Profile);
 const id = z.string().min(1).max(150),
   profile = profileSchema;
@@ -49,6 +49,10 @@ export const optimizationSchema = z
     autoModel: z.boolean(),
   })
   .strict();
+export const modelSelectionSchema = z
+  .object({ freeOnly: z.boolean(), models: z.array(z.string().min(1).max(200)).max(500) })
+  .strict();
+export const providerConfigSchema = z.object({ model: z.string().min(1).max(200) }).strict();
 export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('saveProxy'), config: proxyUpdateSchema }),
   z.object({
@@ -64,9 +68,60 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('configureOptimization'), profile, optimization: optimizationSchema }),
   z.object({
     type: z.literal('addAccount'),
-    kind: z.enum(['claude', 'codex']),
+    kind: z.enum(['claude', 'codex', 'openrouter', 'gemini']),
     name: z.string().trim().min(1).max(40).optional(),
   }),
+  z
+    .object({
+      type: z.literal('connectOpenRouter'),
+      profile,
+      apiKey: z
+        .string()
+        .trim()
+        .min(10)
+        .max(4096)
+        .regex(/^[^\s]+$/),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('providerCatalog'),
+      profile,
+      category: z
+        .enum([
+          'programming',
+          'roleplay',
+          'marketing',
+          'science',
+          'translation',
+          'legal',
+          'finance',
+          'health',
+          'technology',
+          'academia',
+          'seo',
+          'trivia',
+        ])
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({ type: z.literal('selectProviderModels'), profile, selection: modelSelectionSchema })
+    .strict(),
+  z
+    .object({ type: z.literal('configureProvider'), sessionId: id, config: providerConfigSchema })
+    .strict(),
+  z
+    .object({
+      type: z.literal('configureGoogleAccount'),
+      profile,
+      cloudProject: z
+        .string()
+        .trim()
+        .max(100)
+        .regex(/^(?:[a-z][a-z0-9-]{4,98}[a-z0-9])?$/),
+    })
+    .strict(),
   z.object({ type: z.literal('snapshot') }),
   z.object({ type: z.literal('browser'), sessionId: id, input: browserInput }),
   z.object({
@@ -75,6 +130,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     sessionId: id.optional(),
     url: z.string().max(4096).optional(),
   }),
+  z.object({ type: z.literal('browserOpenExternal'), tabId: id }).strict(),
   z.object({ type: z.literal('browserTab'), tabId: id, input: browserInput }),
   z.object({
     type: z.literal('browserPresent'),
@@ -89,6 +145,8 @@ export const actionSchema = z.discriminatedUnion('type', [
     }),
   }),
   z.object({ type: z.literal('openProjectTerminal'), projectId: id }),
+  z.object({ type: z.literal('openFreebuff'), projectId: id }).strict(),
+  z.object({ type: z.literal('stopFreebuff'), projectId: id }).strict(),
   z.object({
     type: z.literal('openPath'),
     projectId: id,
@@ -132,21 +190,16 @@ export const actionSchema = z.discriminatedUnion('type', [
         z
           .object({
             name: z.string().min(1).max(255),
-            data: z
-              .string()
-              .min(1)
-              .max(6990508)
-              .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+            data: z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/),
           })
           .strict(),
       )
-      .min(1)
-      .max(4),
+      .min(1),
   }),
   z.object({
     type: z.literal('discardImages'),
     sessionId: id,
-    attachmentIds: z.array(z.string().uuid()).max(4),
+    attachmentIds: z.array(z.string().uuid()),
   }),
   z.object({ type: z.literal('refreshUsage'), profile }),
   z
@@ -154,11 +207,11 @@ export const actionSchema = z.discriminatedUnion('type', [
       type: z.literal('send'),
       sessionId: id,
       text: z.string().trim().max(100000),
-      attachmentIds: z.array(z.string().uuid()).max(4).optional(),
+      attachmentIds: z.array(z.string().uuid()).optional(),
     })
     .refine(
       (a) => !!a.text || !!a.attachmentIds?.length,
-      'Escribe un mensaje o adjunta una imagen.',
+      'Escribe un mensaje o adjunta un archivo.',
     ),
   z.object({
     type: z.literal('approve'),
@@ -181,6 +234,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('rename'), sessionId: id, title: z.string().trim().min(1).max(80) }),
   z.object({ type: z.literal('setMode'), sessionId: id, mode: z.enum(['chat', 'terminal']) }),
+  z.object({ type: z.literal('continueAntigravity'), sessionId: id }),
   z.object({ type: z.literal('contextUsage'), sessionId: id }),
   z.object({ type: z.literal('terminalWrite'), sessionId: id, data: z.string().max(65536) }),
   z.object({
@@ -197,7 +251,10 @@ export const actionSchema = z.discriminatedUnion('type', [
     operation: z.enum(['stage', 'unstage', 'commit', 'fetch', 'pull', 'push', 'switch', 'create']),
     value: z.string().min(1).max(4000).optional(),
   }),
-  z.object({ type: z.literal('chooseBinary'), tool: z.enum(['claude', 'codex']) }),
+  z.object({
+    type: z.literal('chooseBinary'),
+    tool: z.enum(['claude', 'codex', 'gemini', 'freebuff']),
+  }),
   z.object({ type: z.literal('chooseDirectory'), sessionId: id }),
 ]);
 export function cleanEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {

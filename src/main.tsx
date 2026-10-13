@@ -1,6 +1,6 @@
 import { GitBar } from './git-bar';
 import type { GitSnapshot } from './git-types';
-import { isCodex } from './shared';
+import { providerKind, providerNames, isCodex } from './shared';
 import { useInterfacePreferences } from './interface-settings';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -21,15 +21,19 @@ import {
   Check,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightOpen,
+  PanelBottomOpen,
   ArrowDown,
 } from 'lucide-react';
-import type { Action, Session, Snapshot, ImageAttachment } from './shared';
+import type { Action, Session, Snapshot, Attachment } from './shared';
 import { permissionModes } from './shared';
 import { actionError, assertCompatibleAction, compatibleRuntime, RESTART_NOTICE } from './runtime';
+import { antigravityPermissionNeeded } from './antigravity-permissions';
 import { TerminalView, live } from './terminal';
 import { openSessionTab, sessionGroup, sessionAccountLocked } from './session-tabs';
 import {
   ClaudeApproval,
+  ProviderApproval,
   CodexApproval,
   Composer,
   ConversationMessages,
@@ -58,6 +62,13 @@ const statusLabels: Record<string, string> = {
 };
 function App() {
   const split = useWorkspaceSplit();
+  const terminalSplit = useWorkspaceSplit({
+    storageKey: 'agent-desk.terminal-chat-width',
+    cssVariable: '--terminal-chat-width',
+    label: 'Ancho del panel de terminal',
+    minChat: 260,
+    minTools: 320,
+  });
   const [state, setState] = useState<Snapshot>(),
     [error, setError] = useState(''),
     [search, setSearch] = useState(false),
@@ -73,16 +84,32 @@ function App() {
     [showBrowser, setShowBrowser] = useState(false),
     [browserTab, setBrowserTab] = useState<string>(),
     [showTerminalPanel, setShowTerminalPanel] = useState(false),
+    [terminalTarget, setTerminalTarget] = useState<'default' | 'freebuff'>('default'),
+    [terminalExpanded, setTerminalExpanded] = useState(false),
+    [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>(() => {
+      try {
+        return localStorage.getItem('agent-desk.terminal-position') === 'right'
+          ? 'right'
+          : 'bottom';
+      } catch {
+        return 'bottom';
+      }
+    }),
     [diff, setDiff] = useState<GitSnapshot>(),
     [diffError, setDiffError] = useState(''),
     [drafts, setDrafts] = useState<Record<string, string>>({}),
-    [imageDrafts, setImageDrafts] = useState<Record<string, ImageAttachment[]>>({}),
+    [imageDrafts, setImageDrafts] = useState<Record<string, Attachment[]>>({}),
     [busy, setBusy] = useState<Record<string, boolean>>({}),
     [removeId, setRemoveId] = useState<string>(),
     [editingName, setEditingName] = useState<{ kind: 'project' | 'session'; id: string }>(),
     [stick, setStick] = useState(true),
     [seen, setSeen] = useState<Record<string, number>>({});
   const appearance = useInterfacePreferences(setError);
+  useEffect(() => {
+    try {
+      localStorage.setItem('agent-desk.terminal-position', terminalPosition);
+    } catch {}
+  }, [terminalPosition]);
   const list = useRef<HTMLDivElement>(null),
     diffRequest = useRef(0),
     diffReads = useRef(0),
@@ -116,7 +143,7 @@ function App() {
     selectedSession = state?.sessions.find((s) => s.id === state.selectedSession),
     session = selectedSession?.id === closedSelection ? undefined : selectedSession,
     profile = selectedSession?.profile ?? state?.defaultProfile ?? accountProfiles[0]?.id,
-    kind = isCodex(profile) ? 'codex' : 'claude';
+    kind = providerKind(profile);
   useEffect(() => {
     if (!selectedSession || selectedSession.id === closedSelection) return;
     setTabs((v) => ({
@@ -227,7 +254,10 @@ function App() {
           url,
         }),
       openPath: (path) => void runRef.current({ type: 'openPath', projectId: project.id, path }),
+      revealPath: (path) =>
+        void runRef.current({ type: 'openPath', projectId: project.id, path, reveal: true }),
       runCommand: async (command) => {
+        setTerminalTarget('default');
         const fresh = !stateRef.current?.terminals?.some((t) => t.id === shell);
         setShowTerminalPanel(true);
         await runRef.current({ type: 'openProjectTerminal', projectId: project.id });
@@ -238,7 +268,7 @@ function App() {
           sessionId: shell,
           data: `\x1b[200~${command}\x1b[201~`,
         });
-        document.querySelector<HTMLElement>('.bottom-terminal .xterm-helper-textarea')?.focus();
+        document.querySelector<HTMLElement>('.terminal-pane .xterm-helper-textarea')?.focus();
       },
       showChanges: () => setShowDiff(true),
       reuse: (text) => {
@@ -274,7 +304,7 @@ function App() {
       const focused = document.hasFocus() && s.id === state.selectedSession;
       if ((!finished && !asks) || focused || typeof Notification === 'undefined') continue;
       try {
-        const agent = isCodex(s.profile) ? 'Codex' : 'Claude';
+        const agent = providerNames[providerKind(s.profile)];
         const n = new Notification(
           asks ? `${agent} necesita tu respuesta` : `${agent} ha terminado`,
           {
@@ -305,7 +335,12 @@ function App() {
       return;
     if (!['stopped', 'error'].includes(session.status)) return;
     void run({ type: 'refreshModels', sessionId: session.id });
-  }, [session?.id, session?.profile, state?.runtime?.protocol]);
+  }, [
+    session?.id,
+    session?.profile,
+    state?.runtime?.protocol,
+    JSON.stringify(state?.profiles?.find((p) => p.id === session?.profile)?.modelSelection),
+  ]);
   const sessionIds = state?.sessions.map((s) => s.id).join(',');
   useEffect(() => {
     if (!state) return;
@@ -346,7 +381,7 @@ function App() {
         e.key === 'Tab' &&
         e.shiftKey &&
         s &&
-        !isCodex(s.profile) &&
+        providerKind(s.profile) === 'claude' &&
         s.mode !== 'terminal'
       ) {
         const target = e.target as HTMLElement;
@@ -416,11 +451,13 @@ function App() {
   useEffect(() => {
     if (
       showTerminalPanel &&
+      terminalTarget === 'default' &&
       project &&
       !(!isCodex(session?.profile) && session?.mode === 'terminal')
     )
       void run({ type: 'openProjectTerminal', projectId: project.id });
-  }, [project?.id, showTerminalPanel, session?.mode]);
+  }, [project?.id, showTerminalPanel, session?.mode, terminalTarget]);
+  useEffect(() => setTerminalTarget('default'), [project?.id, session?.id]);
   useEffect(() => {
     if (!project || !profile || !compatibleRuntime(state)) return;
     let pending = false;
@@ -450,6 +487,7 @@ function App() {
   }, [
     session?.id,
     session?.messages.length,
+    last?.text.length,
     lastBlocks,
     lastText && 'text' in lastText ? lastText.text.length : 0,
     lastText && 'result' in lastText ? lastText.result?.length : 0,
@@ -513,11 +551,47 @@ function App() {
             ? 'unread'
             : 'idle';
   const terminalMode = !isCodex(session?.profile) && session?.mode === 'terminal';
-  const terminalSession =
-    terminalMode && session ? session : state.terminals?.find((t) => t.projectId === project?.id);
+  const antigravityChat =
+    providerKind(session?.profile) === 'gemini' &&
+    /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '');
+  const needsGeminiPermission = antigravityChat && antigravityPermissionNeeded(session);
+  const reviewGeminiPermission = async () => {
+    if (!session) return;
+    const ok = await run({ type: 'continueAntigravity', sessionId: session.id });
+    if (ok && stateRef.current?.selectedSession === session.id) {
+      setTerminalTarget('default');
+      setShowTerminalPanel(true);
+      setStick(true);
+    }
+  };
+  const returnToChat = async () => {
+    if (!session) return;
+    if (live(session)) await run({ type: 'stop', sessionId: session.id });
+    setShowTerminalPanel(false);
+    if (!(await run({ type: 'setMode', sessionId: session.id, mode: 'chat' })))
+      setShowTerminalPanel(true);
+  };
+  const freebuffPanel = terminalTarget === 'freebuff';
+  const terminalSession = freebuffPanel
+    ? state.terminals?.find((t) => t.id === `freebuff:${project?.id}`)
+    : terminalMode && session
+      ? session
+      : state.terminals?.find((t) => t.id === `shell:${project?.id}`);
+  const openFreebuff = async () => {
+    if (!project) return;
+    const opened = await run({ type: 'openFreebuff', projectId: project.id });
+    if (!opened || stateRef.current?.selectedProject !== project.id) return;
+    setTerminalTarget('freebuff');
+    setShowTerminalPanel(true);
+    setSettings(false);
+  };
   const toggleTerminal = () => {
     if (!project) return;
     setShowTerminalPanel((v) => !v);
+    if (!showTerminalPanel && freebuffPanel) {
+      void openFreebuff();
+      return;
+    }
     if (!showTerminalPanel && !terminalMode)
       void run({ type: 'openProjectTerminal', projectId: project.id });
     if (!showTerminalPanel && terminalMode && session && !live(session))
@@ -535,6 +609,7 @@ function App() {
     }
     if (name === 'terminal') {
       if (project) {
+        setTerminalTarget('default');
         setShowTerminalPanel(true);
         void run({ type: 'openProjectTerminal', projectId: project.id });
       }
@@ -543,7 +618,7 @@ function App() {
     void arg;
     return false;
   };
-  const sendText = async (s: Session, text: string, images: ImageAttachment[]) => {
+  const sendText = async (s: Session, text: string, images: Attachment[]) => {
     if (!compatibleRuntime(stateRef.current)) {
       setError(RESTART_NOTICE);
       return false; // Preserve the draft while the main process is out of date.
@@ -561,7 +636,7 @@ function App() {
       className={`terminal-toggle ${showTerminalPanel ? 'on' : ''}`}
       disabled={!project}
       aria-label="Terminal"
-      title="Terminal · Panel inferior"
+      title={`Terminal · Panel ${terminalPosition === 'right' ? 'derecho' : 'inferior'}`}
       aria-pressed={showTerminalPanel}
       onClick={toggleTerminal}
     >
@@ -576,7 +651,15 @@ function App() {
       projectId={project?.id}
       sessionId={session?.id}
       projects={state.projects}
-      blocked={split.dragging || search || settings || !!confirmClose || !!removeId || !!error}
+      blocked={
+        split.dragging ||
+        terminalSplit.dragging ||
+        search ||
+        settings ||
+        !!confirmClose ||
+        !!removeId ||
+        !!error
+      }
       close={() => setShowBrowser(false)}
       onError={setError}
     />
@@ -726,7 +809,11 @@ function App() {
             </button>
           </div>
         ) : (
-          <div className="work-area">
+          <div
+            ref={terminalSplit.ref}
+            style={terminalSplit.style}
+            className={`work-area ${showTerminalPanel && terminalPosition === 'right' ? 'terminal-at-right' : ''} ${terminalSplit.dragging ? 'resizing' : ''}`}
+          >
             <div
               ref={split.ref}
               style={split.style}
@@ -831,6 +918,37 @@ function App() {
                           </div>
                         </div>
                       )}
+                      {antigravityChat && !terminalMode && !needsGeminiPermission && (
+                        <div className="inline-notice">
+                          <span>
+                            Gemini · chat. Las solicitudes de permiso se revisan en su panel
+                            integrado.
+                          </span>
+                          <button
+                            disabled={
+                              !compatibleRuntime(state) ||
+                              ['working', 'waiting', 'starting', 'stopping'].includes(
+                                session.status,
+                              ) ||
+                              (!terminalMode && !session.reference?.startsWith('agy:'))
+                            }
+                            onClick={async () => {
+                              if (live(session)) await run({ type: 'stop', sessionId: session.id });
+                              const ok = await run({
+                                type: 'setMode',
+                                sessionId: session.id,
+                                mode: terminalMode ? 'chat' : 'terminal',
+                              });
+                              if (!ok) return;
+                              setShowTerminalPanel(!terminalMode);
+                              if (!terminalMode)
+                                await run({ type: 'start', sessionId: session.id });
+                            }}
+                          >
+                            {terminalMode ? 'Volver al chat' : 'Abrir terminal Antigravity'}
+                          </button>
+                        </div>
+                      )}
                       {session.error && (
                         <div className="inline-notice">
                           <span>{session.error}</span>
@@ -857,7 +975,7 @@ function App() {
                             <DeskMark size={72} />
                           </div>
                         )}
-                        {terminalMode && (
+                        {terminalMode && !antigravityChat && (
                           <div className="inline-notice">
                             Esta conversación usa la terminal oficial. Ábrela con el icono Terminal
                             o crea una nueva pestaña para usar el chat.
@@ -896,8 +1014,51 @@ function App() {
                             </div>
                           )}
                         <ConversationMessages session={session} kind={kind} />
+                        {needsGeminiPermission && !terminalMode && (
+                          <section
+                            className="gemini-permission-card"
+                            aria-label="Permiso de Gemini"
+                          >
+                            <ShieldCheck size={20} aria-hidden="true" />
+                            <div>
+                              <strong>Gemini necesita tu permiso</strong>
+                              <p>
+                                Revisa la solicitud aquí mismo y continúa la tarea. No hace falta
+                                abrir otra pestaña ni escribir comandos.
+                              </p>
+                              <button
+                                className="primary"
+                                disabled={
+                                  !compatibleRuntime(state) ||
+                                  !!busy[session.id] ||
+                                  ['working', 'waiting', 'starting', 'stopping'].includes(
+                                    session.status,
+                                  )
+                                }
+                                onClick={reviewGeminiPermission}
+                              >
+                                {busy[session.id] ? 'Abriendo revisión…' : 'Revisar y continuar'}
+                              </button>
+                              <small>
+                                El panel de Antigravity se abrirá{' '}
+                                {terminalPosition === 'right' ? 'a la derecha' : 'debajo'}. Tú
+                                decides qué acciones autorizar.
+                              </small>
+                            </div>
+                          </section>
+                        )}
+                        {antigravityChat && terminalMode && !showTerminalPanel && (
+                          <button
+                            className="gemini-show-panel"
+                            onClick={() => setShowTerminalPanel(true)}
+                          >
+                            Mostrar panel de Gemini
+                          </button>
+                        )}
                         {session.approvals.map((a, i) =>
-                          a.method === 'claude/permission' ? (
+                          a.method.startsWith('provider/') ? (
+                            <ProviderApproval key={a.id} approval={a} session={session} run={run} />
+                          ) : a.method === 'claude/permission' ? (
                             <ClaudeApproval
                               key={a.id}
                               approval={a}
@@ -969,6 +1130,8 @@ function App() {
                                   profiles={accountProfiles}
                                   profile={session.profile}
                                   usage={state.accounts?.[session.profile]?.usage}
+                                  apiUsage={state.accounts?.[session.profile]?.apiUsage}
+                                  stats={session.stats}
                                   locked={sessionAccountLocked(session)}
                                   disabled={
                                     navigating ||
@@ -1087,17 +1250,122 @@ function App() {
                 </aside>
               )}
             </div>
+            {showTerminalPanel && terminalPosition === 'right' && terminalSplit.separator}
             {showTerminalPanel && (
               <section
-                className="tool-pane terminal-pane bottom-terminal"
-                aria-label="Terminal del proyecto"
+                key="terminal-panel"
+                className={`tool-pane terminal-pane ${terminalPosition === 'right' ? 'right-terminal' : 'bottom-terminal'} ${freebuffPanel || (antigravityChat && terminalMode) ? 'gemini-terminal' : ''} ${terminalExpanded ? 'terminal-expanded' : ''}`}
+                aria-label={
+                  freebuffPanel
+                    ? 'Terminal oficial de Freebuff'
+                    : antigravityChat && terminalMode
+                      ? 'Permisos y ejecución de Gemini'
+                      : 'Terminal del proyecto'
+                }
               >
+                <header className="drawer-head terminal-panel-heading">
+                  <strong>
+                    {freebuffPanel
+                      ? 'Freebuff · CLI oficial'
+                      : antigravityChat && terminalMode
+                        ? 'Gemini · permisos y ejecución'
+                        : terminalMode
+                          ? 'Terminal del agente'
+                          : 'Consola del proyecto'}
+                  </strong>
+                  {antigravityChat && terminalMode && !freebuffPanel && (
+                    <span>Responde a las solicitudes en este panel</span>
+                  )}
+                  <div>
+                    {freebuffPanel ? (
+                      <>
+                        <button onClick={() => setTerminalTarget('default')}>
+                          {terminalMode ? 'Terminal del agente' : 'Consola'}
+                        </button>
+                        <button
+                          disabled={
+                            !!busy.openFreebuff || !!busy.stopFreebuff || !compatibleRuntime(state)
+                          }
+                          onClick={() =>
+                            terminalSession && live(terminalSession)
+                              ? void run({ type: 'stopFreebuff', projectId: project.id })
+                              : void openFreebuff()
+                          }
+                        >
+                          {terminalSession && live(terminalSession)
+                            ? 'Detener Freebuff'
+                            : 'Abrir Freebuff'}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        disabled={
+                          !compatibleRuntime(state) || !state.tools.freebuff || !!busy.openFreebuff
+                        }
+                        onClick={() => void openFreebuff()}
+                        title="Abrir Freebuff CLI con tu cuenta en este proyecto"
+                      >
+                        Freebuff
+                      </button>
+                    )}
+                    <button
+                      aria-label={
+                        terminalPosition === 'right'
+                          ? 'Mover terminal abajo'
+                          : 'Mover terminal a la derecha'
+                      }
+                      title={
+                        terminalPosition === 'right'
+                          ? 'Mover terminal abajo'
+                          : 'Mover terminal a la derecha'
+                      }
+                      onClick={() => {
+                        setTerminalPosition((v) => (v === 'right' ? 'bottom' : 'right'));
+                        setTerminalExpanded(false);
+                      }}
+                    >
+                      {terminalPosition === 'right' ? (
+                        <PanelBottomOpen size={16} />
+                      ) : (
+                        <PanelRightOpen size={16} />
+                      )}
+                      <span>{terminalPosition === 'right' ? 'Abajo' : 'A la derecha'}</span>
+                    </button>
+                    {terminalPosition === 'bottom' && (
+                      <button
+                        aria-label={terminalExpanded ? 'Reducir terminal' : 'Ampliar terminal'}
+                        aria-pressed={terminalExpanded}
+                        onClick={() => setTerminalExpanded((v) => !v)}
+                      >
+                        {terminalExpanded ? 'Reducir' : 'Ampliar'}
+                      </button>
+                    )}
+                    {antigravityChat && terminalMode && !freebuffPanel && (
+                      <button
+                        disabled={!!busy[session!.id]}
+                        onClick={returnToChat}
+                        title="Detener la terminal y volver al chat"
+                      >
+                        Detener y volver al chat
+                      </button>
+                    )}
+                    <button
+                      aria-label="Ocultar panel de terminal"
+                      title="Ocultar panel sin detener la sesión"
+                      onClick={() => setShowTerminalPanel(false)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </header>
                 {terminalSession ? (
                   <TerminalView
                     key={terminalSession.id}
                     session={terminalSession}
                     visible
                     onError={setError}
+                    scrollableScreen={!freebuffPanel && antigravityChat && terminalMode}
+                    placement={terminalPosition}
                   />
                 ) : (
                   <div className="inline-notice" role="status">
@@ -1170,6 +1438,7 @@ function App() {
       )}
       {settings && (
         <AccountsSettings
+          onOpenFreebuff={openFreebuff}
           state={state}
           appearance={appearance}
           run={run}

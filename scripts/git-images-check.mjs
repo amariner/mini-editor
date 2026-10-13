@@ -89,12 +89,15 @@ try {
     page.evaluate(
       ({ names, png, extra }) => {
         const transfer = new DataTransfer();
+        const imageBytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+        const largeBytes = new Uint8Array(6 * 1024 * 1024);
+        largeBytes.set(imageBytes);
         for (const name of names)
           transfer.items.add(
             new File(
               [
                 extra.large
-                  ? new Uint8Array(5 * 1024 * 1024 + 1)
+                  ? largeBytes
                   : extra.invalid
                     ? 'invalid'
                     : Uint8Array.from(atob(png), (c) => c.charCodeAt(0)),
@@ -125,12 +128,23 @@ try {
     .waitFor();
   assert.equal(await page.locator('.attachment-thumb').count(), 1);
   await drop(['grande.png'], { large: true });
-  await page.locator('.attachment-error').filter({ hasText: '5 MB' }).waitFor();
+  await page.getByRole('img', { name: 'grande.png', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Quitar grande.png', exact: true }).click();
+  await page.getByRole('img', { name: 'grande.png', exact: true }).waitFor({ state: 'detached' });
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="Adjuntar archivos"]')?.disabled);
   await drop(['dos.png', 'tres.png', 'cuatro.png']);
   await page.getByRole('img', { name: 'cuatro.png', exact: true }).waitFor();
-  await drop(['cinco.png']);
-  await page.locator('.attachment-error').filter({ hasText: 'hasta 4' }).waitFor();
-  assert.equal(await page.locator('.attachment-thumb').count(), 4);
+  await drop([
+    'cinco.png',
+    'seis.png',
+    'siete.png',
+    'ocho.png',
+    'nueve.png',
+    'diez.png',
+    'once.png',
+  ]);
+  await page.getByRole('img', { name: 'once.png', exact: true }).waitFor();
+  assert.equal(await page.locator('.attachment-thumb').count(), 11);
   assert.equal(await page.locator('.image-drop-active').count(), 0);
   const second = await call({ type: 'newSession', projectId: 'project', profile: 'claude-1' });
   await page.getByRole('img', { name: 'uno.png' }).waitFor({ state: 'detached' });
@@ -145,7 +159,7 @@ try {
     0,
   );
   await page.getByRole('button', { name: 'Quitar uno.png', exact: true }).click();
-  assert.equal(await page.locator('.attachment-thumb').count(), 3);
+  assert.equal(await page.locator('.attachment-thumb').count(), 10);
   await page.screenshot({ path: 'artifacts/chat-imagenes-arrastradas.png' });
   assert.ok((await page.locator('.conversation').boundingBox()).width <= 960);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 700));

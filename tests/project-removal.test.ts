@@ -135,9 +135,9 @@ test('project deletion removes used and draft images, including restored message
     attachments.markUsed([used.id]);
     a.messages = [{ id: 'u', role: 'user', text: '', attachments: [used] }];
     await m.removeProject('p', (sessions) => attachments.removeSessions(sessions));
-    assert.equal(fs.existsSync(path.join(dir, used.id + '.png')), false);
-    assert.equal(fs.existsSync(path.join(dir, draft.id + '.png')), false);
-    assert.equal(fs.existsSync(path.join(dir, keep.id + '.png')), true);
+    assert.equal(fs.existsSync(path.join(dir, used.id, used.name)), false);
+    assert.equal(fs.existsSync(path.join(dir, draft.id, draft.name)), false);
+    assert.equal(fs.existsSync(path.join(dir, keep.id, keep.name)), true);
     await assert.rejects(
       attachments.addData(a.id, [{ name: 'late.png', data: image }]),
       /eliminado/,

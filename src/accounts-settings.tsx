@@ -1,3 +1,5 @@
+import { ProviderAccountSettings } from './provider-account-settings';
+import { providerNames, type ProviderKind } from './shared';
 import { NetworkSettings } from './network-settings';
 import React, { useEffect, useState } from 'react';
 import { LogIn, LogOut, RefreshCw, X, Plus, Leaf, Trash2 } from 'lucide-react';
@@ -19,12 +21,14 @@ export function AccountsSettings({
   close,
   onError,
   appearance,
+  onOpenFreebuff,
 }: {
   state: Snapshot;
   run: (action: Action) => Promise<any>;
   close: () => void;
   onError: (error: string) => void;
   appearance: ReturnType<typeof useInterfacePreferences>;
+  onOpenFreebuff?: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<'accounts' | 'interface' | 'network'>('accounts');
   const [confirmation, setConfirmation] = useState<{
@@ -53,7 +57,7 @@ export function AccountsSettings({
     }
   };
   const [adding, setAdding] = useState(false);
-  const [newKind, setNewKind] = useState<'claude' | 'codex'>('claude');
+  const [newKind, setNewKind] = useState<ProviderKind>('claude');
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Profile>();
@@ -179,10 +183,12 @@ export function AccountsSettings({
                 <select
                   aria-label="Proveedor de la nueva cuenta"
                   value={newKind}
-                  onChange={(e) => setNewKind(e.target.value as 'claude' | 'codex')}
+                  onChange={(e) => setNewKind(e.target.value as ProviderKind)}
                 >
                   <option value="claude">Claude</option>
                   <option value="codex">ChatGPT · Codex</option>
+                  <option value="openrouter">OpenRouter · API</option>
+                  <option value="gemini">Google · Gemini</option>
                 </select>
               </label>
               <label>
@@ -234,14 +240,19 @@ export function AccountsSettings({
                               : account?.status === 'signedOut'
                                 ? 'Sin sesión'
                                 : 'Estado sin verificar';
-              const disabled = !compatible || !!busy || !state.tools[p.kind];
+              const disabled =
+                !compatible || !!busy || (p.kind !== 'openrouter' && !state.tools[p.kind]);
               return (
                 <section className="account-card" key={p.id} aria-label={`Cuenta ${p.name}`}>
                   <div className="account-heading">
                     <div>
                       <strong>{p.name}</strong>
                       <small>
-                        {p.kind === 'codex' ? 'ChatGPT · Codex' : 'Claude.ai · Claude Code'}
+                        {p.kind === 'codex'
+                          ? 'ChatGPT · Codex'
+                          : p.kind === 'claude'
+                            ? 'Claude.ai · Claude Code'
+                            : providerNames[p.kind]}
                       </small>
                     </div>
                     <span className={`account-status ${account?.status ?? ''}`}>{status}</span>
@@ -274,7 +285,7 @@ export function AccountsSettings({
                     />
                     Predeterminada para chats nuevos
                   </label>
-                  {!state.tools[p.kind] && (
+                  {p.kind !== 'openrouter' && !state.tools[p.kind] && (
                     <p className="muted">Selecciona el ejecutable para conectar esta cuenta.</p>
                   )}
                   {account?.loginStarting && (
@@ -293,14 +304,35 @@ export function AccountsSettings({
                       {running(p.id).length} sesiones abiertas con este perfil.
                     </p>
                   )}
+                  {(p.kind === 'openrouter' || p.kind === 'gemini') && (
+                    <ProviderAccountSettings
+                      profile={p}
+                      account={account}
+                      disabled={!compatible || !!busy}
+                      run={run}
+                      antigravity={/[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')}
+                    />
+                  )}
                   <div className="account-actions">
-                    <button disabled={disabled} onClick={() => request(p.id, 'accountLogin')}>
-                      <LogIn size={14} />
-                      {account?.status === 'signedIn' ? 'Cambiar cuenta' : 'Iniciar sesión'}
-                    </button>
+                    {p.kind !== 'openrouter' && (
+                      <button disabled={disabled} onClick={() => request(p.id, 'accountLogin')}>
+                        <LogIn size={14} />
+                        {p.kind === 'gemini' && /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
+                          ? account?.status === 'signedIn'
+                            ? 'Verificar conexión Google'
+                            : 'Conectar Google con Antigravity'
+                          : account?.status === 'signedIn'
+                            ? 'Cambiar cuenta'
+                            : p.kind === 'gemini'
+                              ? 'Iniciar sesión con Google'
+                              : 'Iniciar sesión'}
+                      </button>
+                    )}
                     <button disabled={disabled} onClick={() => request(p.id, 'accountLogout')}>
                       <LogOut size={14} />
-                      Cerrar sesión
+                      {p.kind === 'gemini' && /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
+                        ? 'Desvincular de Agent Desk'
+                        : 'Cerrar sesión'}
                     </button>
                     <button
                       aria-label={`Actualizar estado de ${p.name}`}
@@ -321,44 +353,46 @@ export function AccountsSettings({
                     >
                       <Trash2 size={14} /> Eliminar cuenta
                     </button>
-                    <fieldset
-                      className="token-settings"
-                      disabled={!compatible || savingProfile !== undefined}
-                    >
-                      <label className="token-saving" title="Ahorro de tokens">
-                        <Leaf size={13} aria-hidden="true" />
-                        <select
-                          aria-label="Ahorro de tokens"
-                          value={optimization.level}
-                          onChange={(e) =>
-                            void saveOptimization(p.id, {
-                              ...optimization,
-                              level: Number(e.target.value) as TokenOptimization['level'],
-                            })
-                          }
-                        >
-                          {savingLevels.map((level) => (
-                            <option key={level.value} value={level.value}>
-                              {level.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="token-auto">
-                        <span>Modelo auto</span>
-                        <input
-                          type="checkbox"
-                          role="switch"
-                          checked={optimization.autoModel}
-                          onChange={(e) =>
-                            void saveOptimization(p.id, {
-                              ...optimization,
-                              autoModel: e.target.checked,
-                            })
-                          }
-                        />
-                      </label>
-                    </fieldset>
+                    {(p.kind === 'claude' || p.kind === 'codex') && (
+                      <fieldset
+                        className="token-settings"
+                        disabled={!compatible || savingProfile !== undefined}
+                      >
+                        <label className="token-saving" title="Ahorro de tokens">
+                          <Leaf size={13} aria-hidden="true" />
+                          <select
+                            aria-label="Ahorro de tokens"
+                            value={optimization.level}
+                            onChange={(e) =>
+                              void saveOptimization(p.id, {
+                                ...optimization,
+                                level: Number(e.target.value) as TokenOptimization['level'],
+                              })
+                            }
+                          >
+                            {savingLevels.map((level) => (
+                              <option key={level.value} value={level.value}>
+                                {level.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="token-auto">
+                          <span>Modelo auto</span>
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            checked={optimization.autoModel}
+                            onChange={(e) =>
+                              void saveOptimization(p.id, {
+                                ...optimization,
+                                autoModel: e.target.checked,
+                              })
+                            }
+                          />
+                        </label>
+                      </fieldset>
+                    )}
                     {account?.cancellable && (
                       <button onClick={() => void run({ type: 'accountCancel', profile: p.id })}>
                         Cancelar acceso
@@ -366,7 +400,7 @@ export function AccountsSettings({
                     )}
                   </div>
 
-                  {busy === 'signingIn' && p.kind === 'codex' && (
+                  {busy === 'signingIn' && (p.kind === 'codex' || p.kind === 'gemini') && (
                     <p className="muted">
                       Continúa en el navegador. Puedes cerrar Ajustes y volver aquí mientras
                       completas el acceso.
@@ -456,11 +490,48 @@ export function AccountsSettings({
               </div>
             </section>
           )}
+          <section className="account-card" aria-label="Freebuff CLI">
+            <h3>Freebuff · terminal oficial</h3>
+            <p>
+              Inicia sesión y elige los modelos desde Freebuff. Se abre en el proyecto seleccionado
+              y utiliza la misma cuenta local que su CLI.
+            </p>
+            <p className="muted">
+              Los modelos, límites, permisos y avisos de datos se muestran en Freebuff. Sus
+              conversaciones permanecen en la CLI; no se añaden al chat ni al selector de modelos de
+              Agent Desk.
+            </p>
+            <button
+              disabled={
+                !compatible || !state.tools.freebuff || !state.selectedProject || !onOpenFreebuff
+              }
+              onClick={() => void onOpenFreebuff?.()}
+            >
+              Abrir Freebuff en este proyecto
+            </button>
+            {!state.selectedProject && (
+              <p className="muted">Selecciona un proyecto para abrir Freebuff.</p>
+            )}
+            {!state.tools.freebuff && (
+              <p className="muted">
+                Instala la CLI oficial con <code>npm install -g freebuff</code> y selecciona su
+                ejecutable debajo.
+              </p>
+            )}
+          </section>
           <details className="account-tools">
             <summary>Herramientas y datos locales</summary>
-            {(['claude', 'codex'] as const).map((tool) => (
+            {(['claude', 'codex', 'gemini', 'freebuff'] as const).map((tool) => (
               <div className="tool-setting" key={tool}>
-                <strong>{tool === 'claude' ? 'Claude Code' : 'Codex app-server'}</strong>
+                <strong>
+                  {tool === 'claude'
+                    ? 'Claude Code'
+                    : tool === 'gemini'
+                      ? 'Google · Antigravity / Gemini CLI'
+                      : tool === 'freebuff'
+                        ? 'Freebuff CLI'
+                        : 'Codex app-server'}
+                </strong>
                 <code>{state.tools[tool] ?? 'No encontrado'}</code>
                 <button onClick={() => void run({ type: 'chooseBinary', tool })}>
                   Seleccionar ejecutable

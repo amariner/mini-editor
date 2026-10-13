@@ -51,23 +51,19 @@ export interface BrowserState {
   hostStatus?: 'online' | 'offline';
   sessionId: string;
   url: string;
+  externalUrl?: string;
   title: string;
   loading: boolean;
   error?: string;
   canGoBack: boolean;
   canGoForward: boolean;
 }
-export function browserURL(value: string): string {
-  const text = value.trim();
-  const url = new URL(
-    /^[a-z][a-z\d+.-]*:\/\//i.test(text) || /^(about|file|data|javascript):/i.test(text)
-      ? text
-      : `http://${text}`,
-  );
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
-    throw new Error('Usa una dirección http:// o https:// sin credenciales en la URL.');
-  return url.href;
-}
+export {
+  browserURL,
+  browserPartition,
+  isAuthenticationURL,
+  externalBrowserURL,
+} from './browser-urls';
 
 // MCP requires a top-level object schema; the main process enforces the stricter union above.
 export const browserToolFields = {

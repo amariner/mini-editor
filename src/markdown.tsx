@@ -18,6 +18,7 @@ export interface ChatActions {
   root?: string;
   openUrl?(url: string): void;
   openPath?(path: string): void;
+  revealPath?(path: string): void;
   runCommand?(command: string): void;
   showChanges?(): void;
   reuse?(text: string): void;
@@ -37,11 +38,30 @@ export function linkTarget(raw: string): LinkTarget | undefined {
     }
   }
   if (target.startsWith('#') || /^[a-z][a-z\d+.-]*:/i.test(target)) return undefined;
-  return /^[\w.~/@-][^\s<>"]*$/.test(target) ? { kind: 'path', value: target } : undefined;
+  return /^[\p{L}\p{N}_.~/@-][^<>"\r\n]*$/u.test(target)
+    ? { kind: 'path', value: target }
+    : undefined;
+}
+const FILE_EXTENSIONS = new Set(
+  'pdf csv tsv txt md mdx doc docx xls xlsx ppt pptx odt ods odp rtf json jsonl yaml yml toml xml html css scss js jsx ts tsx mjs cjs py ipynb sh sql log png jpg jpeg gif webp svg zip tar gz mp3 mp4 mov wav'.split(
+    ' ',
+  ),
+);
+export function fileReference(code: string): LinkTarget | undefined {
+  const value = code.trim();
+  if (/^https?:\/\//i.test(value)) return linkTarget(value);
+  if (/^file:\/\//i.test(value)) return linkTarget(value);
+  if (!value || /[\r\n<>|;={}\x60$&]/.test(value)) return undefined;
+  const withoutLine = value.replace(/(?::\d+){1,2}$|#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/i, '');
+  const explicit = /^(?:\/|\.{1,2}\/|~\/)/.test(withoutLine);
+  if (/\s/.test(value) && !explicit) return undefined;
+  const extension = withoutLine.split('.').pop()!.toLowerCase();
+  if (!explicit && !FILE_EXTENSIONS.has(extension)) return undefined;
+  return linkTarget(value);
 }
 export function Link({ target, children }: { target: LinkTarget; children: React.ReactNode }) {
   const actions = useChatActions();
-  const open = target.kind === 'url' ? actions.openUrl : actions.openPath;
+  const open = target.kind === 'url' ? actions.openUrl : (actions.revealPath ?? actions.openPath);
   if (!open)
     return (
       <span className="md-link" title={target.value}>
@@ -55,7 +75,9 @@ export function Link({ target, children }: { target: LinkTarget; children: React
       role="link"
       tabIndex={0}
       title={
-        target.kind === 'url' ? `${target.value} · Abrir en el navegador integrado` : target.value
+        target.kind === 'url'
+          ? `${target.value} · Abrir en el navegador integrado`
+          : `${target.value} · Mostrar en carpeta`
       }
       onClick={(e) => {
         e.preventDefault();
@@ -98,7 +120,7 @@ function text(s: string, key: string): React.ReactNode[] {
   const lines = restoreMarks(s).split('\n');
   return lines.flatMap((line, i) => (i ? [<br key={`${key}-br${i}`} />, line] : [line]));
 }
-export function inline(source: string, prefix = 'i'): React.ReactNode[] {
+export function inline(source: string, prefix = 'i', links = true): React.ReactNode[] {
   const s = escapeMarks(source);
   const out: React.ReactNode[] = [];
   let last = 0,
@@ -109,20 +131,28 @@ export function inline(source: string, prefix = 'i'): React.ReactNode[] {
     if (m.index > last) out.push(...text(s.slice(last, m.index), `${prefix}t${n}`));
     const key = `${prefix}${n++}`;
     if (m[2] !== undefined) {
-      const code = restoreMarks(m[2], true).replace(/\n/g, ' ');
+      const raw = restoreMarks(m[2], true).replace(/\n/g, ' ');
+      const code = /^ .* $/.test(raw) && raw.trim() ? raw.slice(1, -1) : raw;
+      const target = links ? fileReference(code) : undefined;
       out.push(
-        <code key={key}>{/^ .* $/.test(code) && code.trim() ? code.slice(1, -1) : code}</code>,
+        target ? (
+          <Link key={key} target={target}>
+            <code>{code}</code>
+          </Link>
+        ) : (
+          <code key={key}>{code}</code>
+        ),
       );
     } else if (m[3] !== undefined || m[4] !== undefined)
-      out.push(<strong key={key}>{inline(restoreMarks(m[3] ?? m[4], true), key)}</strong>);
+      out.push(<strong key={key}>{inline(restoreMarks(m[3] ?? m[4], true), key, links)}</strong>);
     else if (m[5] !== undefined)
-      out.push(<del key={key}>{inline(restoreMarks(m[5], true), key)}</del>);
+      out.push(<del key={key}>{inline(restoreMarks(m[5], true), key, links)}</del>);
     else if (m[6] !== undefined || m[7] !== undefined)
-      out.push(<em key={key}>{inline(restoreMarks(m[6] ?? m[7], true), key)}</em>);
+      out.push(<em key={key}>{inline(restoreMarks(m[6] ?? m[7], true), key, links)}</em>);
     else {
-      const label = m[8] !== undefined ? inline(restoreMarks(m[8], true), key) : undefined;
+      const label = m[8] !== undefined ? inline(restoreMarks(m[8], true), key, false) : undefined;
       const href = restoreMarks(m[9] ?? m[10] ?? m[11]);
-      const target = linkTarget(href);
+      const target = links ? linkTarget(href) : undefined;
       out.push(
         target ? (
           <Link key={key} target={target}>

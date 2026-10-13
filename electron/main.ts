@@ -1,4 +1,7 @@
+import { openInChrome } from './external-browser';
+import { COMMON_EXTENSIONS, IMAGE_EXTENSIONS } from '../src/attachment-policy';
 import { ProxySettings } from './proxy';
+import { providerFetch } from './provider-fetch';
 import { safeStorage, session as electronSession } from 'electron';
 import { Attachments } from './attachments';
 import { nativeImage } from 'electron';
@@ -18,9 +21,13 @@ const attachments = new Attachments(path.join(app.getPath('userData'), 'attachme
   const image = nativeImage.createFromBuffer(data);
   if (image.isEmpty()) throw new Error('No se puede abrir esta imagen.');
   const { width, height } = image.getSize();
-  if (width > 12000 || height > 12000)
-    throw new Error('La imagen es demasiado grande (máximo 12000 px por lado).');
-  return image.resize({ width: Math.min(240, width) }).toDataURL();
+  const scale = Math.min(1, 240 / width, 240 / height);
+  return image
+    .resize({
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale)),
+    })
+    .toDataURL();
 });
 let browser: DeskBrowser,
   manager: Manager,
@@ -200,6 +207,17 @@ app.whenReady().then(async () => {
         ? path.resolve(process.env.AGENT_DESK_PROFILES_DIR)
         : undefined,
       () => network.environment(),
+      {
+        codec: {
+          available: () => safeStorage.isEncryptionAvailable(),
+          encrypt: (value) => safeStorage.encryptString(value),
+          decrypt: (value) => safeStorage.decryptString(value),
+        },
+        fetch: async (input, init) => {
+          await prepareNetwork(electronSession.defaultSession);
+          return providerFetch(electronSession.defaultSession, network, input as string, init);
+        },
+      },
     );
     browser = new DeskBrowser(
       () => win,
@@ -338,6 +356,34 @@ app.whenReady().then(async () => {
           return manager.removeAccount(a.profile, a.confirmed, (directory) =>
             shell.trashItem(directory),
           );
+        case 'configureGoogleAccount': {
+          const p = manager.state.profiles?.find((p) => p.id === a.profile);
+          if (!p || p.kind !== 'gemini' || manager.accounts.changing(p.id))
+            throw new Error('La cuenta no está disponible.');
+          if (manager.state.sessions.some((s) => s.profile === p.id && manager.runtimes.has(s.id)))
+            throw new Error(
+              'Detén las sesiones de esta cuenta antes de cambiar el proyecto de Google.',
+            );
+          p.googleCloudProject = a.cloudProject || undefined;
+          manager.store.flush();
+          manager.changed();
+          return true;
+        }
+        case 'connectOpenRouter':
+          return manager.accounts.connectOpenRouter(a.profile, a.apiKey);
+        case 'providerCatalog':
+          if (
+            !manager.state.profiles?.some((p) => p.id === a.profile) ||
+            manager.accounts.removing(a.profile)
+          )
+            throw new Error('La cuenta no está disponible.');
+          return a.profile.startsWith('openrouter-')
+            ? manager.accounts.openrouter.catalog(a.profile, undefined, a.category)
+            : manager.accounts.readModels(a.profile, new AbortController().signal);
+        case 'selectProviderModels':
+          return manager.selectProviderModels(a.profile, a.selection);
+        case 'configureProvider':
+          return manager.configureProvider(a.sessionId, a.config);
         case 'accountRefresh':
           return manager.accounts.refresh(a.profile);
         case 'accountCancel':
@@ -359,6 +405,17 @@ app.whenReady().then(async () => {
         case 'openProjectTerminal':
           manager.terminals.open(manager.project(a.projectId));
           return;
+        case 'openFreebuff':
+          manager.terminals.openFreebuff(
+            manager.project(a.projectId),
+            manager.state.tools.freebuff,
+            network.environment(),
+          );
+          return true;
+        case 'stopFreebuff':
+          manager.project(a.projectId);
+          await manager.terminals.stopFreebuff(a.projectId);
+          return true;
         case 'openPath': {
           const target = await resolveProjectPath(manager.project(a.projectId).path, a.path);
           if (a.reveal || (!target.directory && !opensAsText(target.path)))
@@ -386,6 +443,8 @@ app.whenReady().then(async () => {
           if (a.url) await browser.action(tab.id, { action: 'navigate', url: a.url });
           return tab;
         }
+        case 'browserOpenExternal':
+          return openInChrome(browser.externalURL(a.tabId));
         case 'browserTab':
           if (!browser.snapshot().some((tab) => tab.id === a.tabId))
             throw new Error('La pestaña ya no existe.');
@@ -453,6 +512,8 @@ app.whenReady().then(async () => {
           return manager.rename(a.sessionId, a.title);
         case 'setMode':
           return manager.setMode(a.sessionId, a.mode);
+        case 'continueAntigravity':
+          return manager.continueAntigravity(a.sessionId);
         case 'contextUsage':
           return manager.contextUsage(a.sessionId);
         case 'chooseDirectory': {
@@ -477,9 +538,13 @@ app.whenReady().then(async () => {
         case 'pickImages': {
           manager.session(a.sessionId);
           const r = await dialog.showOpenDialog(win, {
-            title: 'Adjuntar imágenes',
+            title: 'Adjuntar archivos',
             properties: ['openFile', 'multiSelections'],
-            filters: [{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+            filters: [
+              { name: 'Documentos, datos, código e imágenes', extensions: COMMON_EXTENSIONS },
+              { name: 'Imágenes', extensions: IMAGE_EXTENSIONS },
+              { name: 'Todos los archivos', extensions: ['*'] },
+            ],
           });
           return r.canceled ? [] : attachments.add(a.sessionId, r.filePaths);
         }
@@ -513,19 +578,19 @@ app.whenReady().then(async () => {
         case 'cancelLogin':
           return manager.cancelLogin(a.sessionId);
         case 'terminalWrite':
-          if (a.sessionId.startsWith('shell:'))
+          if (a.sessionId.startsWith('shell:') || a.sessionId.startsWith('freebuff:'))
             return manager.terminals.processes.get(a.sessionId)?.pty.write(a.data);
           if (a.sessionId.startsWith('account:'))
             return manager.accounts.terminal(a.sessionId)?.write(a.data);
           return manager.runtime(a.sessionId).pty?.write(a.data);
         case 'terminalResize':
-          if (a.sessionId.startsWith('shell:'))
+          if (a.sessionId.startsWith('shell:') || a.sessionId.startsWith('freebuff:'))
             return manager.terminals.processes.get(a.sessionId)?.pty.resize(a.cols, a.rows);
           if (a.sessionId.startsWith('account:'))
             return manager.accounts.terminal(a.sessionId)?.resize(a.cols, a.rows);
           return manager.runtime(a.sessionId).pty?.resize(a.cols, a.rows);
         case 'terminalBuffer':
-          if (a.sessionId.startsWith('shell:'))
+          if (a.sessionId.startsWith('shell:') || a.sessionId.startsWith('freebuff:'))
             return manager.terminals.buffers.get(a.sessionId) ?? { data: '', sequence: 0 };
           if (a.sessionId.startsWith('account:'))
             return manager.accounts.buffers.get(a.sessionId) ?? { data: '', sequence: 0 };
@@ -578,7 +643,7 @@ app.on('before-quit', (event) => {
       );
       return;
     }
-    browser?.closeAll();
+    await browser?.closeAll();
     await attachments.cleanup().catch(() => {});
     app.quit();
   })();

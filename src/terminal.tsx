@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { Session } from './shared';
@@ -53,12 +53,21 @@ export function TerminalView({
   session,
   visible,
   onError,
+  scrollableScreen = false,
+  placement = 'bottom',
 }: {
   session: Pick<Session, 'id' | 'status'>;
   visible: boolean;
   onError: (s: string) => void;
+  scrollableScreen?: boolean;
+  placement?: 'bottom' | 'right';
 }) {
+  const [readingScreen, setReadingScreen] = useState(false);
+  const [modelHelp, setModelHelp] = useState(false);
+  const reading = useRef(false);
+  reading.current = readingScreen;
   const host = useRef<HTMLDivElement>(null),
+    viewport = useRef<HTMLDivElement>(null),
     fit = useRef<FitAddon>(null),
     terminal = useRef<Terminal>(null);
   useEffect(() => {
@@ -80,6 +89,27 @@ export function TerminalView({
     term.open(host.current!);
     terminal.current = term;
     fit.current = addon;
+    if (scrollableScreen) {
+      // A full-screen CLI can consume wheel events and has no native scrollback.
+      // Read the enlarged screen first; at its edges retain the CLI's own scrolling.
+      term.attachCustomWheelEventHandler((event) => {
+        const view = viewport.current;
+        if (!reading.current || !view || event.ctrlKey || event.metaKey || !event.deltaY)
+          return true;
+        const delta =
+          event.deltaY *
+          (event.deltaMode === 1 ? 18 : event.deltaMode === 2 ? view.clientHeight : 1);
+        const next = Math.max(
+          0,
+          Math.min(view.scrollHeight - view.clientHeight, view.scrollTop + delta),
+        );
+        if (Math.abs(next - view.scrollTop) < 1) return true;
+        view.scrollTop = next;
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      });
+    }
     let disposed = false,
       ready = false,
       queue: { data: string; sequence: number }[] = [];
@@ -129,7 +159,14 @@ export function TerminalView({
       input.dispose();
       term.dispose();
     };
+  }, [session.id, scrollableScreen]);
+  useEffect(() => {
+    setReadingScreen(false);
+    setModelHelp(false);
   }, [session.id]);
+  useEffect(() => {
+    if (!readingScreen) viewport.current?.scrollTo({ top: 0 });
+  }, [readingScreen]);
   useEffect(() => {
     if (terminal.current) terminal.current.options.disableStdin = !live(session);
   }, [session.status]);
@@ -140,6 +177,74 @@ export function TerminalView({
       terminal.current?.focus();
     }, 50);
     return () => clearTimeout(timer);
-  }, [visible, session.id, session.status]);
-  return <div className={`terminal-wrap ${visible ? '' : 'hidden'}`} ref={host} />;
+  }, [visible, session.id, session.status, placement]);
+  if (scrollableScreen)
+    return (
+      <div
+        className={`terminal-wrap interactive-terminal ${readingScreen ? 'reading-screen' : ''} ${visible ? '' : 'hidden'}`}
+      >
+        <div className="terminal-reading-controls" aria-label="Desplazamiento de la terminal">
+          <button
+            aria-expanded={modelHelp}
+            onClick={() => {
+              setModelHelp((v) => !v);
+              setReadingScreen(false);
+              terminal.current?.focus();
+            }}
+          >
+            Cambiar modelo
+          </button>
+          <button
+            aria-pressed={readingScreen}
+            onClick={() => setReadingScreen((v) => !v)}
+            title="Alternar entre ajustar al panel y una pantalla larga desplazable"
+          >
+            {readingScreen ? 'Ajustar al panel' : 'Leer pantalla larga'}
+          </button>
+          {readingScreen && (
+            <>
+              <button
+                onClick={() => {
+                  terminal.current?.scrollToTop();
+                  viewport.current?.scrollTo({ top: 0 });
+                }}
+              >
+                Inicio
+              </button>
+              <button
+                onClick={() => {
+                  terminal.current?.scrollToBottom();
+                  const view = viewport.current;
+                  if (view) view.scrollTo({ top: view.scrollHeight });
+                }}
+              >
+                Final
+              </button>
+            </>
+          )}
+        </div>
+        {modelHelp && (
+          <div className="terminal-model-help" role="note">
+            En la terminal, escribe <code>/model</code> y pulsa Intro. Selecciona el modelo con ↑ ↓
+            y confirma con Intro; Esc cierra el selector. Si tienes un mensaje escrito, guárdalo
+            antes de introducir el comando.
+          </div>
+        )}
+        <div
+          className="terminal-screen-viewport"
+          ref={viewport}
+          tabIndex={0}
+          aria-label="Pantalla desplazable de Antigravity"
+        >
+          <div className="terminal-screen">
+            <div className="terminal-host" ref={host} />
+          </div>
+        </div>
+      </div>
+    );
+  return (
+    <div className={`terminal-wrap ${visible ? '' : 'hidden'}`}>
+      <div className="terminal-host" ref={host} />
+    </div>
+  );
 }

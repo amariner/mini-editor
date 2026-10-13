@@ -104,6 +104,9 @@ try {
   await progress.waitFor();
   assert.equal(await page.locator('.messages .tool').count(), 0);
   assert.equal(await page.locator('.messages .author').count(), 0);
+  const narration = page.locator('.messages .progress-message');
+  assert.equal(await narration.innerText(), 'Voy a revisar el proyecto para responderte.');
+  assert.ok(await narration.isVisible());
   assert.equal(
     await progress.locator('.activity-current-text').innerText(),
     'Revisando la estructura del proyecto',
@@ -121,9 +124,24 @@ try {
   );
   await progress.click();
   assert.equal(await page.locator('.activity-log .tool').count(), 2);
+  assert.equal(await page.locator('.activity-log .step-text').count(), 0);
   await page.locator('.activity-log .tool-head').first().click();
   assert.equal(await page.locator('.activity-log .result').innerText(), '{}');
   await progress.click();
+  await page.evaluate(() => {
+    const f = window.compactFixture;
+    f.session.messages[2].blocks.push({ type: 'text', text: 'He encontrado' });
+    f.publish();
+  });
+  await narration.getByText('He encontrado', { exact: true }).waitFor();
+  await page.evaluate(() => {
+    const f = window.compactFixture;
+    f.session.messages[2].blocks[1].text += ' la configuración y sigo comprobando los archivos.';
+    f.publish();
+  });
+  await narration
+    .getByText('He encontrado la configuración y sigo comprobando los archivos.', { exact: true })
+    .waitFor();
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/chat-compacto-progreso.png' });
   await page.evaluate(() => {
@@ -166,8 +184,22 @@ try {
   assert.equal(await progress.count(), 0);
   assert.equal(await page.locator('.response-work').count(), 1);
   assert.equal(await page.locator('.response-work').getAttribute('open'), null);
+  assert.ok(
+    await page
+      .getByText('Voy a revisar el proyecto para responderte.', { exact: true })
+      .isVisible(),
+  );
+  assert.ok(
+    await page
+      .getByText('He encontrado la configuración y sigo comprobando los archivos.', { exact: true })
+      .isVisible(),
+  );
   await page.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
   assert.equal(await page.locator('.response-work .tool').count(), 2);
+  assert.equal(
+    await page.getByText('Voy a revisar el proyecto para responderte.', { exact: true }).count(),
+    1,
+  );
   await page.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
   await page.screenshot({ path: 'artifacts/chat-compacto-respuesta.png' });
   // Existing final response must remain visible while the next process starts.
@@ -199,7 +231,7 @@ try {
   assert.ok((await progress.boundingBox()).height <= 26);
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: progreso fijo de una línea, detalle accesible, resultado compacto, arranque y permisos visibles.',
+    'PASS: mensajes en vivo y persistentes, herramientas plegadas, resultado, arranque y permisos visibles.',
   );
 } finally {
   await browser?.close();

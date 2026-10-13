@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, LockKeyhole } from 'lucide-react';
 import type { Profile, ProfileDefinition } from './shared';
-import { isCodex } from './shared';
+import { providerKind, type ApiUsage, type SessionStats, isCodex } from './shared';
 import { currentUsageWindow, type SubscriptionUsage } from './subscription-usage';
 
 export function UsageSwitcher({
   profiles,
   profile,
   usage,
+  apiUsage,
+  stats,
   disabled,
   locked = false,
   change,
@@ -15,6 +17,8 @@ export function UsageSwitcher({
   profiles: ProfileDefinition[];
   profile: Profile;
   usage?: SubscriptionUsage;
+  apiUsage?: ApiUsage;
+  stats?: SessionStats;
   disabled: boolean;
   locked?: boolean;
   change: (p: Profile) => void;
@@ -24,6 +28,13 @@ export function UsageSwitcher({
     const timer = setInterval(() => setNow(Date.now()), 10000);
     return () => clearInterval(timer);
   }, []);
+  const kind = providerKind(profile);
+  const api = kind === 'openrouter';
+  const gemini = kind === 'gemini';
+  const cost =
+    stats && (stats.costReported || stats.costEstimated)
+      ? `$${stats.cost.toLocaleString('es-ES', { maximumFractionDigits: 5 })}${stats.costEstimated ? ' aprox.' : ''}`
+      : '—';
   const codex = isCodex(profile);
   const window = currentUsageWindow(usage, codex ? '7 días' : '5 h', now);
   const remaining = window
@@ -65,11 +76,25 @@ export function UsageSwitcher({
       </div>
       <span
         className="usage-remaining"
-        aria-label={label}
-        title={remaining === undefined ? reason : `${remaining}% restante del límite ${period}`}
+        aria-label={
+          api ? `Coste de la conversación: ${cost}` : gemini ? 'Consumo de Gemini' : label
+        }
+        title={
+          api
+            ? `Coste acumulado de esta conversación. Crédito restante de la clave: ${apiUsage?.remaining === undefined ? 'no disponible' : '$' + apiUsage.remaining}.`
+            : gemini
+              ? 'Google no comunica una cuota restante por ACP. El chat muestra los datos de uso disponibles.'
+              : remaining === undefined
+                ? reason
+                : `${remaining}% restante del límite ${period}`
+        }
       >
-        <span className="usage-period">{codex ? 'Semanal' : '5 h'}</span>
-        <span className="usage-value">{remaining === undefined ? '—' : `${remaining}%`}</span>
+        <span className="usage-period">
+          {api ? 'API' : gemini ? 'Google' : codex ? 'Semanal' : '5 h'}
+        </span>
+        <span className="usage-value">
+          {api ? cost : gemini ? '—' : remaining === undefined ? '—' : `${remaining}%`}
+        </span>
       </span>
     </div>
   );

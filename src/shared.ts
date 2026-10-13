@@ -1,9 +1,43 @@
 import type { BrowserInput, BrowserState } from './browser-protocol';
-export type Profile = `claude-${number}` | 'codex' | `codex-${number}`;
+export type ProviderKind = 'claude' | 'codex' | 'openrouter' | 'gemini';
+export type Profile =
+  `claude-${number}` | 'codex' | `codex-${number}` | `openrouter-${number}` | `gemini-${number}`;
+export const providerKind = (profile?: string): ProviderKind =>
+  profile?.startsWith('openrouter-')
+    ? 'openrouter'
+    : profile?.startsWith('gemini-')
+      ? 'gemini'
+      : isCodex(profile)
+        ? 'codex'
+        : 'claude';
+export const isConnectedProvider = (profile?: string) =>
+  ['openrouter', 'gemini'].includes(providerKind(profile));
+export const providerNames: Record<ProviderKind, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  openrouter: 'OpenRouter',
+  gemini: 'Google · Gemini',
+};
+export interface ProviderConfig {
+  model: string;
+}
+export interface ModelSelection {
+  freeOnly: boolean;
+  models: string[];
+}
+export interface ApiUsage {
+  spent?: number;
+  remaining?: number;
+  limit?: number;
+  checkedAt: number;
+}
+
 export interface ProfileDefinition {
   id: Profile;
   name: string;
-  kind: 'claude' | 'codex';
+  kind: ProviderKind;
+  modelSelection?: ModelSelection;
+  googleCloudProject?: string;
   optimization?: TokenOptimization;
 }
 export interface TokenOptimization {
@@ -161,13 +195,15 @@ export interface ToolInfo {
   tool?: string;
   query?: string;
 }
-export interface ImageAttachment {
+export interface Attachment {
   id: string;
   name: string;
-  preview: string;
+  preview?: string;
+  mediaType?: string;
+  size?: number;
 }
 export interface Message {
-  attachments?: ImageAttachment[];
+  attachments?: Attachment[];
   id: string;
   role: 'user' | 'assistant' | 'tool' | 'system';
   text: string;
@@ -198,6 +234,13 @@ export interface SlashCommand {
   builtin?: boolean;
 }
 export interface ModelInfo {
+  categories?: string[];
+  tools?: boolean;
+  image?: boolean;
+  free?: boolean;
+  inputPrice?: number;
+  outputPrice?: number;
+  contextLength?: number;
   isDefault?: boolean;
   defaultEffort?: string;
   value: string;
@@ -229,6 +272,8 @@ export interface SessionInfo {
   account?: { email?: string; organization?: string; subscriptionType?: string };
 }
 export interface SessionStats {
+  costReported?: boolean;
+  costEstimated?: boolean;
   tokensReported?: boolean;
   cost: number;
   turns: number;
@@ -267,6 +312,7 @@ export interface Session {
   mode?: 'chat' | 'terminal';
   config?: ClaudeConfig;
   codexConfig?: CodexConfig;
+  providerConfig?: ProviderConfig;
   status: Status;
   messages: Message[];
   approvals: Approval[];
@@ -283,6 +329,7 @@ export interface Session {
   tasks?: { id: string; description: string }[];
 }
 export interface AccountState {
+  apiUsage?: ApiUsage;
   usage?: import('./subscription-usage').SubscriptionUsage;
   status: 'unknown' | 'signedIn' | 'signedOut';
   label?: string;
@@ -300,7 +347,7 @@ export interface Snapshot {
   profiles?: ProfileDefinition[];
   removedProfiles?: Profile[];
   browsers?: BrowserState[];
-  terminals?: { id: string; projectId: string; status: Status }[];
+  terminals?: { id: string; projectId: string; status: Status; kind?: 'shell' | 'freebuff' }[];
   coordination?: {
     sessionId: string;
     projectId: string;
@@ -316,7 +363,7 @@ export interface Snapshot {
   sessions: Session[];
   selectedProject?: string;
   selectedSession?: string;
-  tools: { claude?: string; codex?: string };
+  tools: { claude?: string; codex?: string; gemini?: string; freebuff?: string };
   dataDir: string;
   notice?: string;
 }
@@ -327,9 +374,15 @@ export type Action =
   | { type: 'setDefaultAccount'; profile: Profile }
   | { type: 'changeSessionAccount'; sessionId: string; profile: Profile }
   | { type: 'configureOptimization'; profile: Profile; optimization: TokenOptimization }
-  | { type: 'addAccount'; kind: 'claude' | 'codex'; name?: string }
+  | { type: 'addAccount'; kind: ProviderKind; name?: string }
+  | { type: 'connectOpenRouter'; profile: Profile; apiKey: string }
+  | { type: 'configureGoogleAccount'; profile: Profile; cloudProject: string }
+  | { type: 'providerCatalog'; profile: Profile; category?: string }
+  | { type: 'selectProviderModels'; profile: Profile; selection: ModelSelection }
+  | { type: 'configureProvider'; sessionId: string; config: ProviderConfig }
   | { type: 'browser'; sessionId: string; input: BrowserInput }
   | { type: 'browserNew'; projectId?: string; sessionId?: string; url?: string }
+  | { type: 'browserOpenExternal'; tabId: string }
   | { type: 'browserTab'; tabId: string; input: BrowserInput }
   | {
       type: 'browserPresent';
@@ -339,6 +392,7 @@ export type Action =
       bounds: { x: number; y: number; width: number; height: number };
     }
   | { type: 'openProjectTerminal'; projectId: string }
+  | { type: 'openFreebuff' | 'stopFreebuff'; projectId: string }
   | { type: 'openPath'; projectId: string; path: string; reveal?: boolean }
   | { type: 'listFiles'; projectId: string; query: string }
   | { type: 'setTheme'; theme: Theme }
@@ -372,6 +426,7 @@ export type Action =
   | { type: 'configureCodex'; sessionId: string; config: Partial<CodexConfig> }
   | { type: 'rename'; sessionId: string; title: string }
   | { type: 'setMode'; sessionId: string; mode: 'chat' | 'terminal' }
+  | { type: 'continueAntigravity'; sessionId: string }
   | { type: 'contextUsage'; sessionId: string }
   | { type: 'terminalWrite'; sessionId: string; data: string }
   | { type: 'terminalResize'; sessionId: string; cols: number; rows: number }
@@ -383,7 +438,7 @@ export type Action =
       operation: import('./git-types').GitOperation;
       value?: string;
     }
-  | { type: 'chooseBinary'; tool: 'claude' | 'codex' }
+  | { type: 'chooseBinary'; tool: 'claude' | 'codex' | 'gemini' | 'freebuff' }
   | { type: 'chooseDirectory'; sessionId: string };
 export type DeskEvent =
   | { type: 'shortcut'; action: 'search' | 'settings' | 'resetStyles' }

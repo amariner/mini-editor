@@ -116,6 +116,29 @@ try {
   );
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/40-terminal-inferior-nombres.png' });
+  const shellInput = page.locator('.terminal-pane .xterm-helper-textarea');
+  await shellInput.focus();
+  await page.keyboard.type("printf 'SIDEPANEL_DRAFT_OK\\n'");
+  await page.locator('.terminal-pane .xterm').evaluate((el) => (el.dataset.dockMarker = 'same'));
+  await page.getByRole('button', { name: 'Mover terminal a la derecha', exact: true }).click();
+  await page.locator('.right-terminal .xterm').waitFor();
+  assert.equal(
+    await page.locator('.terminal-pane .xterm').getAttribute('data-dock-marker'),
+    'same',
+  );
+  await shellInput.focus();
+  await shellInput.press('Enter');
+  await until(async () =>
+    (await call({ type: 'terminalBuffer', sessionId: terminalId })).data.includes(
+      '\r\nSIDEPANEL_DRAFT_OK\r\n',
+    ),
+  );
+  assert.equal((await snap()).terminals.length, 1);
+  assert.ok(await page.getByRole('tab', { name: 'Revisar estilos', exact: true }).isVisible());
+  assert.ok(
+    await page.locator('.work-area').evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+  );
+  await page.screenshot({ path: 'artifacts/41-terminal-lateral.png' });
   await assert.rejects(call({ type: 'renameProject', projectId: original.id, name: ' ' }));
   await app.close();
   app = undefined;
@@ -124,6 +147,10 @@ try {
   assert.equal(restored.projects.find((p) => p.id === original.id).name, 'Landing web');
   assert.equal(restored.projects.find((p) => p.id === original.id).path, folders[0]);
   assert.equal(restored.sessions.find((s) => s.id === first).title, 'Revisar estilos');
+  await page.getByRole('button', { name: 'Terminal', exact: true }).click();
+  await page.locator('.right-terminal .xterm').waitFor();
+  await page.getByRole('button', { name: 'Mover terminal abajo', exact: true }).click();
+  await page.locator('.bottom-terminal .xterm').waitFor();
   for (const folder of folders) assert.deepEqual(await fs.readdir(folder), []);
   assert.deepEqual(errors, []);
   console.log(
