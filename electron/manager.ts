@@ -181,6 +181,29 @@ export class Manager {
       this.gitJobs.size === 0
     );
   }
+  private changingFreebuff = false;
+  async setFreebuffEnabled(enabled: boolean) {
+    if (this.changingFreebuff) throw new Error('Espera a que termine el cambio de Freebuff.');
+    this.changingFreebuff = true;
+    const before = this.state.freebuffEnabled;
+    this.state.freebuffEnabled = enabled;
+    try {
+      if (!enabled) {
+        const terminals = this.terminals.snapshot().filter((t) => t.kind === 'freebuff');
+        await Promise.all(terminals.map((t) => this.terminals.stopFreebuff(t.projectId)));
+        for (const terminal of terminals) this.terminals.buffers.delete(terminal.id);
+      }
+      this.store.flush();
+      this.changed();
+      return true;
+    } catch (error) {
+      this.state.freebuffEnabled = before;
+      this.changed();
+      throw error;
+    } finally {
+      this.changingFreebuff = false;
+    }
+  }
   setDefaultAccount(profile: Profile) {
     if (!this.state.profiles?.some((p) => p.id === profile) || this.accounts.removing(profile))
       throw new Error('Esta cuenta no está disponible.');

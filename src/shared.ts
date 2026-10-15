@@ -345,6 +345,7 @@ export interface AccountState {
   loginStarting?: boolean;
 }
 export interface Snapshot {
+  freebuffEnabled?: boolean;
   theme?: Theme;
   proxy?: import('./proxy-types').ProxySnapshot;
   defaultProfile?: Profile;
@@ -372,6 +373,7 @@ export interface Snapshot {
   notice?: string;
 }
 export type Action =
+  | { type: 'setFreebuffEnabled'; enabled: boolean }
   | { type: 'saveProxy'; config: import('./proxy-types').ProxyUpdate }
   | { type: 'testProxy'; config: import('./proxy-types').ProxyUpdate; provider: 'codex' | 'claude' }
   | { type: 'detectProxy' | 'chooseProxyCertificate' }

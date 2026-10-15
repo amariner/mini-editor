@@ -130,11 +130,49 @@ try {
     'terminal',
   );
   const last = (await records()).at(-1).pid;
+  await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
+  await page.getByRole('button', { name: 'Quitar Freebuff', exact: true }).click();
+  await wait(async () => !(await call({ type: 'snapshot' })).freebuffEnabled);
+  await wait(
+    async () => !(await call({ type: 'snapshot' })).terminals.some((t) => t.kind === 'freebuff'),
+  );
+  assert.throws(() => process.kill(last, 0));
+  assert.equal(await page.getByRole('region', { name: 'Freebuff CLI', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Freebuff', exact: true }).count(), 0);
+  await assert.rejects(call({ type: 'openFreebuff', projectId: 'q' }), /Añade Freebuff/);
   await app.close();
   app = undefined;
   assert.throws(() => process.kill(last, 0));
   const saved = JSON.parse(await fs.readFile(path.join(data, 'state.json'), 'utf8'));
   assert.equal(saved.tools.freebuff, binary);
+  assert.equal(saved.freebuffEnabled, false);
+  app = await electron.launch({
+    args: ['.'],
+    env: {
+      ...process.env,
+      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DATA_DIR: data,
+      AGENT_DESK_PROFILES_DIR: '',
+    },
+  });
+  page = await app.firstWindow();
+  page.setDefaultTimeout(10000);
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.waitForFunction(() => !!window.desk);
+  assert.equal((await call({ type: 'snapshot' })).freebuffEnabled, false);
+  await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Quitar Freebuff', exact: true }).count(), 0);
+  await page
+    .getByRole('dialog', { name: 'Ajustes', exact: true })
+    .getByRole('button', { name: 'Añadir cuenta', exact: true })
+    .click();
+  await page.getByLabel('Proveedor de la nueva cuenta').selectOption('freebuff');
+  await page.getByRole('button', { name: 'Añadir Freebuff', exact: true }).click();
+  await page.getByRole('button', { name: 'Quitar Freebuff', exact: true }).waitFor();
+  assert.equal((await call({ type: 'snapshot' })).freebuffEnabled, true);
+  assert.equal((await call({ type: 'snapshot' })).profiles.length, 0);
+  await app.close();
+  app = undefined;
   assert.deepEqual(errors, []);
   console.log(
     'PASS: Freebuff official CLI launcher, manual input, shared local identity, no prompts/API keys, per-project processes, shell coexistence, dock/hide, stop/reopen, project removal and app shutdown.',

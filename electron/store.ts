@@ -59,6 +59,7 @@ const toolInfo = z.object({
   query: z.string().max(4096).optional(),
 });
 const schema = z.object({
+  freebuffEnabled: z.boolean().optional(),
   defaultProfile: profileSchema.optional(),
   removedProfiles: z.array(profileSchema).optional(),
   profiles: z
@@ -145,6 +146,7 @@ export class Store {
   constructor(readonly root: string) {
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
     this.state = {
+      freebuffEnabled: false,
       profiles: [],
       projects: [],
       sessions: [],
@@ -165,6 +167,7 @@ export class Store {
         this.state = {
           ...this.state,
           ...data,
+          freebuffEnabled: data.freebuffEnabled ?? !!data.tools.freebuff,
           profiles: definitions,
           defaultProfile: definitions.some((p) => p.id === data.defaultProfile)
             ? data.defaultProfile

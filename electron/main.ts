@@ -406,12 +406,16 @@ app.whenReady().then(async () => {
           manager.terminals.open(manager.project(a.projectId));
           return;
         case 'openFreebuff':
+          if (!manager.state.freebuffEnabled)
+            throw new Error('Añade Freebuff desde Ajustes → Añadir cuenta para utilizarlo.');
           manager.terminals.openFreebuff(
             manager.project(a.projectId),
             manager.state.tools.freebuff,
             network.environment(),
           );
           return true;
+        case 'setFreebuffEnabled':
+          return manager.setFreebuffEnabled(a.enabled);
         case 'stopFreebuff':
           manager.project(a.projectId);
           await manager.terminals.stopFreebuff(a.projectId);

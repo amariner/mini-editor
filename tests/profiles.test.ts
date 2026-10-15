@@ -96,3 +96,29 @@ test('migración y persistencia de perfiles y conversaciones; rechaza proveedor 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('Freebuff es opcional: migra la instalación existente y respeta quitarlo al reiniciar', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desk-optional-freebuff-'));
+  try {
+    const store = new Store(root);
+    assert.equal(store.state.freebuffEnabled, false);
+    fs.writeFileSync(
+      path.join(root, 'state.json'),
+      JSON.stringify({
+        profiles: [],
+        projects: [],
+        sessions: [],
+        tools: { freebuff: '/installed/freebuff' },
+      }),
+    );
+    const migrated = new Store(root);
+    assert.equal(migrated.state.freebuffEnabled, true);
+    migrated.state.freebuffEnabled = false;
+    migrated.flush();
+    const restored = new Store(root);
+    assert.equal(restored.state.freebuffEnabled, false);
+    assert.equal(restored.state.tools.freebuff, '/installed/freebuff');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

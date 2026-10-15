@@ -106,6 +106,12 @@ function App() {
     [seen, setSeen] = useState<Record<string, number>>({});
   const appearance = useInterfacePreferences(setError);
   useEffect(() => {
+    if (state && !state.freebuffEnabled && terminalTarget === 'freebuff') {
+      setTerminalTarget('default');
+      setShowTerminalPanel(false);
+    }
+  }, [state?.freebuffEnabled, terminalTarget]);
+  useEffect(() => {
     try {
       localStorage.setItem('agent-desk.terminal-position', terminalPosition);
     } catch {}
@@ -571,7 +577,7 @@ function App() {
     if (!(await run({ type: 'setMode', sessionId: session.id, mode: 'chat' })))
       setShowTerminalPanel(true);
   };
-  const freebuffPanel = terminalTarget === 'freebuff';
+  const freebuffPanel = !!state.freebuffEnabled && terminalTarget === 'freebuff';
   const terminalSession = freebuffPanel
     ? state.terminals?.find((t) => t.id === `freebuff:${project?.id}`)
     : terminalMode && session
@@ -1297,7 +1303,7 @@ function App() {
                             : 'Abrir Freebuff'}
                         </button>
                       </>
-                    ) : (
+                    ) : state.freebuffEnabled ? (
                       <button
                         disabled={
                           !compatibleRuntime(state) || !state.tools.freebuff || !!busy.openFreebuff
@@ -1307,7 +1313,7 @@ function App() {
                       >
                         Freebuff
                       </button>
-                    )}
+                    ) : null}
                     <button
                       aria-label={
                         terminalPosition === 'right'

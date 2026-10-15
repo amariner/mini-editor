@@ -57,10 +57,11 @@ export function AccountsSettings({
     }
   };
   const [adding, setAdding] = useState(false);
-  const [newKind, setNewKind] = useState<ProviderKind>('claude');
+  const [newKind, setNewKind] = useState<ProviderKind | 'freebuff'>('claude');
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Profile>();
+  const [removingFreebuff, setRemovingFreebuff] = useState(false);
   const compatible = compatibleRuntime(state);
   useEffect(() => {
     if (compatible)
@@ -163,15 +164,17 @@ export function AccountsSettings({
                 e.preventDefault();
                 setCreating(true);
                 try {
-                  const result = await run({
-                    type: 'addAccount',
-                    kind: newKind,
-                    name: newName.trim() || undefined,
-                  });
+                  const result = await run(
+                    newKind === 'freebuff'
+                      ? { type: 'setFreebuffEnabled', enabled: true }
+                      : { type: 'addAccount', kind: newKind, name: newName.trim() || undefined },
+                  );
                   if (result) {
                     setAdding(false);
                     setNewName('');
-                    void run({ type: 'accountRefresh', profile: result.id });
+                    setNewKind('claude');
+                    if (newKind !== 'freebuff')
+                      void run({ type: 'accountRefresh', profile: result.id });
                   }
                 } finally {
                   setCreating(false);
@@ -183,27 +186,30 @@ export function AccountsSettings({
                 <select
                   aria-label="Proveedor de la nueva cuenta"
                   value={newKind}
-                  onChange={(e) => setNewKind(e.target.value as ProviderKind)}
+                  onChange={(e) => setNewKind(e.target.value as ProviderKind | 'freebuff')}
                 >
                   <option value="claude">Claude</option>
                   <option value="codex">ChatGPT · Codex</option>
                   <option value="openrouter">OpenRouter · API</option>
                   <option value="gemini">Google · Gemini</option>
+                  {!state.freebuffEnabled && <option value="freebuff">Freebuff · CLI</option>}
                 </select>
               </label>
-              <label>
-                Nombre
-                <input
-                  aria-label="Nombre de la nueva cuenta"
-                  placeholder="Opcional · Personal, Trabajo…"
-                  value={newName}
-                  maxLength={40}
-                  onChange={(e) => setNewName(e.target.value)}
-                />
-              </label>
+              {newKind !== 'freebuff' && (
+                <label>
+                  Nombre
+                  <input
+                    aria-label="Nombre de la nueva cuenta"
+                    placeholder="Opcional · Personal, Trabajo…"
+                    value={newName}
+                    maxLength={40}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                </label>
+              )}
               <div>
                 <button type="submit" disabled={creating}>
-                  Crear perfil
+                  {newKind === 'freebuff' ? 'Añadir Freebuff' : 'Crear perfil'}
                 </button>
                 <button type="button" onClick={() => setAdding(false)}>
                   Cancelar
@@ -211,6 +217,10 @@ export function AccountsSettings({
               </div>
             </form>
           )}
+          <p className="muted">
+            Las cuentas e integraciones son opcionales. Puedes quitarlas y volver a añadirlas cuando
+            quieras.
+          </p>
           <div className="account-list">
             {!accountProfiles.length && (
               <p className="muted">No hay cuentas. Pulsa «Añadir cuenta» para crear la primera.</p>
@@ -490,54 +500,80 @@ export function AccountsSettings({
               </div>
             </section>
           )}
-          <section className="account-card" aria-label="Freebuff CLI">
-            <h3>Freebuff · terminal oficial</h3>
-            <p>
-              Inicia sesión y elige los modelos desde Freebuff. Se abre en el proyecto seleccionado
-              y utiliza la misma cuenta local que su CLI.
-            </p>
-            <p className="muted">
-              Los modelos, límites, permisos y avisos de datos se muestran en Freebuff. Sus
-              conversaciones permanecen en la CLI; no se añaden al chat ni al selector de modelos de
-              Agent Desk.
-            </p>
-            <button
-              disabled={
-                !compatible || !state.tools.freebuff || !state.selectedProject || !onOpenFreebuff
-              }
-              onClick={() => void onOpenFreebuff?.()}
-            >
-              Abrir Freebuff en este proyecto
-            </button>
-            {!state.selectedProject && (
-              <p className="muted">Selecciona un proyecto para abrir Freebuff.</p>
-            )}
-            {!state.tools.freebuff && (
-              <p className="muted">
-                Instala la CLI oficial con <code>npm install -g freebuff</code> y selecciona su
-                ejecutable debajo.
+          {state.freebuffEnabled && (
+            <section className="account-card" aria-label="Freebuff CLI">
+              <h3>Freebuff · terminal oficial</h3>
+              <p>
+                Inicia sesión y elige los modelos desde Freebuff. Se abre en el proyecto
+                seleccionado y utiliza la misma cuenta local que su CLI.
               </p>
-            )}
-          </section>
+              <p className="muted">
+                Los modelos, límites, permisos y avisos de datos se muestran en Freebuff. Sus
+                conversaciones permanecen en la CLI; no se añaden al chat ni al selector de modelos
+                de Agent Desk.
+              </p>
+              <button
+                disabled={
+                  !compatible || !state.tools.freebuff || !state.selectedProject || !onOpenFreebuff
+                }
+                onClick={() => void onOpenFreebuff?.()}
+              >
+                Abrir Freebuff en este proyecto
+              </button>
+              {!state.selectedProject && (
+                <p className="muted">Selecciona un proyecto para abrir Freebuff.</p>
+              )}
+              {!state.tools.freebuff && (
+                <p className="muted">
+                  Instala la CLI oficial con <code>npm install -g freebuff</code> y selecciona su
+                  ejecutable debajo.
+                </p>
+              )}
+              <button
+                className="danger-ghost"
+                disabled={!compatible || removingFreebuff}
+                onClick={async () => {
+                  setRemovingFreebuff(true);
+                  try {
+                    await run({ type: 'setFreebuffEnabled', enabled: false });
+                  } finally {
+                    setRemovingFreebuff(false);
+                  }
+                }}
+              >
+                <Trash2 size={14} /> {removingFreebuff ? 'Quitando Freebuff…' : 'Quitar Freebuff'}
+              </button>
+              <p className="muted">
+                Al quitarlo se cierran sus terminales abiertas. Tu cuenta y los datos de la CLI se
+                conservan.
+              </p>
+            </section>
+          )}
           <details className="account-tools">
             <summary>Herramientas y datos locales</summary>
-            {(['claude', 'codex', 'gemini', 'freebuff'] as const).map((tool) => (
-              <div className="tool-setting" key={tool}>
-                <strong>
-                  {tool === 'claude'
-                    ? 'Claude Code'
-                    : tool === 'gemini'
-                      ? 'Google · Antigravity / Gemini CLI'
-                      : tool === 'freebuff'
-                        ? 'Freebuff CLI'
-                        : 'Codex app-server'}
-                </strong>
-                <code>{state.tools[tool] ?? 'No encontrado'}</code>
-                <button onClick={() => void run({ type: 'chooseBinary', tool })}>
-                  Seleccionar ejecutable
-                </button>
-              </div>
-            ))}
+            {(['claude', 'codex', 'gemini', 'freebuff'] as const)
+              .filter((tool) =>
+                tool === 'freebuff'
+                  ? state.freebuffEnabled
+                  : accountProfiles.some((p) => p.kind === tool),
+              )
+              .map((tool) => (
+                <div className="tool-setting" key={tool}>
+                  <strong>
+                    {tool === 'claude'
+                      ? 'Claude Code'
+                      : tool === 'gemini'
+                        ? 'Google · Antigravity / Gemini CLI'
+                        : tool === 'freebuff'
+                          ? 'Freebuff CLI'
+                          : 'Codex app-server'}
+                  </strong>
+                  <code>{state.tools[tool] ?? 'No encontrado'}</code>
+                  <button onClick={() => void run({ type: 'chooseBinary', tool })}>
+                    Seleccionar ejecutable
+                  </button>
+                </div>
+              ))}
             <h3>Datos locales</h3>
             <code>{state.dataDir}</code>
           </details>

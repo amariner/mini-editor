@@ -146,6 +146,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('openProjectTerminal'), projectId: id }),
   z.object({ type: z.literal('openFreebuff'), projectId: id }).strict(),
+  z.object({ type: z.literal('setFreebuffEnabled'), enabled: z.boolean() }).strict(),
   z.object({ type: z.literal('stopFreebuff'), projectId: id }).strict(),
   z.object({
     type: z.literal('openPath'),

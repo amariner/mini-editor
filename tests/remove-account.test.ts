@@ -195,3 +195,20 @@ test('eliminar justo al empezar la consulta impide que arranque el CLI', async (
     assert.equal(m.accounts.active, false);
   });
 });
+
+for (const kind of ['openrouter', 'gemini'] as const) {
+  test(`${kind}: quitar la última cuenta persiste y permite volver a añadir el proveedor`, async () => {
+    await fixture(async (m, root) => {
+      const profile = m.addAccount(kind);
+      await m.removeAccount(profile.id, true, async (directory) => {
+        fs.renameSync(directory, path.join(root, 'trash'));
+      });
+      m.store.state = new Store(root).state;
+      assert.deepEqual(m.state.profiles, []);
+      assert.equal(m.state.defaultProfile, undefined);
+      const replacement = m.addAccount(kind);
+      assert.notEqual(replacement.id, profile.id);
+      assert.equal(new Store(root).state.profiles?.[0].id, replacement.id);
+    });
+  });
+}
