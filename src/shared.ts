@@ -412,6 +412,7 @@ export type Action =
   | { type: 'snapshot' }
   | { type: 'restartApp' }
   | { type: 'addProject' }
+  | { type: 'moveProject'; projectId: string; targetProjectId: string }
   | { type: 'removeProject'; projectId: string }
   | { type: 'renameProject'; projectId: string; name: string }
   | { type: 'select'; projectId: string; sessionId?: string; profile?: Profile }

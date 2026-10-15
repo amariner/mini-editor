@@ -387,6 +387,20 @@ export class Manager {
     }
     this.changed();
   }
+  moveProject(projectId: string, targetProjectId: string) {
+    const projects = this.state.projects;
+    const from = projects.findIndex((p) => p.id === projectId);
+    const to = projects.findIndex((p) => p.id === targetProjectId);
+    if (from < 0 || to < 0) throw new Error('Este proyecto ya no está disponible.');
+    if (from === to) return true;
+    const next = [...projects];
+    const [project] = next.splice(from, 1);
+    next.splice(to, 0, project);
+    this.state.projects = next;
+    this.store.flush();
+    this.changed();
+    return true;
+  }
   async addProject(folder: string) {
     const canonical = await fs.promises.realpath(folder);
     if (!(await fs.promises.stat(canonical)).isDirectory())

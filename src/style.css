@@ -6559,3 +6559,19 @@ button.msg-action.reading {
   min-height: 26px;
   padding: 3px 8px;
 }
+
+.sidebar .project-name[draggable='true'] {
+  cursor: grab;
+}
+.sidebar .project-name[draggable='true']:active {
+  cursor: grabbing;
+}
+.sidebar .project-block.dragging {
+  opacity: 0.45;
+}
+.sidebar .project-block.drop-target {
+  outline: 2px solid var(--c-blue);
+  outline-offset: -2px;
+  border-radius: 8px;
+  background: var(--tile-hover);
+}

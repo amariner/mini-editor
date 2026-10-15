@@ -270,6 +270,8 @@ Revisión visual minimalista: `npm run build && node scripts/browser-check.mjs` 
 
 Revisión de cuentas ampliables: `node scripts/profiles-check.mjs` (tras `npm run build`) crea cuentas adicionales desde Ajustes, consulta los binarios oficiales con perfiles vacíos, abre un proceso Claude y otro Codex en esos perfiles, verifica cierre de sesión limitado al perfil, persistencia y rechazo de identificadores no registrados. También comprueba los controles solo con iconos (la selección actual aparece al pasar el ratón) y las barras de navegador/pestañas alineadas a 38 px. No envía tareas de modelo. Capturas en `artifacts/38-*` y `artifacts/39-*`.
 
+Orden de proyectos: arrastra una fila de la barra lateral sobre otra para cambiar su posición, también con la barra plegada. El orden se guarda con los datos de la app y se conserva al reiniciar. Reordenar no cambia el proyecto seleccionado, las rutas ni los chats en marcha. Con una fila enfocada, **Alt + ↑/↓** la mueve una posición. Requiere actualizar o reiniciar las instancias anteriores (IPC 32). `tests/project-order.test.ts` comprueba persistencia, validación y conservación de sesiones; `scripts/multichat-check.mjs` verifica arrastre con barra desplegada y plegada.
+
 Renombrado directo: doble clic sobre un proyecto o una pestaña de chat permite editar su nombre en el mismo sitio. Enter o salir del campo guarda; Esc cancela y un nombre vacío conserva el anterior. El nombre de proyecto es una etiqueta local: no renombra la carpeta ni altera su ruta o archivos. Doble clic en un proyecto plegado expande la barra para editarlo. `node scripts/navigation-check.mjs` verifica edición, cancelación, persistencia, ruta intacta, buscador y terminal inferior con su PTY real.
 
 ## Uso de suscripción y adjuntos

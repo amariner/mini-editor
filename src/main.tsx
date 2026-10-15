@@ -81,6 +81,8 @@ function App() {
     [searchIndex, setSearchIndex] = useState(0),
     [settings, setSettings] = useState(false),
     [sidebarCollapsed, setSidebarCollapsed] = useState(false),
+    [draggedProject, setDraggedProject] = useState<string>(),
+    [projectDrop, setProjectDrop] = useState<string>(),
     [navigating, setNavigating] = useState(false),
     [tabs, setTabs] = useState<Record<string, string[]>>({}),
     [closedSelection, setClosedSelection] = useState<string>(),
@@ -127,6 +129,16 @@ function App() {
     navigationInFlight = useRef(false),
     recentSessions = useRef<Record<string, string>>({}),
     stateRef = useRef<Snapshot | undefined>(undefined);
+  const projectDrag = useRef<string | undefined>(undefined);
+  const suppressProjectClick = useRef(false);
+  const finishProjectDrag = () => {
+    projectDrag.current = undefined;
+    setDraggedProject(undefined);
+    setProjectDrop(undefined);
+    setTimeout(() => {
+      suppressProjectClick.current = false;
+    }, 100);
+  };
   stateRef.current = state;
   useEffect(() => {
     const off = window.desk.subscribe((e) => {
@@ -713,7 +725,25 @@ function App() {
         </div>
         <nav className="projects" aria-label="Proyectos">
           {state.projects.map((p) => (
-            <div key={p.id} className={`project-block ${p.id === project?.id ? 'selected' : ''}`}>
+            <div
+              key={p.id}
+              className={`project-block ${p.id === project?.id ? 'selected' : ''} ${draggedProject === p.id ? 'dragging' : ''} ${projectDrop === p.id ? 'drop-target' : ''}`}
+              data-project-id={p.id}
+              onDragOver={(e) => {
+                if (!projectDrag.current || projectDrag.current === p.id) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setProjectDrop(p.id);
+              }}
+              onDrop={(e) => {
+                const source = projectDrag.current;
+                if (!source || source === p.id) return;
+                e.preventDefault();
+                e.stopPropagation();
+                finishProjectDrag();
+                void run({ type: 'moveProject', projectId: source, targetProjectId: p.id });
+              }}
+            >
               <div className="project-row">
                 {editingName?.kind === 'project' && editingName.id === p.id ? (
                   <EditableName
@@ -725,16 +755,53 @@ function App() {
                 ) : (
                   <button
                     className="project-name"
-                    title={p.path}
+                    draggable={compatibleRuntime(state) && !navigating && !busy.moveProject}
+                    onDragStart={(e) => {
+                      projectDrag.current = p.id;
+                      suppressProjectClick.current = true;
+                      setDraggedProject(p.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('application/x-agent-desk-project', p.id);
+                    }}
+                    onDragEnd={finishProjectDrag}
+                    onKeyDown={(e) => {
+                      if (
+                        !compatibleRuntime(state) ||
+                        busy.moveProject ||
+                        !e.altKey ||
+                        !['ArrowUp', 'ArrowDown'].includes(e.key)
+                      )
+                        return;
+                      e.preventDefault();
+                      const projects = stateRef.current?.projects ?? [];
+                      const index = projects.findIndex((x) => x.id === p.id);
+                      const target = projects[index + (e.key === 'ArrowUp' ? -1 : 1)];
+                      if (target)
+                        void run({
+                          type: 'moveProject',
+                          projectId: p.id,
+                          targetProjectId: target.id,
+                        }).then(() =>
+                          requestAnimationFrame(() =>
+                            document
+                              .querySelector<HTMLButtonElement>(
+                                `[data-project-id="${CSS.escape(p.id)}"] .project-name`,
+                              )
+                              ?.focus(),
+                          ),
+                        );
+                    }}
+                    title={`${p.path} · Arrastra para ordenar · Alt + ↑/↓ para mover`}
                     aria-disabled={navigating}
                     aria-label={p.name}
                     aria-current={p.id === project?.id ? 'page' : undefined}
                     onClick={(e) => {
-                      if (e.detail < 2) {
+                      if (e.detail < 2 && !suppressProjectClick.current) {
                         void switchProject(p.id);
                       }
                     }}
                     onDoubleClick={() => {
+                      if (suppressProjectClick.current) return;
                       setSidebarCollapsed(false);
                       setEditingName({ kind: 'project', id: p.id });
                     }}

@@ -177,6 +177,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('refreshCodexModels'), sessionId: id }),
   z.object({ type: z.literal('refreshModels'), sessionId: id }),
   z.object({ type: z.literal('addProject') }),
+  z.object({ type: z.literal('moveProject'), projectId: id, targetProjectId: id }).strict(),
   z.object({ type: z.literal('removeProject'), projectId: id }),
   z.object({
     type: z.literal('select'),

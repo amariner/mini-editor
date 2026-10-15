@@ -485,6 +485,8 @@ app.whenReady().then(async () => {
           process.send('desk:dev-restart');
           setImmediate(() => app.quit());
           return;
+        case 'moveProject':
+          return manager.moveProject(a.projectId, a.targetProjectId);
         case 'addProject': {
           const r = await dialog.showOpenDialog(win, {
             title: 'Añadir proyecto local',

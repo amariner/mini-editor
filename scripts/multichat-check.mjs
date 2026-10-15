@@ -49,7 +49,7 @@ try {
       })),
       selectedSession: 's0',
       selectedProject: 'p0',
-      runtime: { protocol: 31 },
+      runtime: { protocol: 32 },
       tools: {},
       coordination: [],
     };
@@ -123,6 +123,13 @@ try {
           state.selectedProject = a.projectId;
           state.selectedSession =
             a.sessionId ?? state.sessions.filter((s) => s.projectId === a.projectId).at(-1)?.id;
+          return true;
+        }
+        if (a.type === 'moveProject') {
+          const from = state.projects.findIndex((p) => p.id === a.projectId),
+            to = state.projects.findIndex((p) => p.id === a.targetProjectId);
+          const [project] = state.projects.splice(from, 1);
+          state.projects.splice(to, 0, project);
           return true;
         }
         if (a.type === 'rename') {
@@ -299,6 +306,51 @@ try {
   await page.getByRole('button', { name: 'Proyecto 2', exact: true }).click();
   await grid.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Multichat', exact: true }).click();
+  const sidebar = page.getByRole('navigation', { name: 'Proyectos', exact: true });
+  const selectedBeforeOrder = await page.evaluate(() => [
+    window.fixture.state.selectedProject,
+    window.fixture.state.selectedSession,
+  ]);
+  const selectCalls = await page.evaluate(
+    () => window.fixture.actions.filter((a) => a.type === 'select').length,
+  );
+  await sidebar
+    .getByRole('button', { name: 'Proyecto 1', exact: true })
+    .dragTo(sidebar.locator('[data-project-id="p2"]'));
+  await page.waitForFunction(
+    () => window.fixture.state.projects.map((p) => p.id).join(',') === 'p1,p2,p0,p3',
+  );
+  assert.deepEqual(await sidebar.locator('.project-name').allTextContents(), [
+    'Proyecto 2',
+    'Proyecto 3',
+    'Proyecto 1',
+    'Proyecto 4',
+  ]);
+  assert.deepEqual(
+    await page.evaluate(() => [
+      window.fixture.state.selectedProject,
+      window.fixture.state.selectedSession,
+    ]),
+    selectedBeforeOrder,
+  );
+  assert.equal(
+    await page.evaluate(() => window.fixture.actions.filter((a) => a.type === 'select').length),
+    selectCalls,
+  );
+  assert.equal(await grid.isVisible(), true);
+  await sidebar.getByRole('button', { name: 'Proyecto 1', exact: true }).press('Alt+ArrowUp');
+  await page.waitForFunction(
+    () => window.fixture.state.projects.map((p) => p.id).join(',') === 'p1,p0,p2,p3',
+  );
+  await page.getByRole('button', { name: 'Plegar proyectos', exact: true }).click();
+  await sidebar
+    .getByRole('button', { name: 'Proyecto 4', exact: true })
+    .dragTo(sidebar.locator('[data-project-id="p1"]'));
+  await page.waitForFunction(
+    () => window.fixture.state.projects.map((p) => p.id).join(',') === 'p3,p1,p0,p2',
+  );
+  await page.getByRole('button', { name: 'Expandir proyectos', exact: true }).click();
+  assert.equal(await grid.isVisible(), true);
   assert.equal(await columns(), 4);
   assert.ok(
     await grid
@@ -675,7 +727,7 @@ try {
   await grid.getByRole('heading', { name: 'No hay chats en marcha' }).waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    'Multichat: 16 chats, cross-project expansion, Esc, retention, restart, responsive layout, mini-chat sends, attachments, drafts, failures, permissions, interrupt, drag and keyboard reordering, saved order, detailed activity, tool log, account nickname, Git header, per-chat dev ports, Chrome action, account colors, shared rich text, response links, project sidebar navigation, saved and automatic layout, attention and unseen jumps, numbered shortcuts, saved dismissals, title renaming and empty state passed.',
+    'Multichat: 16 chats, cross-project expansion, Esc, retention, restart, responsive layout, mini-chat sends, attachments, drafts, failures, permissions, interrupt, drag and keyboard reordering, saved order, detailed activity, tool log, account nickname, Git header, per-chat dev ports, Chrome action, account colors, shared rich text, response links, project sidebar navigation, saved and automatic layout, attention and unseen jumps, numbered shortcuts, saved dismissals, title renaming, expanded/collapsed sidebar project dragging and empty state passed.',
   );
 } finally {
   await browser?.close();
