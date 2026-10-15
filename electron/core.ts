@@ -53,6 +53,7 @@ export const modelSelectionSchema = z
   .object({ freeOnly: z.boolean(), models: z.array(z.string().min(1).max(200)).max(500) })
   .strict();
 export const providerConfigSchema = z.object({ model: z.string().min(1).max(200) }).strict();
+export const accountColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
 export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('saveProxy'), config: proxyUpdateSchema }),
   z.object({
@@ -63,6 +64,16 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('detectProxy') }),
   z.object({ type: z.literal('chooseProxyCertificate') }),
   z.object({ type: z.literal('setDefaultAccount'), profile }),
+  z
+    .object({ type: z.literal('setAccountColor'), profile, color: accountColorSchema.nullable() })
+    .strict(),
+  z
+    .object({
+      type: z.literal('openDevInChrome'),
+      sessionId: id,
+      port: z.number().int().min(1).max(65535),
+    })
+    .strict(),
   z.object({ type: z.literal('changeSessionAccount'), sessionId: id, profile }),
   z.object({ type: z.literal('removeAccount'), profile, confirmed: z.literal(true) }),
   z.object({ type: z.literal('configureOptimization'), profile, optimization: optimizationSchema }),

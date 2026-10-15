@@ -33,6 +33,7 @@ export interface ApiUsage {
 }
 
 export interface ProfileDefinition {
+  color?: string;
   id: Profile;
   name: string;
   kind: ProviderKind;
@@ -352,6 +353,7 @@ export interface Snapshot {
   profiles?: ProfileDefinition[];
   removedProfiles?: Profile[];
   browsers?: BrowserState[];
+  devServers?: { projectId: string; sessionId: string; url: string; port: number }[];
   terminals?: { id: string; projectId: string; status: Status; kind?: 'shell' | 'freebuff' }[];
   coordination?: {
     sessionId: string;
@@ -378,6 +380,8 @@ export type Action =
   | { type: 'testProxy'; config: import('./proxy-types').ProxyUpdate; provider: 'codex' | 'claude' }
   | { type: 'detectProxy' | 'chooseProxyCertificate' }
   | { type: 'setDefaultAccount'; profile: Profile }
+  | { type: 'setAccountColor'; profile: Profile; color: string | null }
+  | { type: 'openDevInChrome'; sessionId: string; port: number }
   | { type: 'changeSessionAccount'; sessionId: string; profile: Profile }
   | { type: 'configureOptimization'; profile: Profile; optimization: TokenOptimization }
   | { type: 'addAccount'; kind: ProviderKind; name?: string }

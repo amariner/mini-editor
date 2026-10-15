@@ -204,6 +204,18 @@ export class Manager {
       this.changingFreebuff = false;
     }
   }
+  setAccountColor(profile: Profile, color: string | null) {
+    const definition = this.state.profiles?.find((p) => p.id === profile);
+    if (!definition || this.accounts.removing(profile))
+      throw new Error('Esta cuenta no está disponible.');
+    if (color !== null && !/^#[0-9a-f]{6}$/i.test(color))
+      throw new Error('Color de cuenta no válido.');
+    if (color === null) delete definition.color;
+    else definition.color = color.toLowerCase();
+    this.store.flush();
+    this.changed();
+    return true;
+  }
   setDefaultAccount(profile: Profile) {
     if (!this.state.profiles?.some((p) => p.id === profile) || this.accounts.removing(profile))
       throw new Error('Esta cuenta no está disponible.');

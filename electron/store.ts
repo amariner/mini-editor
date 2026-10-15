@@ -13,6 +13,7 @@ import {
   modelSelectionSchema,
   providerConfigSchema,
   optimizationSchema,
+  accountColorSchema,
 } from './core';
 const block: z.ZodType<any> = z.lazy(() =>
   z.discriminatedUnion('type', [
@@ -68,6 +69,7 @@ const schema = z.object({
         id: profileSchema,
         name: z.string().trim().min(1).max(40),
         kind: z.enum(['claude', 'codex', 'openrouter', 'gemini']),
+        color: accountColorSchema.optional(),
         modelSelection: modelSelectionSchema.optional(),
         googleCloudProject: z.string().max(100).optional(),
         optimization: optimizationSchema.optional(),

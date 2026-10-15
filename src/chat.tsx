@@ -720,10 +720,20 @@ function ResponseGroup({
     </div>
   );
 }
-export function ConversationMessages({ session, kind }: { session: Session; kind: ProviderKind }) {
+export function ConversationMessages({
+  session,
+  kind,
+  limit,
+}: {
+  session: Session;
+  kind: ProviderKind;
+  limit?: number;
+}) {
+  const entries = conversationEntries(session);
+  const visible = limit === undefined ? entries : entries.slice(-limit);
   return (
     <>
-      {conversationEntries(session).map((entry) => {
+      {visible.map((entry) => {
         if (entry.type === 'message')
           return <MessageView key={entry.id} m={entry.message} kind={kind} />;
         return <ResponseGroup key={entry.id} entry={entry} kind={kind} />;
@@ -762,7 +772,15 @@ function turnStart(session: Session) {
   turnStarts[session.id] = { key, at: Date.now() };
   return turnStarts[session.id].at;
 }
-export function ActivityDock({ session, kind }: { session: Session; kind: ProviderKind }) {
+export function ActivityDock({
+  session,
+  kind,
+  compact = false,
+}: {
+  session: Session;
+  kind: ProviderKind;
+  compact?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const { root } = useChatActions();
   const active = working(session);
@@ -788,14 +806,37 @@ export function ActivityDock({ session, kind }: { session: Session; kind: Provid
   } else if (last?.type === 'thinking') label = last.streaming ? 'Razonando…' : idle;
   else if (last?.type === 'text') label = last.text;
   if (session.activity && session.activity !== 'Pensando…') label = session.activity;
+  if (compact) {
+    const steps = items.flatMap((item) => (item.type === 'step' ? [item.step] : []));
+    const step = [...steps].reverse().find((step) => step.running) ?? steps.at(-1);
+    if (step) {
+      const detail = step.detail && step.detail !== step.label ? ` · ${step.detail}` : '';
+      label = `${step.running ? '' : 'Último paso: '}${VERBS[step.kind][step.running ? 1 : 0]} ${step.label}${detail}`;
+      if (session.activity && session.activity !== 'Pensando…' && !step.running)
+        label = `${session.activity} · ${label}`;
+    } else if (!session.activity || session.activity === 'Pensando…') {
+      label =
+        last?.type === 'text'
+          ? 'Redactando respuesta…'
+          : last?.type === 'thinking'
+            ? 'Razonando…'
+            : 'Preparando la respuesta…';
+    }
+  }
   if (session.status === 'starting') label = 'Abriendo agente…';
   if (session.status === 'stopping') label = 'Deteniendo…';
-  if (waiting) label = 'Esperando tu respuesta';
+  if (waiting)
+    label =
+      compact && session.approvals.length
+        ? `Esperando tu respuesta · ${session.approvals[0].title ?? session.approvals[0].tool ?? 'Solicitud de permiso'}`
+        : 'Esperando tu respuesta';
   label = label.replace(/\s+/g, ' ').trim().slice(0, 180) || idle;
   const elapsed = session.status === 'starting' ? 0 : Math.max(0, now - turnStart(session));
   const steps = activity?.steps ?? 0;
   return (
-    <div className={`activity-dock ${waiting ? 'waiting' : ''}`}>
+    <div
+      className={`activity-dock ${waiting ? 'waiting' : ''} ${compact ? 'compact-activity' : ''}`}
+    >
       {open && activity && (
         <div className="activity-log" id={`activity-${session.id}`}>
           <WorkFeed items={items.filter((w) => w.type !== 'text')} />
@@ -828,7 +869,7 @@ export function ActivityDock({ session, kind }: { session: Session; kind: Provid
             {activity.errors} {activity.errors === 1 ? 'error' : 'errores'}
           </span>
         ) : null}
-        {!waiting && <kbd className="activity-esc">esc</kbd>}
+        {!waiting && !compact && <kbd className="activity-esc">esc</kbd>}
         {activity && <ChevronDown size={12} className={open ? 'expanded' : ''} />}
       </button>
     </div>

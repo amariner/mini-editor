@@ -80,6 +80,7 @@ const snapshot = () =>
     proxy: network?.snapshot(),
     ...manager.state,
     browsers: browser?.snapshot() ?? [],
+    devServers: browser?.serverSnapshot() ?? [],
     accounts: manager.accounts.state,
     coordination: manager.coordinator.snapshot(),
     terminals: manager.terminals.snapshot(),
@@ -187,8 +188,11 @@ app.whenReady().then(async () => {
                     ? [{ id: b.id, text: b.result }]
                     : [],
                 );
-                if (message.role === 'tool' && message.text.startsWith('$ '))
-                  outputs.push({ id: message.id, text: message.text });
+                if (
+                  message.role === 'tool' &&
+                  (message.tool?.kind === 'command' || message.text.startsWith('$ '))
+                )
+                  outputs.push({ id: message.id, text: message.tool?.output ?? message.text });
                 for (const output of outputs) {
                   const key = `${session.id}:${output.id}:${output.text.length}`;
                   if (observedBrowserOutputs.has(key)) continue;
@@ -346,6 +350,16 @@ app.whenReady().then(async () => {
           return result.canceled ? undefined : result.filePaths[0];
         }
 
+        case 'setAccountColor':
+          return manager.setAccountColor(a.profile, a.color);
+        case 'openDevInChrome': {
+          manager.session(a.sessionId);
+          const server = browser
+            .serverSnapshot()
+            .find((s) => s.sessionId === a.sessionId && s.port === a.port);
+          if (!server) throw new Error('Este puerto ya no está disponible para el chat.');
+          return openInChrome(server.url, true);
+        }
         case 'setDefaultAccount':
           return manager.setDefaultAccount(a.profile);
         case 'changeSessionAccount':

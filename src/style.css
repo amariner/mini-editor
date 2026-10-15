@@ -5826,3 +5826,736 @@ button.msg-action.reading {
   flex: 1 1 200px;
   width: auto;
 }
+
+/* Multichat: bounded conversations keep sixteen running chats readable at a glance. */
+.multichat[hidden] {
+  display: none;
+}
+.multichat {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.multichat-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.topbar .top-actions button.multichat-back {
+  width: auto;
+  padding-inline: 8px;
+  font-size: 11px;
+}
+
+/* Grid controls share the top bar, so every pixel below it belongs to the chats. */
+.topbar-slot {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+.multichat-toolbar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+}
+.multichat > .multichat-toolbar {
+  flex: 0 0 auto;
+  padding: 2px 8px 10px;
+}
+.multichat-summary {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: clip;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ui-text-color, var(--text-2));
+}
+.multichat-summary strong {
+  font-weight: 600;
+  color: var(--ui-text-color, var(--text));
+}
+.multichat-summary > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+}
+.multichat-summary > button {
+  -webkit-app-region: no-drag;
+  min-height: 24px;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+}
+.multichat-summary > button:hover {
+  background: var(--card);
+  color: var(--ui-text-color, var(--text));
+}
+.multichat-summary > button.attention {
+  color: var(--ui-text-color, var(--text));
+  font-weight: 600;
+}
+.multichat-summary i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.multichat-summary .working i {
+  background: var(--c-blue);
+  animation: pulse 1.6s infinite;
+}
+.multichat-summary .attention i {
+  background: var(--warn);
+}
+.multichat-summary .done i {
+  background: var(--ok);
+}
+
+/* Layout: one click opens a columns × rows matrix; Auto follows the running chats. */
+.multichat-layout {
+  position: relative;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.multichat-layout-button {
+  height: 26px;
+  min-height: 26px;
+  gap: 5px;
+  padding: 0 6px 0 8px;
+  background: transparent;
+  color: var(--ui-text-color, var(--text-2));
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.multichat-layout-button:hover,
+.multichat-layout-button[aria-expanded='true'] {
+  background: var(--card);
+  color: var(--ui-text-color, var(--text));
+}
+.multichat-layout-button span {
+  color: var(--muted);
+}
+.multichat-layout-menu {
+  -webkit-app-region: no-drag;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 184px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px #00000030;
+}
+.multichat-layout-auto {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-height: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+.multichat-layout-auto small {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+.multichat-layout-auto:hover,
+.multichat-layout-auto.on {
+  background: var(--tile);
+}
+.multichat-layout-auto.on {
+  font-weight: 600;
+}
+.multichat-layout-matrix {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 0 6px;
+}
+.multichat-layout-matrix button {
+  transition: none;
+  aspect-ratio: 4 / 3;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+}
+.multichat-layout-matrix button.on {
+  border-color: var(--c-blue);
+  background: color-mix(in srgb, var(--c-blue) 28%, transparent);
+}
+.multichat-layout-matrix button:focus-visible {
+  outline-offset: 1px;
+}
+.multichat-layout-size {
+  padding-bottom: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.multichat-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 6px 6px;
+}
+.multichat-grid {
+  height: 100%;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(var(--grid-columns), minmax(0, 1fr));
+  grid-auto-rows: max(180px, calc((100% - (var(--grid-rows) - 1) * 10px) / var(--grid-rows)));
+  min-width: calc(var(--grid-columns) * 240px + (var(--grid-columns) - 1) * 10px);
+}
+.multichat-grid.auto {
+  min-width: 0;
+}
+
+/* Card: status dot, title and actions in one row; everything else is conversation. */
+.multichat-card {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--text) 16%, var(--card));
+  border-radius: 10px;
+  box-shadow: 0 1px 4px #0000001a;
+  overflow: hidden;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.multichat-card:focus-within {
+  border-color: color-mix(in srgb, var(--text) 40%, var(--card));
+}
+.multichat-card.attention {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.multichat-card.error {
+  border-color: var(--danger);
+}
+.multichat-card.unseen:not(.attention, .error) {
+  border-color: var(--ok);
+}
+.multichat-card.dragging {
+  opacity: 0.45;
+}
+.multichat-card.drop-target {
+  outline: 2px solid var(--c-blue);
+  outline-offset: -2px;
+}
+.multichat-card-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 38px;
+  padding: 4px 6px 4px 12px;
+  background: color-mix(in srgb, var(--text) 4%, var(--card));
+  border-bottom: 1px solid var(--line);
+  cursor: grab;
+}
+.multichat-card-head:active {
+  cursor: grabbing;
+}
+.multichat-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.multichat-card.working .multichat-dot {
+  background: var(--c-blue);
+  animation: pulse 1.6s infinite;
+}
+.multichat-card.attention .multichat-dot {
+  background: var(--warn);
+}
+.multichat-card.error .multichat-dot {
+  background: var(--danger);
+}
+.multichat-card.done .multichat-dot {
+  background: var(--ok);
+}
+.multichat-card.unseen .multichat-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent);
+}
+.multichat-title {
+  flex: 1;
+  min-width: 0;
+  min-height: 26px;
+  justify-content: flex-start;
+  margin-left: -4px;
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: inherit;
+}
+.multichat-title:hover {
+  background: transparent;
+}
+.multichat-title:active {
+  transform: none;
+}
+.multichat-title strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.multichat-card-head .inline-name {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--tile);
+}
+.multichat-card-head button:not(.multichat-title) {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+.multichat-card-head button:not(.multichat-title):hover:enabled {
+  background: var(--tile-hover);
+  color: var(--text);
+}
+.multichat-card-head .multichat-server {
+  color: var(--c-blue);
+}
+.multichat-key {
+  display: none;
+  flex-shrink: 0;
+  margin: 0 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--sel);
+  color: var(--sel-text);
+  font: 600 10px/1.4 var(--mono);
+}
+.multichat.show-keys .multichat-key {
+  display: inline-block;
+}
+/* Secondary actions appear with the pointer or keyboard focus; a busy chat cannot be retired. */
+.multichat-card .multichat-dismiss,
+.multichat-card .multichat-git-refresh {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.multichat-card:hover .multichat-dismiss:enabled,
+.multichat-card:focus-within .multichat-dismiss:enabled,
+.multichat-card:hover .multichat-git-refresh,
+.multichat-card:focus-within .multichat-git-refresh {
+  opacity: 1;
+}
+
+/* Account nickname, folder and only the Git facts that need attention. */
+.multichat-info-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 6px 0 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.multichat-account,
+.multichat-folder {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.multichat-account {
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+.multichat-folder {
+  color: var(--text-2);
+}
+.multichat-git {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+.multichat-git svg {
+  flex-shrink: 0;
+}
+.multichat-branch {
+  min-width: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.multichat-git.error,
+.multichat-git .conflicts {
+  color: var(--danger);
+}
+.multichat-info-line .multichat-git-refresh {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  margin-left: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.multichat-info-line .multichat-git-refresh:hover:enabled {
+  background: var(--tile-hover);
+  color: var(--text);
+}
+
+.multichat-card .compact-activity {
+  margin: 2px 8px 0;
+}
+.multichat-card .compact-activity .activity-current {
+  height: auto;
+  min-height: 26px;
+  padding-block: 4px;
+  gap: 4px;
+  align-items: flex-start;
+}
+.multichat-card .compact-activity .activity-current-text {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.multichat-card .compact-activity .activity-time,
+.multichat-card .compact-activity .activity-count {
+  font-size: 9.5px;
+}
+.multichat-card .compact-activity .activity-log {
+  max-height: 130px;
+  font-size: 10px;
+}
+
+/* The grid uses the same response components and Markdown as the expanded chat. */
+.multichat-preview.compact-conversation {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  /* Lines fade out only on the edges that hide more text, never on a short conversation. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--multichat-fade-top),
+    #000 calc(100% - var(--multichat-fade-bottom)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--multichat-fade-top),
+    #000 calc(100% - var(--multichat-fade-bottom)),
+    transparent
+  );
+  animation:
+    multichat-fade-top linear both,
+    multichat-fade-bottom linear both;
+  animation-timeline: scroll(self), scroll(self);
+  animation-range:
+    0 24px,
+    calc(100% - 24px) 100%;
+}
+.multichat-preview:focus {
+  outline: none;
+}
+@property --multichat-fade-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --multichat-fade-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes multichat-fade-top {
+  to {
+    --multichat-fade-top: 24px;
+  }
+}
+@keyframes multichat-fade-bottom {
+  from {
+    --multichat-fade-bottom: 24px;
+  }
+  to {
+    --multichat-fade-bottom: 0px;
+  }
+}
+.multichat-preview .response-group,
+.multichat-preview .row {
+  min-width: 0;
+  max-width: 100%;
+}
+.multichat-preview .md-table {
+  max-width: 100%;
+}
+.multichat-preview .bubble {
+  max-width: 92%;
+}
+.multichat-preview .msg-actions {
+  flex-wrap: wrap;
+}
+.multichat-preview .md-code {
+  min-width: 0;
+  max-width: 100%;
+}
+.multichat-card .multichat-preview .md,
+.multichat-card .multichat-preview .bubble {
+  color: var(--multichat-body, color-mix(in srgb, var(--text) 88%, var(--card)));
+}
+.multichat-hint {
+  margin: auto 0 0;
+  color: var(--muted);
+}
+.multichat-earlier {
+  align-self: center;
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 3px 10px;
+  font-size: 10.5px;
+}
+
+/* Permission requests stay pinned above the composer and take the space they need:
+   the history yields first, and the decision buttons come right after the title. */
+.multichat-approvals {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line));
+  background: color-mix(in srgb, var(--warn) 7%, var(--card));
+}
+.multichat-approvals .approval {
+  max-width: none;
+  margin: 0;
+  padding: 8px 10px;
+  gap: 8px;
+  border-width: 1px;
+  font-size: 11.5px;
+  white-space: normal;
+}
+.multichat-approvals .approval-title {
+  font-size: 12px;
+}
+.multichat-approvals .approval:not(.ask, :has(.field)) > .approval-title {
+  order: -2;
+}
+.multichat-approvals .approval:not(.ask, :has(.field)) > .approval-actions {
+  order: -1;
+}
+.multichat-approvals .approval-hint {
+  display: none;
+}
+.multichat-approvals .approval-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.multichat-approvals .approval-actions button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+}
+.multichat-approvals .approval pre {
+  max-height: 120px;
+  overflow: auto;
+}
+.multichat-error {
+  flex-shrink: 0;
+  max-height: 48px;
+  padding: 5px 12px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, var(--card));
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+/* Composer: one quiet field that grows with the draft; send is the only filled control. */
+.multichat-composer {
+  flex-shrink: 0;
+  padding: 6px;
+  border-top: 1px solid var(--line);
+}
+.multichat-compose-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--tile);
+  transition: box-shadow 0.15s;
+}
+.multichat-compose-row:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 28%, transparent);
+}
+.multichat-compose-row textarea {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  min-height: 28px;
+  max-height: 120px;
+  field-sizing: content;
+  resize: none;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.multichat-compose-row textarea:focus-visible {
+  outline: none;
+}
+/* An empty field stays one line: the placeholder never sets its height. */
+.multichat-compose-row textarea:placeholder-shown {
+  field-sizing: fixed;
+}
+.multichat-compose-row textarea::placeholder {
+  color: var(--muted);
+}
+.multichat-compose-row button {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+.multichat-compose-row button:hover:enabled {
+  background: var(--tile-hover);
+  color: var(--text);
+}
+.multichat-compose-row button[type='submit']:enabled {
+  background: var(--sel);
+  color: var(--sel-text);
+}
+.multichat-compose-row .multichat-stop svg {
+  fill: currentColor;
+}
+.multichat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 52px;
+  margin-bottom: 4px;
+  overflow: auto;
+}
+.multichat-attachments > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding-left: 6px;
+  border-radius: 4px;
+  background: var(--tile);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+.multichat-attachments button {
+  min-height: 18px;
+  padding: 2px;
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .multichat-dot,
+  .multichat-summary i {
+    animation: none !important;
+  }
+}
+
+.account-color-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+.account-color-setting label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.account-color-setting input[type='color'] {
+  width: 34px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--card);
+  cursor: pointer;
+}
+.account-color-setting button {
+  font-size: 11px;
+  min-height: 26px;
+  padding: 3px 8px;
+}

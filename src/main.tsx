@@ -1,3 +1,4 @@
+import { Multichat } from './multichat';
 import { GitBar } from './git-bar';
 import type { GitSnapshot } from './git-types';
 import { providerKind, providerNames, isCodex } from './shared';
@@ -5,6 +6,8 @@ import { useInterfacePreferences } from './interface-settings';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  LayoutGrid,
+  ArrowLeft,
   Folder,
   Plus,
   Search,
@@ -71,6 +74,8 @@ function App() {
   });
   const [state, setState] = useState<Snapshot>(),
     [error, setError] = useState(''),
+    [multichat, setMultichat] = useState<'off' | 'grid' | 'focused'>('off'),
+    [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null),
     [search, setSearch] = useState(false),
     [query, setQuery] = useState(''),
     [searchIndex, setSearchIndex] = useState(0),
@@ -182,12 +187,14 @@ function App() {
     }
   };
   if (session) recentSessions.current[session.projectId] = session.id;
-  const switchProject = (projectId: string) => {
+  const switchProject = async (projectId: string) => {
     const previousId = recentSessions.current[projectId];
     const sessionId = stateRef.current?.sessions.some((s) => s.id === previousId)
       ? previousId
       : undefined;
-    return run({ type: 'select', projectId, sessionId });
+    const result = await run({ type: 'select', projectId, sessionId });
+    if (stateRef.current?.selectedProject === projectId) setMultichat('off');
+    return result;
   };
 
   const run = async (action: Action) => {
@@ -406,13 +413,18 @@ function App() {
           setSettings(false);
           setConfirmClose(undefined);
           setRemoveId(undefined);
+        } else if (multichat === 'focused') {
+          e.preventDefault();
+          setMultichat('grid');
+        } else if (multichat === 'grid') {
+          return;
         } else if (s && (s.status === 'working' || s.status === 'waiting') && s.mode !== 'terminal')
           void run({ type: 'interrupt', sessionId: s.id });
       }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [search, settings, confirmClose, removeId]);
+  }, [search, settings, confirmClose, removeId, multichat]);
   const refreshDiff = async () => {
     if (!project) return;
     const request = ++diffRequest.current;
@@ -499,6 +511,7 @@ function App() {
     lastText && 'result' in lastText ? lastText.result?.length : 0,
     session?.approvals.length,
     session?.status,
+    multichat,
     stick,
   ]);
   if (!state) return <div className="loading">Abriendo Agent Desk…{error}</div>;
@@ -781,20 +794,118 @@ function App() {
           </div>
         )}
         <header className="topbar">
+          <div className="topbar-slot" ref={setTopbarSlot} />
           <div className="top-actions">
+            {multichat === 'focused' && (
+              <button
+                className="multichat-back"
+                onClick={() => setMultichat('grid')}
+                title="Volver a Multichat (Esc)"
+              >
+                <ArrowLeft size={15} /> Volver al grid
+              </button>
+            )}
+            <button
+              className={multichat === 'grid' ? 'on' : ''}
+              aria-label="Multichat"
+              title="Multichat · Todos los proyectos"
+              aria-pressed={multichat === 'grid'}
+              onClick={() => setMultichat((v) => (v === 'grid' ? 'off' : 'grid'))}
+            >
+              <LayoutGrid size={17} />
+            </button>
             <button
               className={showBrowser ? 'on' : ''}
               aria-label="Navegador"
               title="Navegador"
               aria-pressed={showBrowser}
               disabled={!compatibleRuntime(state)}
-              onClick={() => setShowBrowser((v) => !v)}
+              onClick={() => {
+                if (multichat === 'grid') {
+                  setMultichat('off');
+                  setShowBrowser(true);
+                } else setShowBrowser((v) => !v);
+              }}
             >
               <Globe size={17} />
             </button>
           </div>
         </header>
-        {!project && showBrowser && compatibleRuntime(state) ? (
+        <Multichat
+          drafts={drafts}
+          setDrafts={setDrafts}
+          images={imageDrafts}
+          setImages={setImageDrafts}
+          busy={busy}
+          run={run}
+          send={sendText}
+          openDev={(s, url) =>
+            void run({
+              type: 'openDevInChrome',
+              sessionId: s.id,
+              port: Number(new URL(url).port || (new URL(url).protocol === 'https:' ? 443 : 80)),
+            })
+          }
+          actionsFor={(s) => {
+            const activate = async () => {
+              await run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+              if (stateRef.current?.selectedSession !== s.id) return false;
+              setMultichat('focused');
+              return true;
+            };
+            return {
+              root: state.projects.find((p) => p.id === s.projectId)?.path,
+              openUrl: async (url) => {
+                if (await activate()) {
+                  setShowBrowser(true);
+                  await run({ type: 'browserNew', projectId: s.projectId, sessionId: s.id, url });
+                }
+              },
+              openPath: (path) => void run({ type: 'openPath', projectId: s.projectId, path }),
+              revealPath: (path) =>
+                void run({ type: 'openPath', projectId: s.projectId, path, reveal: true }),
+              showChanges: async () => {
+                if (await activate()) setShowDiff(true);
+              },
+              reuse: (text) => {
+                setDrafts((v) => ({ ...v, [s.id]: text }));
+                requestAnimationFrame(() =>
+                  document
+                    .querySelector<HTMLTextAreaElement>(
+                      `[data-session-id="${CSS.escape(s.id)}"] textarea`,
+                    )
+                    ?.focus(),
+                );
+              },
+              runCommand: async (command) => {
+                if (!(await activate())) return;
+                setTerminalTarget('default');
+                setShowTerminalPanel(true);
+                const shell = `shell:${s.projectId}`;
+                const fresh = !stateRef.current?.terminals?.some((t) => t.id === shell);
+                await run({ type: 'openProjectTerminal', projectId: s.projectId });
+                if (fresh) await new Promise((resolve) => setTimeout(resolve, 600));
+                await run({
+                  type: 'terminalWrite',
+                  sessionId: shell,
+                  data: `\x1b[200~${command}\x1b[201~`,
+                });
+                document
+                  .querySelector<HTMLElement>('.terminal-pane .xterm-helper-textarea')
+                  ?.focus();
+              },
+            };
+          }}
+          state={state}
+          visible={multichat === 'grid'}
+          toolbar={topbarSlot}
+          disabled={navigating}
+          open={async (s) => {
+            await run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+            if (stateRef.current?.selectedSession === s.id) setMultichat('focused');
+          }}
+        />
+        {multichat === 'grid' ? null : !project && showBrowser && compatibleRuntime(state) ? (
           browserPanel
         ) : !project ? (
           <div className="welcome">

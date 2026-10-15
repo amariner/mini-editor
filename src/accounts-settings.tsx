@@ -56,6 +56,18 @@ export function AccountsSettings({
       setSavingProfile(undefined);
     }
   };
+  const [colorDrafts, setColorDrafts] = useState<Partial<Record<Profile, string>>>({});
+  const [savingColor, setSavingColor] = useState<Profile>();
+  const saveColor = async (profile: Profile, color: string | null) => {
+    if (savingColor) return;
+    setSavingColor(profile);
+    try {
+      const result = await run({ type: 'setAccountColor', profile, color });
+      if (result) setColorDrafts((v) => ({ ...v, [profile]: undefined }));
+    } finally {
+      setSavingColor(undefined);
+    }
+  };
   const [adding, setAdding] = useState(false);
   const [newKind, setNewKind] = useState<ProviderKind | 'freebuff'>('claude');
   const [newName, setNewName] = useState('');
@@ -266,6 +278,41 @@ export function AccountsSettings({
                       </small>
                     </div>
                     <span className={`account-status ${account?.status ?? ''}`}>{status}</span>
+                  </div>
+                  <div className="account-color-setting">
+                    <label>
+                      Color en Multichat
+                      <input
+                        type="color"
+                        aria-label={`Color de ${p.name}`}
+                        value={colorDrafts[p.id] ?? p.color ?? '#f5f5f4'}
+                        disabled={!compatible || !!savingColor || busy === 'removing'}
+                        onChange={(e) => setColorDrafts((v) => ({ ...v, [p.id]: e.target.value }))}
+                      />
+                    </label>
+                    <button
+                      disabled={
+                        !compatible ||
+                        !!savingColor ||
+                        !colorDrafts[p.id] ||
+                        colorDrafts[p.id] === p.color ||
+                        busy === 'removing'
+                      }
+                      onClick={() => void saveColor(p.id, colorDrafts[p.id]!)}
+                    >
+                      Guardar color
+                    </button>
+                    <button
+                      disabled={
+                        !compatible ||
+                        !!savingColor ||
+                        (!p.color && !colorDrafts[p.id]) ||
+                        busy === 'removing'
+                      }
+                      onClick={() => void saveColor(p.id, null)}
+                    >
+                      Sin color
+                    </button>
                   </div>
                   {account?.label && (
                     <div className="account-identity">

@@ -30,3 +30,50 @@ test('el estado procede de un puerto real y detecta su cierre', async () => {
   assert.equal(await hostOnline(url), false);
   assert.equal(await hostOnline('https://example.com'), undefined);
 });
+
+test('dev ports belong to their chat, survive tab closure and disappear when offline', async () => {
+  const { DevServerRegistry } = await import('../electron/browser-hosts');
+  const first = net.createServer((socket) => socket.end());
+  const second = net.createServer((socket) => socket.end());
+  await Promise.all(
+    [first, second].map((s) => new Promise<void>((resolve) => s.listen(0, '127.0.0.1', resolve))),
+  );
+  const a = (first.address() as net.AddressInfo).port;
+  const b = (second.address() as net.AddressInfo).port;
+  const registry = new DevServerRegistry();
+  try {
+    await registry.observe(
+      'p',
+      'chat-a',
+      `http://127.0.0.1:${a}/ http://localhost:${a}/next http://127.0.0.1:${b}/`,
+    );
+    assert.equal(registry.snapshot().length, 2);
+    assert.ok(registry.snapshot().every((s) => s.sessionId === 'chat-a'));
+    await registry.observe('p', 'chat-b', `http://127.0.0.1:${b}/`);
+    assert.equal(registry.snapshot().filter((s) => s.sessionId === 'chat-b').length, 1);
+    await new Promise<void>((resolve) => first.close(() => resolve()));
+    assert.equal(await registry.refresh(), true);
+    assert.ok(registry.snapshot().every((s) => s.port === b));
+    registry.removeProject('p');
+    assert.deepEqual(registry.snapshot(), []);
+  } finally {
+    for (const s of [first, second])
+      if (s.listening) await new Promise<void>((resolve) => s.close(() => resolve()));
+  }
+});
+
+test('a pending dev-port probe cannot restore a removed project', async () => {
+  const { DevServerRegistry } = await import('../electron/browser-hosts');
+  let finish!: (online: boolean) => void;
+  const registry = new DevServerRegistry(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = registry.observe('p', 'chat', 'http://localhost:3000/');
+  registry.removeProject('p');
+  finish(true);
+  await pending;
+  assert.deepEqual(registry.snapshot(), []);
+});

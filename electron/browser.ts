@@ -2,7 +2,7 @@ import { BrowserWindow, WebContentsView, nativeImage, session as electronSession
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { hostOnline, localURLs } from './browser-hosts';
+import { hostOnline, localURLs, DevServerRegistry } from './browser-hosts';
 import { randomUUID } from 'node:crypto';
 import {
   browserInput,
@@ -21,6 +21,10 @@ type Entry = {
   openerId?: string;
 };
 export class DeskBrowser {
+  private servers = new DevServerRegistry();
+  serverSnapshot() {
+    return this.servers.snapshot();
+  }
   private pages = new Map<string, Entry>();
   private queues = new Map<string, Promise<unknown>>();
   private visible?: string;
@@ -101,6 +105,7 @@ export class DeskBrowser {
     if (this.checking || this.closed) return;
     this.checking = true;
     try {
+      if (await this.servers.refresh()) this.changed();
       await Promise.all(
         [...this.pages.values()].map(async (entry) => {
           const url = entry.state.url;
@@ -121,6 +126,8 @@ export class DeskBrowser {
     if (this.closed || this.removedProjects.has(projectId)) return;
     const text = ((this.output.get(sessionId) ?? '') + output).slice(-6000);
     this.output.set(sessionId, text);
+    if (await this.servers.observe(projectId, sessionId, text)) this.changed();
+    if (this.closed || this.removedProjects.has(projectId)) return;
     for (const url of localURLs(text)) {
       const key = projectId + ':' + url;
       if (this.observed.has(key)) continue;
@@ -436,6 +443,7 @@ export class DeskBrowser {
   }
   async removeProject(projectId: string, sessionIds: string[]) {
     this.removedProjects.add(projectId);
+    this.servers.removeProject(projectId);
     const tabs = this.snapshot().filter(
       (tab) => tab.projectId === projectId || sessionIds.includes(tab.sessionId),
     );
@@ -460,6 +468,7 @@ export class DeskBrowser {
     clearInterval(this.monitor);
     for (const id of this.pages.keys()) this.suspend(id);
     this.pages.clear();
+    this.servers.clear();
     this.output.clear();
     this.observed.clear();
     await Promise.allSettled(
