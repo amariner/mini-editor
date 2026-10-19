@@ -1,4 +1,14 @@
 import { readGit, changeGit, repositoryRoot } from './git';
+import {
+  commitWorktree,
+  createWorktree,
+  mergeWorktree,
+  removeWorktree,
+  updateWorktree,
+  worktreeSettings,
+  worktreeStatus,
+} from './worktrees';
+import { canIsolate, isolationLocked, wantsWorktree } from '../src/isolation';
 import type { GitOperation } from '../src/git-types';
 import { codexAttachmentContent, type PreparedAttachment } from './attachments';
 import { codexUsage, claudeUsage } from '../src/subscription-usage';
@@ -32,7 +42,12 @@ import type {
 } from '../src/shared';
 import { efforts, permissionModes, type ProfileDefinition } from '../src/shared';
 import { Store } from './store';
-import { Coordinator, coordinationInstructions, isCoordinationApproval } from './coordination';
+import {
+  Coordinator,
+  coordinationInstructions,
+  isCoordinationApproval,
+  isolatedInstructions,
+} from './coordination';
 import { ProjectTerminals } from './project-terminals';
 import { Rpc } from './rpc';
 import { Accounts } from './accounts';
@@ -715,7 +730,21 @@ export class Manager {
     const dir = profileDirectory(this.profilesRoot, s.profile);
     await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
     this.project(s.projectId); // Removal may have begun while the startup paths were checked.
-    this.coordinator.register(s, project.path);
+    let cwd = project.path;
+    if (!isCodex(s.profile) && !loginOnly) {
+      s.status = 'starting';
+      this.changed();
+      try {
+        cwd = await this.workspace(s, project.path);
+        this.project(s.projectId);
+      } catch (e) {
+        s.status = 'error';
+        s.error = (e as Error).message;
+        this.changed();
+        throw e;
+      }
+    }
+    this.coordinator.register(s, cwd, cwd !== project.path);
     s.status = 'starting';
     s.error = undefined;
     s.approvals = [];
@@ -729,8 +758,8 @@ export class Manager {
     try {
       if (isCodex(s.profile)) await this.startCodex(s, rt, binary, dir, project.path);
       else if ((s.mode ?? 'chat') === 'chat' && !loginOnly)
-        await this.startClaude(s, rt, binary, dir, project.path);
-      else await this.startTerminal(s, rt, binary, dir, project.path, loginOnly);
+        await this.startClaude(s, rt, binary, dir, cwd, project.path);
+      else await this.startTerminal(s, rt, binary, dir, cwd, loginOnly);
     } catch (e) {
       s.error = (e as Error).message;
       if (rt.rpc) {
@@ -761,16 +790,86 @@ export class Manager {
       throw e;
     }
   }
-  private async startClaude(s: Session, rt: Runtime, binary: string, dir: string, cwd: string) {
+  /**
+   * Folder for a Claude chat: its existing worktree, a new one when isolation applies, or the
+   * shared project folder. An implicit isolation that cannot be created falls back to sharing.
+   */
+  private async workspace(s: Session, projectPath: string) {
+    if (s.worktree) {
+      if (!fs.existsSync(path.join(s.worktree.path, '.git')))
+        throw new Error(
+          'El worktree de este chat ya no existe. Descártalo desde la barra de Git o abre un chat nuevo.',
+        );
+      return s.worktree.cwd;
+    }
+    if (!wantsWorktree(s, this.state.sessions)) return projectPath;
+    try {
+      const root = await repositoryRoot(projectPath);
+      if (root && this.gitJobs.has(root)) throw new Error('Hay una operación de Git en curso.');
+      s.worktree = await createWorktree({
+        project: projectPath,
+        dataDir: this.state.dataDir,
+        title: s.title,
+        id: s.id,
+      });
+      this.store.flush(); // Never lose track of a branch the desk created.
+      note(
+        s,
+        'info',
+        `Aislado en el worktree ${s.worktree.branch} (desde ${s.worktree.base}). Los cambios no tocan la copia principal hasta que los fusiones.`,
+      );
+      return s.worktree.cwd;
+    } catch (error) {
+      if (s.isolation === 'worktree') throw error;
+      note(
+        s,
+        'warning',
+        `No se ha podido aislar el chat en un worktree: ${(error as Error).message} Comparte la carpeta con los demás agentes mediante reservas coordinadas.`,
+      );
+      return projectPath;
+    }
+  }
+  private worktreeOptions(project: string) {
+    // Official settings: the agent's own EnterWorktree/subagent isolation behave like ours.
+    return { ...worktreeSettings(project), baseRef: 'head' as const };
+  }
+  private async startClaude(
+    s: Session,
+    rt: Runtime,
+    binary: string,
+    dir: string,
+    cwd: string,
+    projectPath: string,
+  ) {
     const options = claudeOptions(s, { cwd, binary, profileDir: dir });
+    const isolated = !!s.worktree && cwd === s.worktree.cwd;
     options.env = { ...(options.env as Record<string, string>), ...this.networkEnvironment() };
+    options.settings = {
+      ...(options.settings as Record<string, unknown>),
+      worktree: this.worktreeOptions(projectPath),
+    };
     options.mcpServers = {
       agent_desk: { type: 'stdio', ...(await this.coordinator.config(s.id)) },
     };
+    if (isolated) {
+      // Project settings, hooks, .mcp.json and .claude come from the trusted main checkout.
+      options.projectConfigRoot = projectPath;
+      options.disallowedTools = [
+        ...((options.disallowedTools as string[] | undefined) ?? []),
+        'mcp__agent_desk__coordinate',
+      ];
+    }
     options.systemPrompt = {
       type: 'preset',
       preset: 'claude_code',
-      append: [s.config?.appendSystemPrompt, coordinationInstructions].filter(Boolean).join('\n\n'),
+      append: [
+        s.config?.appendSystemPrompt,
+        isolated
+          ? isolatedInstructions(s.worktree!.branch, s.worktree!.base)
+          : coordinationInstructions,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     };
     let previousLevel: number | undefined;
     options.hooks = {
@@ -829,6 +928,8 @@ export class Manager {
         },
       ],
     };
+    // A worktree is real isolation; cooperative reservations only guard a shared folder.
+    if (isolated) delete (options.hooks as Record<string, unknown>).PreToolUse;
     const runtime = (rt.claude = new ClaudeRuntime(
       s,
       options,
@@ -873,12 +974,16 @@ export class Manager {
         JSON.stringify({ mcpServers: { agent_desk: await this.coordinator.config(s.id) } }),
         { mode: 0o600 },
       );
+      const isolated = !!s.worktree && cwd === s.worktree.cwd;
       terminalArgs.push(
         '--mcp-config',
         mcpFile,
         '--append-system-prompt',
-        coordinationInstructions,
+        isolated
+          ? isolatedInstructions(s.worktree!.branch, s.worktree!.base)
+          : coordinationInstructions,
       );
+      if (isolated) terminalArgs.push('--disallowedTools', 'mcp__agent_desk__coordinate');
     }
     const terminal = (rt.pty = pty.spawn(binary, terminalArgs, {
       name: 'xterm-256color',
@@ -1223,7 +1328,8 @@ export class Manager {
             `Permisos: ${info?.permissionMode ?? s.config?.permissionMode}`,
             `Esfuerzo: ${info?.effort ?? 'por defecto'}`,
             `Sesión: ${s.reference}`,
-            `Carpeta: ${this.project(s.projectId).path}`,
+            `Carpeta: ${s.worktree?.cwd ?? this.project(s.projectId).path}`,
+            ...(s.worktree ? [`Worktree: ${s.worktree.branch} → ${s.worktree.base}`] : []),
           ].join('\n'),
         );
         return true;
@@ -1784,22 +1890,191 @@ export class Manager {
       (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))
     );
   }
-  async diff(id: string) {
-    return readGit(this.project(id).path);
+  /** Agents working directly in the main checkout of `root` (isolated chats do not count). */
+  private sharedAgents(root: string) {
+    return this.state.sessions.filter(
+      (s) =>
+        !s.worktree &&
+        this.insideRepository(root, this.project(s.projectId).path) &&
+        (this.runtimes.has(s.id) || this.operations.has(s.id)),
+    );
+  }
+  async diff(id: string, sessionId?: string) {
+    const project = this.project(id);
+    const s = sessionId ? this.session(sessionId) : undefined;
+    if (s && s.projectId !== id) throw new Error('La sesión pertenece a otro proyecto.');
+    if (!s?.worktree) return readGit(project.path);
+    const status = await worktreeStatus(s.worktree);
+    const snapshot = status.exists ? await readGit(s.worktree.cwd) : await readGit(project.path);
+    return { ...snapshot, worktree: status };
+  }
+  setIsolation(id: string, isolation: 'worktree' | 'shared') {
+    const s = this.session(id);
+    if (!canIsolate(s)) throw new Error('El aislamiento en worktree está disponible para Claude.');
+    if (active(s)) throw new Error('Detén el chat antes de cambiar su carpeta de trabajo.');
+    if (isolationLocked(s))
+      throw new Error(
+        s.worktree
+          ? 'Este chat ya tiene un worktree. Fusiónalo o descártalo desde la barra de Git.'
+          : 'Este chat ya ha trabajado en la carpeta compartida. Duplícalo para aislar una copia.',
+      );
+    s.isolation = isolation;
+    this.changed();
+    return true;
+  }
+  /** Merge into the base branch, bring the base in, or remove the chat's worktree and branch. */
+  async worktree(id: string, operation: 'merge' | 'update' | 'discard') {
+    return this.exclusive(id, async () => {
+      const s = this.session(id);
+      const worktree = s.worktree;
+      if (!worktree) throw new Error('Este chat no está aislado en un worktree.');
+      if (this.gitJobs.has(worktree.root)) throw new Error('Hay una operación de Git en curso.');
+      if (
+        operation !== 'discard' &&
+        ['starting', 'working', 'waiting', 'stopping'].includes(s.status)
+      )
+        throw new Error('Espera a que el agente termine el turno.');
+      if (operation === 'merge') {
+        const others = this.sharedAgents(worktree.root).filter((o) => o.id !== id);
+        if (others.length)
+          throw new Error(
+            'Hay agentes trabajando en la copia principal. Detenlos antes de fusionar en ella.',
+          );
+      }
+      this.gitJobs.add(worktree.root);
+      const work = (async () => {
+        if (operation === 'discard') {
+          await this.stopRuntime(id);
+          if (this.runtimes.has(id))
+            throw new Error('No se ha confirmado el cierre del agente. Vuelve a intentarlo.');
+          await removeWorktree(worktree);
+          s.worktree = undefined;
+          this.store.flush();
+          note(s, 'info', `Worktree ${worktree.branch} descartado.`);
+          return { merged: false, message: `Worktree ${worktree.branch} descartado.` };
+        }
+        const result =
+          operation === 'merge'
+            ? await mergeWorktree(worktree, s.title)
+            : await updateWorktree(worktree, s.title);
+        note(
+          s,
+          result.conflicts?.length ? 'warning' : 'info',
+          result.conflicts?.length
+            ? `${result.message}\n${result.conflicts.join('\n')}`
+            : result.message,
+        );
+        return result;
+      })();
+      this.gitWork.add(work);
+      try {
+        return await work;
+      } finally {
+        this.gitJobs.delete(worktree.root);
+        this.gitWork.delete(work);
+        this.changed();
+      }
+    });
+  }
+  /**
+   * Duplicate a Claude chat: same history (forkSession on first start) in a new tab, isolated in
+   * its own worktree that starts from the source's current files.
+   */
+  async fork(id: string, isolate: boolean) {
+    const source = this.session(id);
+    if (!canIsolate(source)) throw new Error('Duplicar chats está disponible para Claude.');
+    const origin = source.forkFrom ?? (source.attempted ? source.reference : undefined);
+    if (!origin) throw new Error('Envía al menos un mensaje antes de duplicar el chat.');
+    if (['starting', 'working', 'waiting', 'stopping'].includes(source.status))
+      throw new Error('Espera a que termine el turno para duplicar el chat.');
+    const project = this.project(source.projectId);
+    let worktree: Session['worktree'];
+    let warning: string | undefined;
+    if (isolate) {
+      const root = await repositoryRoot(project.path).catch(() => undefined);
+      if (root && this.gitJobs.has(root)) throw new Error('Hay una operación de Git en curso.');
+      if (root) this.gitJobs.add(root);
+      try {
+        if (source.worktree) {
+          if (!['ready', 'stopped', 'error'].includes(source.status))
+            throw new Error('Espera a que termine el turno para duplicar el chat.');
+          // Snapshot the source's files so both approaches start from the same point.
+          await commitWorktree(source.worktree, `Agent Desk: punto de partida de ${source.title}`);
+        }
+        worktree = await createWorktree({
+          project: project.path,
+          dataDir: this.state.dataDir,
+          title: `${source.title} copia`,
+          id: randomUUID(),
+          from: source.worktree,
+        });
+      } catch (error) {
+        if (source.worktree || root) throw error;
+        warning = `No se ha podido aislar la copia en un worktree: ${(error as Error).message} Comparte la carpeta con los demás agentes.`;
+      } finally {
+        if (root) this.gitJobs.delete(root);
+      }
+    }
+    const fork = this.newSession(source.projectId, source.profile, source.mode);
+    Object.assign(fork, {
+      title: `${source.title} (copia)`.slice(0, 80),
+      config: structuredClone(source.config),
+      forkFrom: origin,
+      forkOf: source.id,
+      accountLocked: true,
+      isolation: worktree ? 'worktree' : 'shared',
+      worktree,
+      // The fork starts without file checkpoints: earlier turns cannot be rewound there.
+      messages: structuredClone(source.messages).map((m) => ({ ...m, checkpoint: undefined })),
+    } satisfies Partial<Session>);
+    note(
+      fork,
+      warning ? 'warning' : 'info',
+      warning ??
+        (worktree
+          ? `Copia de «${source.title}» en el worktree ${worktree.branch}. Sigue desde aquí con otro enfoque; los cambios se fusionan en ${worktree.base}.${source.worktree ? '' : ' Parte del último commit: los cambios sin commit de la carpeta compartida no se copian.'}`
+          : `Copia de «${source.title}». Comparte la carpeta del proyecto.`),
+    );
+    this.store.flush();
+    this.changed();
+    return fork;
+  }
+  /** Undo the files Claude's tools changed since `messageId` was sent (this turn and later). */
+  async rewind(id: string, messageId: string, dryRun = false) {
+    const s = this.session(id);
+    if (!canIsolate(s)) throw new Error('Deshacer cambios está disponible en el chat de Claude.');
+    const message = s.messages.find((m) => m.id === messageId && m.role === 'user');
+    if (!message?.checkpoint)
+      throw new Error('Este mensaje no tiene un punto de restauración de archivos.');
+    if (!this.runtimes.get(id)?.claude) await this.start(id);
+    return this.exclusive(id, async () => {
+      const rt = this.runtime(id).claude;
+      if (!rt) throw new Error('Solo disponible en el chat de Claude.');
+      if (s.status !== 'ready')
+        throw new Error('Espera a que termine el turno o interrúmpelo antes de deshacer cambios.');
+      const result = await rt.rewindFiles(message.checkpoint!, dryRun);
+      if (!result.canRewind)
+        throw new Error(result.error ?? 'No hay cambios de archivos que deshacer en este turno.');
+      if (!dryRun) {
+        const files = result.filesChanged?.length ?? 0;
+        note(
+          s,
+          'info',
+          files
+            ? `Archivos restaurados al estado anterior a «${message.text.slice(0, 60)}»: ${files} archivos (+${result.insertions ?? 0} −${result.deletions ?? 0}).${result.skippedLinks ? ` ${result.skippedLinks} enlaces no se han tocado.` : ''}`
+            : 'No había cambios de archivos que deshacer.',
+        );
+        this.changed();
+      }
+      return result;
+    });
   }
   async gitOperation(id: string, operation: GitOperation, value?: string) {
     const cwd = this.project(id).path;
     const root = await repositoryRoot(cwd);
     if (!root) throw new Error('Esta carpeta no es un repositorio Git.');
     if (this.gitJobs.has(root)) throw new Error('Hay una operación de Git en curso.');
-    if (
-      operation !== 'fetch' &&
-      this.state.sessions.some(
-        (s) =>
-          this.insideRepository(root, this.project(s.projectId).path) &&
-          (this.runtimes.has(s.id) || this.operations.has(s.id)),
-      )
-    )
+    if (operation !== 'fetch' && this.sharedAgents(root).length)
       throw new Error('Detén los agentes de este repositorio antes de modificar Git.');
     this.gitJobs.add(root);
     const work = changeGit(cwd, operation, value);

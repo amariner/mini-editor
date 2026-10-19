@@ -178,6 +178,7 @@ export function applyClaudeMessage(s: Session, m: any) {
   }
   if (m.type === 'result') {
     s.attempted = true;
+    s.forkFrom = undefined; // The fork now has its own transcript under `reference`.
     const st = (s.stats ??= { cost: 0, turns: 0, inputTokens: 0, outputTokens: 0, durationMs: 0 });
     st.cost = typeof m.total_cost_usd === 'number' ? m.total_cost_usd : st.cost;
     st.turns += 1;

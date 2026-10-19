@@ -91,6 +91,20 @@ const schema = z.object({
       config: claudeConfigSchema.partial().optional(),
       codexConfig: codexConfigSchema.partial().optional(),
       providerConfig: providerConfigSchema.optional(),
+      isolation: z.enum(['worktree', 'shared']).optional(),
+      worktree: z
+        .object({
+          path: z.string(),
+          cwd: z.string(),
+          branch: z.string(),
+          base: z.string(),
+          baseCommit: z.string(),
+          root: z.string(),
+          createdAt: z.number(),
+        })
+        .optional(),
+      forkFrom: z.string().optional(),
+      forkOf: z.string().optional(),
       stats: z
         .object({
           tokensReported: z.boolean().optional(),
@@ -129,6 +143,7 @@ const schema = z.object({
           at: z.number().optional(),
           durationMs: z.number().optional(),
           tool: toolInfo.optional(),
+          checkpoint: z.string().optional(),
         }),
       ),
     }),
@@ -218,6 +233,10 @@ export class Store {
           config,
           codexConfig,
           providerConfig,
+          isolation,
+          worktree,
+          forkFrom,
+          forkOf,
           stats,
           messages,
         }) => ({
@@ -232,9 +251,25 @@ export class Store {
           config,
           codexConfig,
           providerConfig,
+          isolation,
+          worktree,
+          forkFrom,
+          forkOf,
           stats,
           messages: messages.map(
-            ({ id, role, text, attachments, blocks, kind, model, at, durationMs, tool }) => ({
+            ({
+              id,
+              role,
+              text,
+              attachments,
+              blocks,
+              kind,
+              model,
+              at,
+              durationMs,
+              tool,
+              checkpoint,
+            }) => ({
               id,
               role,
               text,
@@ -258,6 +293,7 @@ export class Store {
               at,
               durationMs,
               tool,
+              checkpoint,
             }),
           ),
         }),

@@ -22,6 +22,11 @@ export interface ChatActions {
   runCommand?(command: string): void;
   showChanges?(): void;
   reuse?(text: string): void;
+  /** Restore the files Claude changed since this user message (dry run first). */
+  rewind?(
+    message: import('./shared').Message,
+    dryRun: boolean,
+  ): Promise<import('./shared').RewindResult | undefined>;
 }
 export const ChatActionsContext = createContext<ChatActions>({});
 export const useChatActions = () => useContext(ChatActionsContext);

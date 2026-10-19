@@ -1,5 +1,6 @@
 import { Multichat } from './multichat';
 import { GitBar } from './git-bar';
+import { IsolationBar } from './isolation-bar';
 import type { GitSnapshot } from './git-types';
 import { providerKind, providerNames, isCodex } from './shared';
 import { useInterfacePreferences } from './interface-settings';
@@ -28,7 +29,7 @@ import {
   PanelBottomOpen,
   ArrowDown,
 } from 'lucide-react';
-import type { Action, Session, Snapshot, Attachment } from './shared';
+import type { Action, Session, Snapshot, Attachment, RewindResult } from './shared';
 import { permissionModes } from './shared';
 import { actionError, assertCompatibleAction, compatibleRuntime, RESTART_NOTICE } from './runtime';
 import { antigravityPermissionNeeded } from './antigravity-permissions';
@@ -279,7 +280,7 @@ function App() {
     if (!project) return {};
     const shell = `shell:${project.id}`;
     return {
-      root: project.path,
+      root: session?.worktree?.cwd ?? project.path,
       openUrl: (url) =>
         void runRef.current({
           type: 'browserNew',
@@ -287,9 +288,21 @@ function App() {
           sessionId: session?.id,
           url,
         }),
-      openPath: (path) => void runRef.current({ type: 'openPath', projectId: project.id, path }),
+      openPath: (path) =>
+        void runRef.current({
+          type: 'openPath',
+          projectId: project.id,
+          sessionId: session?.id,
+          path,
+        }),
       revealPath: (path) =>
-        void runRef.current({ type: 'openPath', projectId: project.id, path, reveal: true }),
+        void runRef.current({
+          type: 'openPath',
+          projectId: project.id,
+          sessionId: session?.id,
+          path,
+          reveal: true,
+        }),
       runCommand: async (command) => {
         setTerminalTarget('default');
         const fresh = !stateRef.current?.terminals?.some((t) => t.id === shell);
@@ -312,8 +325,17 @@ function App() {
           document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus(),
         );
       },
+      rewind: async (message, dryRun) =>
+        session
+          ? ((await runRef.current({
+              type: 'rewindFiles',
+              sessionId: session.id,
+              messageId: message.id,
+              dryRun,
+            })) as RewindResult | undefined)
+          : undefined,
     };
-  }, [project?.id, project?.path, session?.id]);
+  }, [project?.id, project?.path, session?.id, session?.worktree?.cwd]);
   // Tabs remember how much of each conversation was on screen, to flag new replies.
   useEffect(() => {
     if (!session) return;
@@ -452,7 +474,11 @@ function App() {
     diffReads.current++;
     setDiffError('');
     try {
-      const d = await window.desk.invoke({ type: 'diff', projectId: project.id });
+      const d = await window.desk.invoke({
+        type: 'diff',
+        projectId: project.id,
+        sessionId: session?.worktree ? session.id : undefined,
+      });
       if (request === diffRequest.current) setDiff(d);
     } catch (e) {
       if (request === diffRequest.current) setDiffError((e as Error).message);
@@ -473,7 +499,7 @@ function App() {
   useEffect(() => {
     setDiff(undefined);
     setDiffError('');
-  }, [project?.id]);
+  }, [project?.id, session?.worktree?.path]);
   useEffect(() => {
     void refreshDiff();
     const onFocus = () => void refreshDiff();
@@ -486,7 +512,7 @@ function App() {
       window.removeEventListener('focus', onFocus);
       clearInterval(timer);
     };
-  }, [project?.id, showDiff, session?.status, showTerminalPanel]);
+  }, [project?.id, showDiff, session?.status, showTerminalPanel, session?.worktree?.path]);
   useEffect(() => {
     if (
       showTerminalPanel &&
@@ -930,16 +956,30 @@ function App() {
               return true;
             };
             return {
-              root: state.projects.find((p) => p.id === s.projectId)?.path,
+              root: s.worktree?.cwd ?? state.projects.find((p) => p.id === s.projectId)?.path,
               openUrl: async (url) => {
                 if (await activate()) {
                   setShowBrowser(true);
                   await run({ type: 'browserNew', projectId: s.projectId, sessionId: s.id, url });
                 }
               },
-              openPath: (path) => void run({ type: 'openPath', projectId: s.projectId, path }),
+              openPath: (path) =>
+                void run({ type: 'openPath', projectId: s.projectId, sessionId: s.id, path }),
               revealPath: (path) =>
-                void run({ type: 'openPath', projectId: s.projectId, path, reveal: true }),
+                void run({
+                  type: 'openPath',
+                  projectId: s.projectId,
+                  sessionId: s.id,
+                  path,
+                  reveal: true,
+                }),
+              rewind: async (message, dryRun) =>
+                (await run({
+                  type: 'rewindFiles',
+                  sessionId: s.id,
+                  messageId: message.id,
+                  dryRun,
+                })) as RewindResult | undefined,
               showChanges: async () => {
                 if (await activate()) setShowDiff(true);
               },
@@ -1085,6 +1125,12 @@ function App() {
                   )}
                   {session && (
                     <>
+                      <IsolationBar
+                        session={session}
+                        sessions={state.sessions}
+                        run={run}
+                        disabled={navigating || !!busy[session.id] || !compatibleRuntime(state)}
+                      />
                       {(state.coordination?.filter((a) => a.projectId === project.id).length ?? 0) >
                         1 && (
                         <div className="conv-head">
@@ -1311,7 +1357,13 @@ function App() {
                           onDiff={() => setShowDiff((v) => !v)}
                           refresh={refreshDiff}
                           compatible={compatibleRuntime(state)}
-                          locked={state.sessions.some((s) => s.projectId === project.id && live(s))}
+                          locked={state.sessions.some(
+                            (s) => s.projectId === project.id && live(s) && !s.worktree,
+                          )}
+                          sessionId={session.worktree ? session.id : undefined}
+                          agentBusy={['starting', 'working', 'waiting', 'stopping'].includes(
+                            session.status,
+                          )}
                         />
                         {!terminalMode && (
                           <>
