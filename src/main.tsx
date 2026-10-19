@@ -199,13 +199,22 @@ function App() {
     }
   };
   if (session) recentSessions.current[session.projectId] = session.id;
+  const selectProjectBrowser = (projectId?: string) => {
+    setBrowserTab(stateRef.current?.browsers?.find((tab) => tab.projectId === projectId)?.id);
+  };
+  useEffect(() => {
+    selectProjectBrowser(project?.id);
+  }, [project?.id]);
   const switchProject = async (projectId: string) => {
     const previousId = recentSessions.current[projectId];
     const sessionId = stateRef.current?.sessions.some((s) => s.id === previousId)
       ? previousId
       : undefined;
     const result = await run({ type: 'select', projectId, sessionId });
-    if (stateRef.current?.selectedProject === projectId) setMultichat('off');
+    if (stateRef.current?.selectedProject === projectId) {
+      setMultichat('off');
+      selectProjectBrowser(projectId);
+    }
     return result;
   };
 

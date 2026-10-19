@@ -12,6 +12,7 @@ import { cleanEnv, profileDirectory } from './core';
 import { reapGroup } from './processes';
 import type { AccountState, Profile, DeskEvent } from '../src/shared';
 import { OpenRouterService, type ProviderServices } from './openrouter';
+import { OpenCodeService } from './opencode';
 import { geminiAccount, geminiLogout, geminiRpc, initializeGemini, geminiModels } from './gemini';
 import {
   isAntigravity,
@@ -29,6 +30,8 @@ const CLAUDE_AUTH_TIMEOUT_MS = 60000;
 type Check = { cancelled: boolean; stop?: () => Promise<void>; work?: Promise<void> };
 
 type Login = {
+  controller?: AbortController;
+  oauthWork?: Promise<void>;
   antigravity?: boolean;
   rpc?: Rpc;
   loginId?: string;
@@ -39,6 +42,10 @@ type Login = {
 };
 export class Accounts {
   readonly openrouter: OpenRouterService;
+  readonly opencode: OpenCodeService;
+  api(profile: Profile) {
+    return providerKind(profile) === 'opencode' ? this.opencode : this.openrouter;
+  }
   readonly state = {} as Record<Profile, AccountState>;
   readonly logins = new Map<Profile, Login>();
   readonly buffers = new Map<string, { data: string; sequence: number }>();
@@ -61,6 +68,7 @@ export class Accounts {
     private googleProject: (profile: Profile) => string | undefined = () => undefined,
   ) {
     this.openrouter = new OpenRouterService(root, services);
+    this.opencode = new OpenCodeService(root, services);
   }
   register(profile: Profile) {
     this.state[profile] ??= { status: 'unknown' };
@@ -162,7 +170,8 @@ export class Accounts {
   ): Promise<import('../src/shared').ModelInfo[]> {
     if (!this.state[profile] || this.removing(profile))
       throw new Error('La cuenta no está disponible.');
-    if (providerKind(profile) === 'openrouter') return this.openrouter.catalog(profile, signal);
+    if (['openrouter', 'opencode'].includes(providerKind(profile)))
+      return this.api(profile).catalog(profile, signal);
     if (providerKind(profile) === 'gemini') {
       const agy = this.tools().gemini;
       if (isAntigravity(agy)) {
@@ -344,18 +353,26 @@ export class Accounts {
   async connectOpenRouter(profile: Profile, apiKey: string) {
     return this.job(profile, 'signingIn', async () => {
       await this.prepare(profile, false);
-      const apiUsage = await this.openrouter.connect(profile, apiKey);
-      this.update(profile, { status: 'signedIn', label: 'OpenRouter', plan: 'API', apiUsage });
+      const apiUsage = await this.api(profile).connect(profile, apiKey);
+      this.update(profile, {
+        status: 'signedIn',
+        label: this.api(profile).name,
+        plan: 'API',
+        apiUsage,
+      });
       return true;
     });
   }
   private async read(profile: Profile, check?: Check) {
-    if (providerKind(profile) === 'openrouter') {
-      const apiUsage = await this.openrouter.usage(profile);
+    if (['openrouter', 'opencode'].includes(providerKind(profile))) {
+      const apiUsage = await this.api(profile).usage(profile);
       this.update(profile, {
         status: apiUsage ? 'signedIn' : 'signedOut',
-        label: apiUsage ? 'OpenRouter' : undefined,
+        label: apiUsage ? this.api(profile).name : undefined,
         plan: apiUsage ? 'API' : undefined,
+        ...(apiUsage && providerKind(profile) === 'opencode'
+          ? await this.opencode.summary(profile)
+          : {}),
         apiUsage,
         error: undefined,
       });
@@ -408,6 +425,45 @@ export class Accounts {
     return this.job(profile, 'signingIn', async () => {
       await this.prepare(profile, stopSessions);
       this.update(profile, { status: 'unknown', label: undefined, plan: undefined });
+      if (providerKind(profile) === 'opencode') {
+        const controller = new AbortController();
+        const attempt = await this.opencode.beginLogin(profile, controller.signal);
+        const login: Login = { controller };
+        this.logins.set(profile, login);
+        this.update(profile, {
+          cancellable: true,
+          loginCode: attempt.user_code,
+          loginUrl: attempt.url,
+        });
+        const work = this.opencode
+          .completeLogin(profile, attempt, controller.signal)
+          .then((credential) => {
+            if (controller.signal.aborted || this.logins.get(profile) !== login) return;
+            this.update(profile, {
+              status: 'signedIn',
+              label: credential.email ?? 'OpenCode',
+              plan: credential.orgName ?? 'Console',
+              error: undefined,
+            });
+          })
+          .catch((error) => {
+            if (!controller.signal.aborted)
+              this.update(profile, { status: 'unknown', error: (error as Error).message });
+          })
+          .finally(() => {
+            if (this.logins.get(profile) !== login || login.cancelling) return;
+            this.logins.delete(profile);
+            this.update(profile, {
+              busy: undefined,
+              cancellable: false,
+              loginCode: undefined,
+              loginUrl: undefined,
+            });
+          });
+        login.oauthWork = work;
+        void this.track(work);
+        return attempt.url;
+      }
       if (providerKind(profile) === 'openrouter')
         throw new Error('Introduce la clave API en la configuración de OpenRouter.');
       if (providerKind(profile) === 'gemini') {
@@ -617,6 +673,8 @@ export class Accounts {
           error = (e as Error).message;
         }
       }
+      login.controller?.abort();
+      await login.oauthWork;
       await login.rpc?.stop();
       if (login.terminal) {
         await reapGroup(login.terminal.pid);
@@ -626,12 +684,18 @@ export class Accounts {
       this.buffers.delete(`account:${profile}`);
       this.update(profile, {
         terminalId: undefined,
+        loginCode: undefined,
+        loginUrl: undefined,
         status: 'unknown',
         label: undefined,
         plan: undefined,
       });
       if (error) this.update(profile, { error });
-      else if (!this.closing && refresh && (!cancel || isCodex(profile))) {
+      else if (
+        !this.closing &&
+        refresh &&
+        (!cancel || isCodex(profile) || providerKind(profile) === 'opencode')
+      ) {
         try {
           if (login.antigravity)
             await connectAntigravity(
@@ -660,8 +724,8 @@ export class Accounts {
   async logout(profile: Profile, stopSessions: boolean) {
     return this.job(profile, 'signingOut', async () => {
       await this.prepare(profile, stopSessions);
-      if (providerKind(profile) === 'openrouter') {
-        await this.openrouter.disconnect(profile);
+      if (['openrouter', 'opencode'].includes(providerKind(profile))) {
+        await this.api(profile).disconnect(profile);
         this.update(profile, {
           status: 'signedOut',
           label: undefined,
@@ -745,6 +809,7 @@ export class Accounts {
   async shutdown() {
     this.closing = true;
     await Promise.allSettled([...this.checks.values()].map((check) => this.stopCheck(check)));
+    for (const login of this.logins.values()) login.controller?.abort();
     while (this.jobs.size) await Promise.allSettled([...this.jobs]);
     const results = await Promise.allSettled(
       [...this.logins.keys()].map((profile) => this.cancel(profile)),

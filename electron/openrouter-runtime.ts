@@ -127,7 +127,7 @@ export class OpenRouterRuntime implements ProviderRuntime {
           : undefined);
     if (!model) throw new Error('Selecciona un modelo habilitado en Ajustes → Cuenta → Modelos.');
     const key = await this.api.key(this.s.profile);
-    if (!key) throw new Error('Conecta la clave de OpenRouter en Ajustes.');
+    if (!key) throw new Error(`Conecta la clave de ${this.api.name} en Ajustes.`);
     const content: any[] = [{ type: 'text', text: text || 'Revisa los archivos adjuntos.' }];
     for (const file of attachments) {
       const data = await fs.readFile(file.path);
@@ -139,6 +139,10 @@ export class OpenRouterRuntime implements ProviderRuntime {
           image_url: { url: `data:${file.mediaType};base64,${data.toString('base64')}` },
         });
       } else if (file.mediaType === 'application/pdf') {
+        if (this.api.name === 'OpenCode')
+          throw new Error(
+            'OpenCode: convierte el PDF a texto o usa las herramientas del proyecto.',
+          );
         content.push({
           type: 'file',
           file: {
@@ -219,11 +223,14 @@ export class OpenRouterRuntime implements ProviderRuntime {
       signal.throwIfAborted();
       const response = await this.api.request('/chat/completions', key, {
         method: 'POST',
+        headers: { 'x-opencode-session': this.s.id },
         signal,
         body: JSON.stringify({
           model: model.value,
           stream: true,
-          plugins: [{ id: 'file-parser', pdf: { engine: 'cloudflare-ai' } }],
+          ...(this.api.name === 'OpenRouter'
+            ? { plugins: [{ id: 'file-parser', pdf: { engine: 'cloudflare-ai' } }] }
+            : {}),
           messages: [
             {
               role: 'system',
@@ -240,7 +247,7 @@ export class OpenRouterRuntime implements ProviderRuntime {
             : {}),
         }),
       });
-      if (!response.body) throw new Error('OpenRouter devolvió una respuesta vacía.');
+      if (!response.body) throw new Error(`${this.api.name} devolvió una respuesta vacía.`);
       const msg: Message = {
         id: randomUUID(),
         role: 'assistant',
@@ -251,12 +258,14 @@ export class OpenRouterRuntime implements ProviderRuntime {
       this.s.messages.push(msg);
       const calls = new Map<number, any>();
       let reason: string | undefined;
+      let reasoning = '';
       try {
-        for await (const event of routerStream(response.body)) {
+        for await (const event of routerStream(response.body, this.api.name)) {
           const choice = event.choices?.[0],
             delta = choice?.delta;
           if (choice?.finish_reason) reason = choice.finish_reason;
           if (typeof delta?.content === 'string') msg.text += delta.content;
+          if (typeof delta?.reasoning_content === 'string') reasoning += delta.reasoning_content;
           for (const c of delta?.tool_calls ?? []) {
             const old = calls.get(c.index) ?? {
               id: '',
@@ -317,12 +326,13 @@ export class OpenRouterRuntime implements ProviderRuntime {
       if (reason === 'length') {
         if (msg.text) this.history.push({ role: 'assistant', content: msg.text });
         throw new Error(
-          'OpenRouter: el modelo agotó su límite de salida. La respuesta parcial se conserva; pide que continúe en pasos más pequeños.',
+          `${this.api.name}: el modelo agotó su límite de salida. La respuesta parcial se conserva; pide que continúe en pasos más pequeños.`,
         );
       }
       this.history.push({
         role: 'assistant',
         content: msg.text || null,
+        ...(reasoning ? { reasoning_content: reasoning } : {}),
         ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
       });
       if (!toolCalls.length) return;

@@ -205,3 +205,41 @@ test('account checks receive the configured proxy for both providers without put
       await accounts.shutdown();
     }
   }));
+
+test('disabling forces direct connections and preserves configuration and credentials after restart', () =>
+  fixture(async (p, root) => {
+    p.save({ ...settings, password: 'saved-secret' });
+    p.save({ ...settings, enabled: false });
+    const restored = new ProxySettings(root, codec);
+    assert.equal(restored.snapshot().enabled, false);
+    assert.equal(restored.snapshot().host, settings.host);
+    assert.equal(restored.snapshot().hasPassword, true);
+    assert.deepEqual(restored.browserConfig(), { mode: 'direct' });
+    assert.equal(restored.credentials(settings.host, settings.port), undefined);
+    const env = restored.environment();
+    for (const key of [
+      'HTTP_PROXY',
+      'HTTPS_PROXY',
+      'ALL_PROXY',
+      'http_proxy',
+      'https_proxy',
+      'all_proxy',
+    ])
+      assert.equal(env[key], '');
+    assert.equal(env.NO_PROXY, '*');
+    restored.save({ ...settings, enabled: true });
+    assert.equal(restored.browserConfig().mode, 'fixed_servers');
+    assert.equal(restored.credentials(settings.host, settings.port)?.password, 'saved-secret');
+    restored.save({ ...settings, mode: 'system', enabled: false });
+    assert.equal(restored.browserConfig().mode, 'direct');
+  }));
+
+test('legacy settings remain enabled and disabled settings can be saved before choosing a server', () =>
+  fixture(async (p, root) => {
+    const { enabled, ...legacy } = settings;
+    fs.writeFileSync(path.join(root, 'network.json'), JSON.stringify(legacy));
+    assert.equal(new ProxySettings(root, codec).snapshot().enabled, true);
+    p.save({ ...defaultProxy, mode: 'manual', enabled: false });
+    assert.equal(p.snapshot().enabled, false);
+    assert.throws(() => p.save({ ...defaultProxy, mode: 'manual', enabled: true }), /servidor/);
+  }));

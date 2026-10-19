@@ -29,7 +29,7 @@ export function UsageSwitcher({
     return () => clearInterval(timer);
   }, []);
   const kind = providerKind(profile);
-  const api = kind === 'openrouter';
+  const api = ['openrouter', 'opencode'].includes(kind);
   const gemini = kind === 'gemini';
   const cost =
     stats && (stats.costReported || stats.costEstimated)

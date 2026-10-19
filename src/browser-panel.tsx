@@ -34,7 +34,9 @@ export function BrowserPanel({
   close: () => void;
   onError: (message: string) => void;
 }) {
-  const state = tabs.find((tab) => tab.id === selected) ?? tabs[0];
+  const state =
+    tabs.find((tab) => tab.id === selected) ??
+    tabs.find((tab) => tab.projectId === projectId);
   const host = useRef<HTMLDivElement>(null);
   const [address, setAddress] = useState(state?.url ?? '');
   const [busy, setBusy] = useState(false);

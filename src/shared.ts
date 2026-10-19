@@ -1,21 +1,29 @@
 import type { BrowserInput, BrowserState } from './browser-protocol';
-export type ProviderKind = 'claude' | 'codex' | 'openrouter' | 'gemini';
+export type ProviderKind = 'claude' | 'codex' | 'openrouter' | 'opencode' | 'gemini';
 export type Profile =
-  `claude-${number}` | 'codex' | `codex-${number}` | `openrouter-${number}` | `gemini-${number}`;
+  | `claude-${number}`
+  | 'codex'
+  | `codex-${number}`
+  | `openrouter-${number}`
+  | `opencode-${number}`
+  | `gemini-${number}`;
 export const providerKind = (profile?: string): ProviderKind =>
-  profile?.startsWith('openrouter-')
-    ? 'openrouter'
-    : profile?.startsWith('gemini-')
-      ? 'gemini'
-      : isCodex(profile)
-        ? 'codex'
-        : 'claude';
+  profile?.startsWith('opencode-')
+    ? 'opencode'
+    : profile?.startsWith('openrouter-')
+      ? 'openrouter'
+      : profile?.startsWith('gemini-')
+        ? 'gemini'
+        : isCodex(profile)
+          ? 'codex'
+          : 'claude';
 export const isConnectedProvider = (profile?: string) =>
-  ['openrouter', 'gemini'].includes(providerKind(profile));
+  ['openrouter', 'opencode', 'gemini'].includes(providerKind(profile));
 export const providerNames: Record<ProviderKind, string> = {
   claude: 'Claude',
   codex: 'Codex',
   openrouter: 'OpenRouter',
+  opencode: 'OpenCode',
   gemini: 'Google · Gemini',
 };
 export interface ProviderConfig {
@@ -343,6 +351,8 @@ export interface AccountState {
   error?: string;
   terminalId?: string;
   cancellable?: boolean;
+  loginCode?: string;
+  loginUrl?: string;
   loginStarting?: boolean;
 }
 export interface Snapshot {
@@ -385,6 +395,7 @@ export type Action =
   | { type: 'changeSessionAccount'; sessionId: string; profile: Profile }
   | { type: 'configureOptimization'; profile: Profile; optimization: TokenOptimization }
   | { type: 'addAccount'; kind: ProviderKind; name?: string }
+  | { type: 'accountOpenLogin'; profile: Profile }
   | { type: 'connectOpenRouter'; profile: Profile; apiKey: string }
   | { type: 'configureGoogleAccount'; profile: Profile; cloudProject: string }
   | { type: 'providerCatalog'; profile: Profile; category?: string }

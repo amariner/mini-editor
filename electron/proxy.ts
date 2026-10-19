@@ -26,6 +26,7 @@ const hostSchema = z
     }
   }, 'Indica un servidor sin protocolo, ruta ni credenciales.');
 export const proxySchema = z.object({
+  enabled: z.boolean().default(true),
   mode: z.enum(['system', 'manual']),
   protocol: z.enum(['http', 'https']),
   host: hostSchema,
@@ -110,8 +111,9 @@ export class ProxySettings {
   }
   private prepare(input: ProxyUpdate) {
     const { password, clearPassword, ...config } = proxyUpdateSchema.parse(input);
-    if (config.mode === 'manual' && !config.host) throw new Error('Indica el servidor del proxy.');
-    readCorporateCA(config.caFile);
+    if (config.enabled && config.mode === 'manual' && !config.host)
+      throw new Error('Indica el servidor del proxy.');
+    if (config.enabled) readCorporateCA(config.caFile);
     const secret = clearPassword
       ? ''
       : password !== undefined
@@ -144,6 +146,19 @@ export class ProxySettings {
     if (this.loadError) throw new Error(this.loadError);
     const c = this.config;
     const env: Record<string, string> = {};
+    if (!c.enabled) {
+      for (const key of [
+        'HTTP_PROXY',
+        'HTTPS_PROXY',
+        'ALL_PROXY',
+        'http_proxy',
+        'https_proxy',
+        'all_proxy',
+      ])
+        env[key] = '';
+      env.NO_PROXY = env.no_proxy = '*';
+      return env;
+    }
     if (c.mode === 'manual') {
       if (!c.host) throw new Error('Falta el servidor del proxy. Revisa Ajustes → Red.');
       const url = new URL(endpoint(c));
@@ -163,6 +178,7 @@ export class ProxySettings {
   }
   browserConfig() {
     if (this.loadError) throw new Error(this.loadError);
+    if (!this.config.enabled) return { mode: 'direct' as const };
     return this.config.mode === 'manual'
       ? {
           mode: 'fixed_servers' as const,
@@ -174,6 +190,7 @@ export class ProxySettings {
   credentials(host: string, port: number) {
     const c = this.config;
     if (
+      !c.enabled ||
       c.mode !== 'manual' ||
       !c.username ||
       host.replace(/^\[|\]$/g, '').toLowerCase() !== c.host.replace(/^\[|\]$/g, '').toLowerCase() ||

@@ -1,4 +1,5 @@
 export interface ProxyConfig {
+  enabled: boolean;
   mode: 'system' | 'manual';
   protocol: 'http' | 'https';
   host: string;
@@ -16,6 +17,7 @@ export interface ProxySnapshot extends ProxyConfig {
   error?: string;
 }
 export const defaultProxy: ProxyConfig = {
+  enabled: true,
   mode: 'system',
   protocol: 'http',
   host: '',

@@ -203,6 +203,7 @@ export function AccountsSettings({
                   <option value="claude">Claude</option>
                   <option value="codex">ChatGPT · Codex</option>
                   <option value="openrouter">OpenRouter · API</option>
+                  <option value="opencode">OpenCode · Console</option>
                   <option value="gemini">Google · Gemini</option>
                   {!state.freebuffEnabled && <option value="freebuff">Freebuff · CLI</option>}
                 </select>
@@ -263,7 +264,9 @@ export function AccountsSettings({
                                 ? 'Sin sesión'
                                 : 'Estado sin verificar';
               const disabled =
-                !compatible || !!busy || (p.kind !== 'openrouter' && !state.tools[p.kind]);
+                !compatible ||
+                !!busy ||
+                (p.kind !== 'openrouter' && p.kind !== 'opencode' && !state.tools[p.kind]);
               return (
                 <section className="account-card" key={p.id} aria-label={`Cuenta ${p.name}`}>
                   <div className="account-heading">
@@ -342,7 +345,7 @@ export function AccountsSettings({
                     />
                     Predeterminada para chats nuevos
                   </label>
-                  {p.kind !== 'openrouter' && !state.tools[p.kind] && (
+                  {p.kind !== 'openrouter' && p.kind !== 'opencode' && !state.tools[p.kind] && (
                     <p className="muted">Selecciona el ejecutable para conectar esta cuenta.</p>
                   )}
                   {account?.loginStarting && (
@@ -361,7 +364,7 @@ export function AccountsSettings({
                       {running(p.id).length} sesiones abiertas con este perfil.
                     </p>
                   )}
-                  {(p.kind === 'openrouter' || p.kind === 'gemini') && (
+                  {['openrouter', 'opencode', 'gemini'].includes(p.kind) && (
                     <ProviderAccountSettings
                       profile={p}
                       account={account}
@@ -374,15 +377,20 @@ export function AccountsSettings({
                     {p.kind !== 'openrouter' && (
                       <button disabled={disabled} onClick={() => request(p.id, 'accountLogin')}>
                         <LogIn size={14} />
-                        {p.kind === 'gemini' && /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
+                        {p.kind === 'opencode'
                           ? account?.status === 'signedIn'
-                            ? 'Verificar conexión Google'
-                            : 'Conectar Google con Antigravity'
-                          : account?.status === 'signedIn'
-                            ? 'Cambiar cuenta'
-                            : p.kind === 'gemini'
-                              ? 'Iniciar sesión con Google'
-                              : 'Iniciar sesión'}
+                            ? 'Cambiar cuenta en el navegador'
+                            : 'Iniciar sesión en el navegador'
+                          : p.kind === 'gemini' &&
+                              /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
+                            ? account?.status === 'signedIn'
+                              ? 'Verificar conexión Google'
+                              : 'Conectar Google con Antigravity'
+                            : account?.status === 'signedIn'
+                              ? 'Cambiar cuenta'
+                              : p.kind === 'gemini'
+                                ? 'Iniciar sesión con Google'
+                                : 'Iniciar sesión'}
                       </button>
                     )}
                     <button disabled={disabled} onClick={() => request(p.id, 'accountLogout')}>

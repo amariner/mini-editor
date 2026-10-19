@@ -21,6 +21,7 @@ export function NetworkSettings({
     setResult(undefined);
   };
   const config = (): ProxyUpdate => ({
+    enabled: draft.enabled,
     mode: draft.mode,
     protocol: draft.protocol,
     host: draft.host.trim(),
@@ -57,6 +58,28 @@ export function NetworkSettings({
       <p className="muted">
         Configura la conexión de Claude, ChatGPT y el navegador integrado. El navegador externo de
         inicio de sesión conserva sus ajustes del sistema.
+      </p>
+      <button
+        type="button"
+        aria-pressed={draft.enabled}
+        disabled={!compatible || busy}
+        onClick={async () => {
+          const enabled = !draft.enabled;
+          const saved = await execute({ type: 'saveProxy', config: { ...config(), enabled } });
+          if (saved?.ok) {
+            setDraft((v) => ({ ...v, enabled }));
+            setPassword('');
+            setClearPassword(false);
+          }
+          if (saved) setResult(saved);
+        }}
+      >
+        {draft.enabled ? 'Desactivar proxy' : 'Activar proxy'}
+      </button>
+      <p className="muted">
+        {draft.enabled
+          ? 'Proxy activado. Se utiliza el modo de conexión seleccionado.'
+          : 'Proxy desactivado. Conexión directa, sin proxy del sistema. Puedes configurar y guardar los datos antes de activarlo.'}
       </p>
       {snapshot?.error && <p className="error">{snapshot.error}</p>}
       <label>
@@ -108,7 +131,7 @@ export function NetworkSettings({
               onChange={(e) => edit({ host: e.target.value })}
               autoComplete="off"
               spellCheck={false}
-              required={manual}
+              required={manual && draft.enabled}
             />
           </label>
           <label>
@@ -120,7 +143,7 @@ export function NetworkSettings({
               max={65535}
               value={draft.port || ''}
               onChange={(e) => edit({ port: Number(e.target.value) })}
-              required={manual}
+              required={manual && draft.enabled}
             />
           </label>
         </div>

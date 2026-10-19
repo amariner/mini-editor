@@ -29,6 +29,8 @@ export function ProviderAccountSettings({
   run: (a: Action) => Promise<any>;
   antigravity?: boolean;
 }) {
+  const openCode = profile.kind === 'opencode';
+  const providerName = openCode ? 'OpenCode' : 'OpenRouter';
   const [cloudProject, setCloudProject] = useState(profile.googleCloudProject ?? '');
   const [key, setKey] = useState(''),
     [busy, setBusy] = useState(false),
@@ -38,13 +40,13 @@ export function ProviderAccountSettings({
     [query, setQuery] = useState(''),
     [category, setCategory] = useState('');
   const [selection, setSelection] = useState(
-    profile.modelSelection ?? { freeOnly: false, models: [] },
+    profile.modelSelection ?? { freeOnly: openCode, models: [] },
   );
   const [saved, setSaved] = useState(false),
     sequence = useRef(0);
   const selectionSignature = JSON.stringify(profile.modelSelection);
   useEffect(() => {
-    setSelection(profile.modelSelection ?? { freeOnly: false, models: [] });
+    setSelection(profile.modelSelection ?? { freeOnly: openCode, models: [] });
   }, [selectionSignature]);
   useEffect(
     () => () => {
@@ -159,6 +161,21 @@ export function ProviderAccountSettings({
   );
   return (
     <div className="provider-settings">
+      {openCode && (
+        <p className="muted">
+          Inicia sesión con tu cuenta de OpenCode en el navegador o introduce una clave API. Después
+          carga el catálogo y elige los modelos para tus chats.
+        </p>
+      )}
+      {openCode && account?.loginCode && (
+        <p role="status">
+          Completa el acceso en el navegador. Código: <strong>{account.loginCode}</strong>. Al
+          autorizar, la cuenta se conecta automáticamente.{' '}
+          <button onClick={() => void run({ type: 'accountOpenLogin', profile: profile.id })}>
+            Volver a abrir el navegador
+          </button>
+        </p>
+      )}
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -182,7 +199,7 @@ export function ProviderAccountSettings({
         }}
       >
         <label>
-          Clave API de OpenRouter
+          Clave API de {providerName}
           <input
             type="password"
             autoComplete="off"
@@ -192,24 +209,37 @@ export function ProviderAccountSettings({
             placeholder={
               account?.status === 'signedIn'
                 ? 'Conectada · introduce otra clave para cambiarla'
-                : 'sk-or-…'
+                : openCode
+                  ? 'Clave de OpenCode Console'
+                  : 'sk-or-…'
             }
             disabled={disabled || busy}
           />
         </label>
         <button disabled={disabled || busy || !key.trim()} type="submit">
           {busy
-            ? 'Conectando…'
+            ? openCode
+              ? 'Guardando…'
+              : 'Conectando…'
             : account?.status === 'signedIn'
               ? 'Cambiar clave'
-              : 'Conectar OpenRouter'}
+              : openCode
+                ? 'Guardar clave de OpenCode'
+                : `Conectar ${providerName}`}
         </button>
         <small>
           La clave se guarda cifrada con el almacén del sistema. No se incluye en las
           conversaciones.
         </small>
       </form>
-      {account?.apiUsage && (
+      {openCode && (
+        <p className="muted">
+          La clave API es una alternativa al acceso por navegador. Guardarla no envía consultas; la
+          autenticación de la clave se comprobará al usarla. Los tokens del navegador se guardan
+          cifrados y se renuevan automáticamente.
+        </p>
+      )}
+      {!openCode && account?.apiUsage && (
         <p className="muted">
           Consumo de la clave: {usd(account.apiUsage.spent)} · Crédito restante de la clave:{' '}
           {usd(account.apiUsage.remaining)}
@@ -233,7 +263,7 @@ export function ProviderAccountSettings({
             />
             Mostrar solo modelos gratuitos
           </label>
-          <label>
+          <label hidden={openCode}>
             Uso
             <select
               aria-label={`Uso de los modelos de ${profile.name}`}
@@ -261,8 +291,11 @@ export function ProviderAccountSettings({
           </button>
         </div>
         <p className="muted">
-          El filtro de uso viene del catálogo de OpenRouter. «Herramientas» indica si puede actuar
-          sobre el proyecto. Los precios son por millón de tokens de entrada / salida.
+          {openCode
+            ? 'Catálogo de tu cuenta desde OpenCode Console; Models.dev se utiliza solo cuando Console no ofrece catálogo. Se muestran los modelos compatibles con Chat Completions; otros protocolos todavía no están incluidos. El chat usa el cliente oficial de OpenCode mediante ACP, con permisos dentro de Agent Desk. Se aplican los límites de tu cuenta y de cada promoción. PDF no admitido; usa texto o archivos del proyecto.'
+            : 'El filtro de uso viene del catálogo de OpenRouter.'}{' '}
+          «Herramientas» indica si puede actuar sobre el proyecto. Los precios son por millón de
+          tokens de entrada / salida.
         </p>
         {loading ? (
           <p role="status">Cargando modelos…</p>

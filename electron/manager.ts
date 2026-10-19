@@ -55,6 +55,7 @@ import {
 import type { ProviderServices } from './openrouter';
 import type { ProviderRuntime } from './provider-runtime';
 import { OpenRouterRuntime } from './openrouter-runtime';
+import { OpenCodeRuntime } from './opencode-runtime';
 import { GeminiRuntime, geminiRpc, geminiAccount } from './gemini';
 import {
   AntigravityRuntime,
@@ -163,6 +164,7 @@ export class Manager {
       id: idAt(index),
       name: name?.trim() || `${providerNames[kind]} ${index}`,
       kind,
+      ...(kind === 'opencode' ? { modelSelection: { freeOnly: true, models: [] } } : {}),
     };
     definitions.push(definition);
     this.state.defaultProfile ??= definition.id;
@@ -625,20 +627,34 @@ export class Manager {
       s.error = undefined;
       this.changed();
       try {
-        if (providerKind(s.profile) === 'openrouter') {
-          if (!(await this.accounts.openrouter.key(s.profile)))
-            throw new Error('Conecta OpenRouter en Ajustes con tu clave API.');
+        if (['openrouter', 'opencode'].includes(providerKind(s.profile))) {
+          if (!(await this.accounts.api(s.profile).key(s.profile)))
+            throw new Error('Conecta la cuenta API en Ajustes.');
           await this.refreshModels(id);
           if (!s.info?.models.length)
             throw new Error(s.modelsError ?? 'Selecciona modelos en Ajustes.');
-          rt.provider = new OpenRouterRuntime(
-            s,
-            project.path,
-            this.accounts.openrouter,
-            () => this.changed(),
-            () => this.selectedModels(s.profile),
-            () => savingInstructions(this.optimization(s.profile).level),
-          );
+          if (providerKind(s.profile) === 'opencode') {
+            const runtime = new OpenCodeRuntime(
+              s,
+              project.path,
+              this.profilesRoot,
+              this.accounts.opencode,
+              () => this.changed(),
+              () => this.selectedModels(s.profile),
+              this.networkEnvironment,
+            );
+            rt.provider = runtime;
+            await runtime.start();
+          } else {
+            rt.provider = new OpenRouterRuntime(
+              s,
+              project.path,
+              this.accounts.api(s.profile),
+              () => this.changed(),
+              () => this.selectedModels(s.profile),
+              () => savingInstructions(this.optimization(s.profile).level),
+            );
+          }
         } else {
           const binary = this.state.tools.gemini,
             dir = profileDirectory(this.profilesRoot, s.profile);
@@ -1272,7 +1288,7 @@ export class Manager {
   private usageAttempts = new Map<Profile, { at: number; revision: number }>();
   refreshUsage(profile: Profile): Promise<void> {
     if (this.accounts.changing(profile)) return Promise.resolve();
-    if (providerKind(profile) === 'openrouter') {
+    if (['openrouter', 'opencode'].includes(providerKind(profile))) {
       const last = this.usageAttempts.get(profile),
         revision = this.accounts.revision(profile);
       if (last?.revision === revision && Date.now() - last.at < 60000) return Promise.resolve();
@@ -1482,14 +1498,14 @@ export class Manager {
   async selectedModels(profile: Profile, signal?: AbortSignal) {
     const models = await this.accounts.readModels(profile, signal ?? new AbortController().signal);
     const selection = this.state.profiles?.find((p) => p.id === profile)?.modelSelection;
-    if (providerKind(profile) !== 'openrouter') return models;
+    if (!['openrouter', 'opencode'].includes(providerKind(profile))) return models;
     return models.filter(
       (m) => selection?.models.includes(m.value) && (!selection.freeOnly || m.free),
     );
   }
   async selectProviderModels(profile: Profile, selection: ModelSelection) {
     const p = this.state.profiles?.find((p) => p.id === profile);
-    if (!p || p.kind !== 'openrouter' || this.accounts.changing(profile))
+    if (!p || !['openrouter', 'opencode'].includes(p.kind) || this.accounts.changing(profile))
       throw new Error('La cuenta no está disponible.');
     if (
       this.state.sessions.some(

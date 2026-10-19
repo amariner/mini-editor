@@ -135,11 +135,11 @@ export class DeskBrowser {
       if (this.observed.size > 2000) this.observed.delete(this.observed.values().next().value!);
       if (await hostOnline(url)) {
         if (!this.closed && !this.removedProjects.has(projectId))
-          await this.forSession(sessionId, projectId, { action: 'navigate', url }).catch(() => {});
+          await this.forSession(sessionId, projectId, { action: 'navigate', url }, false).catch(() => {});
       } else this.observed.delete(key);
     }
   }
-  create(projectId?: string, sessionId = '', url = '') {
+  create(projectId?: string, sessionId = '', url = '', activate = true) {
     if (projectId && this.removedProjects.has(projectId))
       throw new Error('Este proyecto se ha quitado.');
     if (this.pages.size >= 60)
@@ -165,10 +165,10 @@ export class DeskBrowser {
     });
     this.save();
     this.changed();
-    this.opened(id, sessionId);
+    if (activate) this.opened(id, sessionId);
     return this.pages.get(id)!.state;
   }
-  async forSession(sessionId: string, projectId: string, input: unknown) {
+  async forSession(sessionId: string, projectId: string, input: unknown, activate = true) {
     const args = browserInput.parse(input);
     if (args.action === 'list')
       return { tabs: this.snapshot().filter((p) => p.projectId === projectId) };
@@ -197,6 +197,7 @@ export class DeskBrowser {
           projectId,
           sessionId,
           args.action === 'navigate' || args.action === 'new' ? args.url : '',
+          activate,
         ).id;
     }
     this.defaults.set(sessionId, id!);
@@ -204,7 +205,7 @@ export class DeskBrowser {
       return args.url
         ? this.action(id!, { action: 'navigate', url: args.url })
         : this.pages.get(id!)!.state;
-    if (args.action === 'navigate') this.opened(id!, sessionId);
+    if (activate && args.action === 'navigate') this.opened(id!, sessionId);
     return this.action(id!, args);
   }
   snapshot() {

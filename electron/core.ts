@@ -6,7 +6,7 @@ import type { ClaudeConfig, CodexConfig, Session, Profile } from '../src/shared'
 import { defaultClaudeConfig, defaultCodexConfig } from '../src/shared';
 export const profileSchema = z
   .string()
-  .regex(/^((?:claude|openrouter|gemini)-[1-9][0-9]{0,3}|codex(?:-[1-9][0-9]{0,3})?)$/)
+  .regex(/^((?:claude|openrouter|opencode|gemini)-[1-9][0-9]{0,3}|codex(?:-[1-9][0-9]{0,3})?)$/)
   .transform((v) => v as Profile);
 const id = z.string().min(1).max(150),
   profile = profileSchema;
@@ -79,7 +79,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('configureOptimization'), profile, optimization: optimizationSchema }),
   z.object({
     type: z.literal('addAccount'),
-    kind: z.enum(['claude', 'codex', 'openrouter', 'gemini']),
+    kind: z.enum(['claude', 'codex', 'openrouter', 'opencode', 'gemini']),
     name: z.string().trim().min(1).max(40).optional(),
   }),
   z
@@ -133,6 +133,7 @@ export const actionSchema = z.discriminatedUnion('type', [
         .regex(/^(?:[a-z][a-z0-9-]{4,98}[a-z0-9])?$/),
     })
     .strict(),
+  z.object({ type: z.literal('accountOpenLogin'), profile }).strict(),
   z.object({ type: z.literal('snapshot') }),
   z.object({ type: z.literal('browser'), sessionId: id, input: browserInput }),
   z.object({

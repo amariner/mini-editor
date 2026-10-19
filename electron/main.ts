@@ -235,7 +235,7 @@ app.whenReady().then(async () => {
     );
     manager.coordinator.browserHandler = (session, input) => {
       if (quitting) return Promise.reject(new Error('Agent Desk se está cerrando.'));
-      return browser.forSession(session.id, session.projectId, input);
+      return browser.forSession(session.id, session.projectId, input, false);
     };
     await manager.discover();
   } catch (e) {
@@ -400,6 +400,12 @@ app.whenReady().then(async () => {
           return manager.configureProvider(a.sessionId, a.config);
         case 'accountRefresh':
           return manager.accounts.refresh(a.profile);
+        case 'accountOpenLogin': {
+          const url = manager.accounts.state[a.profile]?.loginUrl;
+          if (!url) throw new Error('No hay un acceso pendiente para esta cuenta.');
+          await shell.openExternal(url);
+          return true;
+        }
         case 'accountCancel':
           return manager.accounts.cancel(a.profile);
         case 'accountLogout':

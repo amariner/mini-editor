@@ -81,11 +81,12 @@ export function routerUsage(data: any): ApiUsage {
   };
 }
 export class OpenRouterService {
+  readonly name: string = 'OpenRouter';
   constructor(
-    private root: string,
+    protected root: string,
     readonly services: ProviderServices = {},
   ) {}
-  private file(profile: Profile) {
+  protected file(profile: Profile) {
     if (!profile.startsWith('openrouter-')) throw new Error('Esta cuenta no es de OpenRouter.');
     return path.join(profileDirectory(this.root, profile), 'api-key.enc');
   }
@@ -155,7 +156,7 @@ export class OpenRouterService {
   }
 }
 /** SSE framing independent of HTTP chunk boundaries, CRLF and keepalive comments. */
-export async function* routerStream(body: ReadableStream<Uint8Array>) {
+export async function* routerStream(body: ReadableStream<Uint8Array>, name = 'OpenRouter') {
   const reader = body.getReader(),
     decoder = new TextDecoder();
   let buffer = '',
@@ -174,11 +175,12 @@ export async function* routerStream(body: ReadableStream<Uint8Array>) {
           lines = [];
           if (data === '[DONE]') return;
           const chunk = JSON.parse(data);
-          if (chunk.error) throw routerError(chunk.error);
+          if (chunk.error)
+            throw new Error(routerError(chunk.error).message.replace('OpenRouter', name));
           yield chunk;
         }
       }
-      if (done) throw new Error('OpenRouter cerró la conexión antes de completar la respuesta.');
+      if (done) throw new Error(`${name} cerró la conexión antes de completar la respuesta.`);
     }
   } finally {
     await reader.cancel().catch(() => {});
