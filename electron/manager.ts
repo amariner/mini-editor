@@ -31,7 +31,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import * as pty from 'node-pty';
+import * as pty from './pty';
 import type {
   ClaudeConfig,
   CodexConfig,

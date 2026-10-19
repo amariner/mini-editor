@@ -11,6 +11,8 @@ npm run dev
 
 `npm ci` instala localmente los paquetes oficiales de Claude Code, Gemini CLI y OpenCode, el Agent SDK de Claude y recompila `node-pty` para Electron. No instala herramientas globales ni copia configuraciones existentes. Requiere Node 22.12+ (probado con 26.8.1), npm y Git.
 
+En macOS, el editor restaura el permiso de ejecución del `spawn-helper` de `node-pty` antes de abrir terminales. Algunos precompilados lo instalan sin ese permiso y provocan `posix_spawnp failed.` al iniciar sesión en Claude o abrir una consola.
+
 Compilación local sin servidor de desarrollo:
 
 ```bash
