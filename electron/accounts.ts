@@ -3,7 +3,7 @@ import { providerKind, isCodex } from '../src/shared';
 import fs from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify, stripVTControlCharacters } from 'node:util';
-import * as pty from 'node-pty';
+import * as pty from './pty';
 import { Rpc } from './rpc';
 import { fetchCodexModels } from './codex-models';
 import { readClaudeModels } from './claude';

@@ -1,4 +1,4 @@
-import * as pty from 'node-pty';
+import * as pty from './pty';
 import { cleanEnv } from './core';
 import { reapGroup } from './processes';
 import type { DeskEvent, Project } from '../src/shared';
