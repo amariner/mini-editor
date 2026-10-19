@@ -245,17 +245,45 @@ La barra de pestañas no crea procesos: el primer envío inicia el agente. El ic
 
 Verificación de pestañas: `npm run build && node scripts/tabs-check.mjs`. Usa un proyecto y perfiles temporales, abre Codex sin autenticar y no envía tareas. Comprueba el límite, borradores, cambio de cuenta, confirmación y parada, recuperación y distribución compacta.
 
-## Trabajo simultáneo y coordinación
+## Trabajo simultáneo, worktrees y coordinación
 
-Claude 1, Claude 2 y Codex pueden trabajar al mismo tiempo en una carpeta, con conversaciones y procesos independientes. Cada proceso recibe la herramienta MCP local `agent_desk.coordinate`, tanto en hilos nuevos como al reanudar. La app comparte las tareas actuales y las rutas reservadas, no el historial completo de las otras conversaciones. Los datos permanecen en memoria del proceso principal y se envían al proveedor correspondiente cuando el agente consulta la herramienta.
+Varios agentes pueden trabajar a la vez en un proyecto (hasta cinco abiertos), con conversaciones y procesos independientes.
+
+### Aislamiento real con worktrees (Claude)
+
+Cada chat de Claude puede **aislarse en un git worktree** con su propia rama `agent-desk/<título>-<id>`. La opción **Aislar en worktree** aparece sobre la conversación antes de abrir el agente y viene **activada por defecto cuando ya hay otro agente vivo en el mismo proyecto** (el texto indica cuántos). Al abrir el agente:
+
+- Se crea el worktree desde el `HEAD` local de la rama actual (semántica `baseRef: 'head'`: commits sin publicar incluidos; los cambios sin commit de la copia principal no). La carpeta vive en los datos de la app (`<datos>/worktrees/<repo>-<hash>/`), nunca dentro del proyecto. Si el proyecto es una subcarpeta del repositorio, el agente trabaja en esa misma subcarpeta del worktree.
+- Se enlazan las carpetas pesadas sin seguimiento de `worktree.symlinkDirectories` (ajuste oficial de Claude Code en `.claude/settings*.json`; por defecto `node_modules`) y se excluyen en `.git/info/exclude` para que no aparezcan como archivos nuevos.
+- El SDK arranca con `cwd` en el worktree, `projectConfigRoot` en la copia principal (ajustes, hooks, `.mcp.json` y `.claude` de confianza) y `settings.worktree` (`symlinkDirectories`, `baseRef: 'head'`) para que `EnterWorktree` o los subagentes aislados del propio agente se comporten igual.
+- Un chat aislado **no usa reservas**: no recibe el hook `PreToolUse` ni la herramienta `coordinate` (sigue teniendo `browser`) y no aparece en el estado de coordinación de los demás.
+
+La rama del worktree se muestra sobre la conversación, en la tarjeta del Multichat y en la barra de Git (**Worktree · rama**). Con un chat aislado seleccionado, la barra de Git muestra el estado de su worktree (archivos sin commit, commits por fusionar y commits nuevos en la base) y estas acciones:
+
+- **Fusionar en <rama base>**: hace commit de lo pendiente en el worktree, comprueba conflictos con `git merge-tree` **sin tocar la copia principal** y, si no los hay, fusiona (`--no-ff`). Requiere que la copia principal esté en la rama base, sin cambios sin commit y sin agentes trabajando directamente en ella. Con conflictos, muestra la lista y no cambia nada.
+- **Traer cambios de <rama base>**: fusiona la base en el worktree; los conflictos quedan allí para que el agente los resuelva y haga commit.
+- **Descartar worktree**: tras confirmar (indica archivos sin commit y commits sin fusionar), detiene el agente y borra la carpeta y la rama.
+
+Quitar un proyecto de la app no borra sus worktrees ni sus ramas: descártalos antes o elimínalos con `git worktree remove`. Si no se puede aislar un chat que lo tenía activado por defecto (carpeta sin Git, repositorio sin commits o `HEAD` separado), el chat avisa y trabaja en la carpeta compartida con reservas; si lo activaste tú, el arranque falla con el motivo.
+
+Los hooks `WorktreeCreate`/`WorktreeRemove` y la opción `--worktree` del CLI no encajan aquí: sustituyen la creación cuando el agente ya está en marcha (`EnterWorktree`) y el CLI decide nombre, ubicación y reanudación de sus worktrees. El `cwd` de un chat debe existir antes de lanzar el proceso y la app necesita fusionar y descartar de forma determinista, así que crea los worktrees con `git` y reutiliza los ajustes oficiales. Al reanudar, Claude Code encuentra la conversación aunque el `cwd` cambie a otro worktree del mismo repositorio.
+
+### Duplicar chat y deshacer un turno
+
+- **Duplicar chat** (sobre la conversación y en la tarjeta del Multichat) abre una pestaña nueva con el mismo historial para probar otro enfoque en paralelo. Usa `resume` + `forkSession: true` del SDK con un id nuevo (o `--fork-session` en la terminal oficial) en el primer arranque. La copia va a **otro worktree** que parte de los archivos actuales del original (si el original está aislado, antes se hace commit de lo pendiente en su rama) y se fusiona en la misma rama base. La copia empieza sin puntos de restauración.
+- **Deshacer cambios de este turno** (icono en cada mensaje tuyo de Claude): consulta primero con `Query.rewindFiles(id, { dryRun: true })` cuántos archivos cambiarían y, tras confirmar, restaura los archivos al estado anterior a ese mensaje (también deshace los turnos posteriores). Cada mensaje enviado lleva su propio `uuid`, que el CLI usa como punto de restauración (`enableFileCheckpointing` está activo por defecto en la configuración). Solo cubre las ediciones de las herramientas de Claude, no comandos de terminal, y no modifica la conversación.
+
+### Carpeta compartida y coordinación (Codex, otros proveedores y Claude sin aislar)
+
+Los agentes que comparten la carpeta del proyecto (Codex, Claude con **Aislar en worktree** desactivado o un chat que ya trabajó en la carpeta compartida) reciben la herramienta MCP local `agent_desk.coordinate`, tanto en hilos nuevos como al reanudar. La app comparte las tareas actuales y las rutas reservadas, no el historial completo de las otras conversaciones. Los datos permanecen en memoria del proceso principal y se envían al proveedor correspondiente cuando el agente consulta la herramienta.
 
 - `status`: consulta agentes, tareas y reservas del proyecto.
 - `claim`: reserva atómicamente archivos o directorios. Dos agentes pueden reservar rutas distintas; si una ruta coincide o está dentro de un directorio reservado, se rechaza todo el lote. Se resuelven enlaces simbólicos y se rechazan rutas fuera del proyecto.
 - `release`: libera las reservas propias. La app también las libera tras confirmar que el proceso ha terminado. No expiran mientras el agente sigue abierto.
 
-Las instrucciones piden consultar tareas, reservar antes de escribir, volver a leer los archivos tras obtener la reserva y liberar después de terminar los comandos. Un hook de Claude añade una comprobación automática para Write/Edit/MultiEdit/NotebookEdit. El coordinador no modifica archivos del proyecto ni la configuración global. Solo las herramientas internas validadas `coordinate` y `browser` reciben aprobación automática; las aprobaciones de comandos, ediciones y otros MCP no cambian.
+Las instrucciones piden consultar tareas, reservar antes de escribir, volver a leer los archivos tras obtener la reserva y liberar después de terminar los comandos. Un hook de Claude añade una comprobación automática para Write/Edit/MultiEdit/NotebookEdit en la carpeta compartida. El coordinador no modifica archivos del proyecto ni la configuración global. Solo las herramientas internas validadas `coordinate` y `browser` reciben aprobación automática; las aprobaciones de comandos, ediciones y otros MCP no cambian.
 
-**Límite real:** las reservas no son bloqueos del sistema de archivos. Un comando de shell, herramienta externa, agente que ignore las instrucciones, terminal manual o alias por enlace duro puede saltárselas. No se garantiza ausencia total de conflictos ni se detecta semánticamente que dos tareas persiguen lo mismo. Los worktrees y un control obligatorio de todas las escrituras siguen pendientes. El indicador del chat permite consultar agentes y reservas reales.
+**Límite real:** en la carpeta compartida, las reservas no son bloqueos del sistema de archivos. Un comando de shell, herramienta externa, agente que ignore las instrucciones, terminal manual o alias por enlace duro puede saltárselas. Para trabajo en paralelo seguro con Claude usa los worktrees. Codex y los demás proveedores siguen compartiendo carpeta. El indicador del chat permite consultar agentes y reservas reales.
 
 ## Panel derecho
 
@@ -263,12 +291,14 @@ La terminal se abre en un panel inferior que ocupa el ancho de chat y navegador.
 
 ## Verificación de esta revisión
 
-- `npm test`: IPC, cuentas, permisos, persistencia, procesos, pestañas, reservas concurrentes, rechazo de rutas y autorización restringida del coordinador.
+- `npm test`: IPC, cuentas, permisos, persistencia, procesos, pestañas, reservas concurrentes, rechazo de rutas, autorización restringida del coordinador y worktrees (`tests/worktrees.test.ts`: creación, subcarpetas, fusión, conflictos, duplicado, descarte, aislamiento por defecto y opciones de fork).
 - `npm run build && node scripts/concurrency-check.mjs`: tres procesos oficiales a la vez, MCP conectado en Claude/Codex, llamadas reales a la herramienta, conflicto de reservas y recuperación de hilo vacío. No realiza llamadas de modelo ni toca proyectos existentes.
+- `node scripts/worktree-check.mjs`: worktrees en un repositorio temporal sin llamadas de modelo: aislamiento por defecto con otro agente vivo, enlace de `node_modules`, fusión con commit automático, conflicto detectado sin tocar la copia principal, conflicto llevado al worktree y resuelto, duplicado en otro worktree y descarte de carpetas y ramas. Si encuentra Claude Code, abre un chat aislado de verdad (solo inicialización) y comprueba el MCP y la ausencia de reservas compartidas.
+- `npm run build && node scripts/worktree-ui-check.mjs`: interfaz con datos simulados: rama sobre el chat, panel de worktree en Git, conflictos, confirmación de descarte, deshacer un turno, duplicar chat, interruptor por defecto y rama en el Multichat. Capturas en `artifacts/worktree-*`.
 - `node scripts/workspace-check.mjs`: comprobación visual, shell y cwd reales, panel dividido y compacto, primer envío de Codex sin autenticar conservando el borrador.
 - `AGENT_DESK_PROFILES_DIR="$HOME/Library/Application Support/Agent Desk" node scripts/coordination-live-check.mjs`: **comprobada en esta revisión**, prueba optativa con las suscripciones autenticadas. Envía tareas mínimas simultáneas de Claude/Codex en una carpeta temporal para comprobar herramientas, rechazo de una reserva y reanudación de un hilo persistido; no crea ni edita archivos en esa carpeta.
 
-Esta revisión cambia el protocolo interno a v11. En una instancia de desarrollo anterior, cierra las pestañas con procesos abiertos y pulsa **Actualizar aplicación**, o sal con `⌘Q` y ejecuta `npm run dev`. No se reinician agentes activos automáticamente.
+Esta revisión cambia el protocolo interno (IPC 35 con worktrees). En una instancia de desarrollo anterior, cierra las pestañas con procesos abiertos y pulsa **Actualizar aplicación**, o sal con `⌘Q` y ejecuta `npm run dev`. No se reinician agentes activos automáticamente.
 
 Revisión visual minimalista: `npm run build && node scripts/browser-check.mjs` verifica arrastre, teclado, ancho mínimo, persistencia de la proporción, iconos estables, ausencia de leyendas y adaptación a 900 px, con una web local real. Capturas en `artifacts/36-*` y `artifacts/37-*`.
 
@@ -282,7 +312,7 @@ Renombrado directo: doble clic sobre un proyecto o una pestaña de chat permite 
 
 La barra de Git sobre el compositor permite abrir **Gestionar ramas y Git**: muestra la rama, archivos modificados/nuevos, conflictos, líneas y commits por subir o bajar. El panel permite crear/cambiar ramas locales, preparar todos los cambios o retirarlos de preparación, crear un commit, consultar los remotos (`fetch`), bajar con avance rápido (`pull --ff-only`) y subir o publicar la rama actual. Incluye los últimos cinco commits. Los contadores remotos corresponden a las referencias locales: pulsa **Consultar remoto** para actualizarlas. El estado local se refresca cada diez segundos mientras la ventana es visible, además de los cambios de proyecto, foco y agente. Las carpetas sin Git muestran **Sin repositorio Git**.
 
-Las acciones se aplican a todo el repositorio, también si el proyecto apunta a una subcarpeta. Cambiar/crear rama y bajar cambios requieren un árbol limpio. Los conflictos bloquean commit y push; los agentes abiertos del repositorio bloquean las operaciones que modifican Git. No hay push forzado, borrado de ramas ni descarte de archivos. Un pull divergente muestra el error y requiere resolverlo desde la terminal. La autenticación del remoto usa la configuración local de Git; si necesita una interacción que la app no puede completar, muestra el error. Una operación pendiente de Git bloquea el reinicio y se espera al cerrar.
+Las acciones se aplican a todo el repositorio, también si el proyecto apunta a una subcarpeta. Cambiar/crear rama y bajar cambios requieren un árbol limpio. Los conflictos bloquean commit y push; los agentes abiertos en la copia principal del repositorio bloquean las operaciones que modifican Git (los chats aislados en worktrees no). Con un chat aislado seleccionado, la barra muestra su worktree y las acciones de fusionar, traer cambios y descartar. No hay push forzado, borrado de ramas ni descarte de archivos. Un pull divergente muestra el error y requiere resolverlo desde la terminal. La autenticación del remoto usa la configuración local de Git; si necesita una interacción que la app no puede completar, muestra el error. Una operación pendiente de Git bloquea el reinicio y se espera al cerrar.
 
 También puedes **arrastrar imágenes a cualquier parte del chat**. Se ilumina el destino, se añaden miniaturas al borrador y no se envía el mensaje automáticamente. Admite PNG, JPEG, GIF y WebP sin límites propios de tamaño, dimensiones o cantidad. Se valida el contenido y su decodificación en el proceso principal; el arrastre transmite bytes, no rutas arbitrarias. Los lotes inválidos no se adjuntan parcialmente. Las miniaturas de los mensajes enviados se conservan al reiniciar.
 

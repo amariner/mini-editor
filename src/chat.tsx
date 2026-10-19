@@ -50,6 +50,7 @@ import {
   OctagonX,
   Info,
   Waypoints,
+  Undo2,
 } from 'lucide-react';
 import type {
   Action,
@@ -519,10 +520,83 @@ export function AttachmentPreview({ attachment: file }: { attachment: Attachment
     </div>
   );
 }
+/** "Deshacer cambios de este turno": preview with a dry run, then restore on confirmation. */
+function useRewindTurn(m: Message) {
+  const { rewind } = useChatActions();
+  const [preview, setPreview] = useState<import('./shared').RewindResult>();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState('');
+  // Duplicated chats reuse message ids without checkpoints: never carry a preview across.
+  useEffect(() => {
+    setPreview(undefined);
+    setDone('');
+  }, [m.checkpoint]);
+  if (!rewind || !m.checkpoint) return { button: null, panel: null };
+  const check = async (dryRun: boolean) => {
+    setBusy(true);
+    setDone('');
+    try {
+      const r = await rewind(m, dryRun);
+      if (dryRun) setPreview(r);
+      else {
+        setPreview(undefined);
+        if (r) setDone(`${r.filesChanged?.length ?? 0} archivos restaurados.`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  const files = preview?.filesChanged?.length ?? 0;
+  return {
+    button: (
+      <button
+        className="msg-action"
+        aria-label="Deshacer cambios de este turno"
+        title="Deshacer cambios de este turno: restaura los archivos que Claude editó desde este mensaje"
+        disabled={busy}
+        onClick={() => void check(true)}
+      >
+        <Undo2 size={13} />
+      </button>
+    ),
+    panel:
+      preview || done ? (
+        <div className="rewind-confirm" role={preview ? 'alertdialog' : 'status'}>
+          {!preview ? (
+            <span>{done}</span>
+          ) : files ? (
+            <span>
+              Se restaurarán {files} {files === 1 ? 'archivo' : 'archivos'} (+
+              {preview.insertions ?? 0} −{preview.deletions ?? 0}) al estado anterior a este
+              mensaje, también los cambios de turnos posteriores. Solo cubre ediciones de Claude, no
+              comandos de terminal. La conversación no cambia.
+            </span>
+          ) : (
+            <span>No hay cambios de archivos que deshacer desde este mensaje.</span>
+          )}
+          {!!files && (
+            <button className="danger" disabled={busy} onClick={() => void check(false)}>
+              Deshacer
+            </button>
+          )}
+          <button
+            disabled={busy}
+            onClick={() => {
+              setPreview(undefined);
+              setDone('');
+            }}
+          >
+            {files ? 'Cancelar' : 'Cerrar'}
+          </button>
+        </div>
+      ) : null,
+  };
+}
 function UserMessage({ m }: { m: Message }) {
   const { reuse } = useChatActions();
   const long = m.text.length > 900 || m.text.split('\n').length > 14;
   const [expanded, setExpanded] = useState(false);
+  const rewind = useRewindTurn(m);
   return (
     <div className="row user" title={m.at ? new Date(m.at).toLocaleString('es-ES') : undefined}>
       <div className="bubble">
@@ -553,8 +627,10 @@ function UserMessage({ m }: { m: Message }) {
               <CornerDownLeft size={13} />
             </button>
           )}
+          {rewind.button}
         </div>
       )}
+      {rewind.panel}
     </div>
   );
 }

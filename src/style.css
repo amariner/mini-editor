@@ -6767,3 +6767,99 @@ button.msg-action.reading {
   border-radius: 8px;
   background: var(--tile-hover);
 }
+
+/* Worktree isolation: where a Claude chat works, duplicate, merge/discard and per-turn undo. */
+.isolation-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 2px 18px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.isolation-branch,
+.isolation-shared,
+.isolation-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.isolation-branch {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.isolation-branch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.isolation-toggle {
+  cursor: pointer;
+}
+.isolation-toggle input {
+  flex: none;
+  width: auto;
+  min-height: 0;
+  margin: 0;
+}
+.isolation-toggle .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.isolation-bar button.isolation-fork {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  min-height: 22px;
+  margin-left: auto;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+.multichat-card-head .multichat-fork {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.multichat-card:hover .multichat-fork:enabled,
+.multichat-card:focus-within .multichat-fork:enabled {
+  opacity: 1;
+}
+.multichat-worktree {
+  color: var(--c-blue);
+}
+.worktree-panel h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.worktree-confirm,
+.rewind-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--rs);
+  background: var(--card);
+  font-size: 12px;
+}
+.worktree-confirm span,
+.rewind-confirm span {
+  flex: 1 1 220px;
+}
+.row.user:has(> .rewind-confirm) {
+  flex-wrap: wrap;
+}
+.rewind-confirm {
+  flex: none;
+  box-sizing: border-box;
+  width: min(520px, 90%);
+  margin: 26px 0 4px auto;
+}

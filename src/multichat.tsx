@@ -14,6 +14,7 @@ import {
   Plus,
   Bot,
   Sparkles,
+  Copy,
 } from 'lucide-react';
 import type { Action, Attachment, Profile, Session, Snapshot } from './shared';
 import { providerKind, providerNames, isConnectedProvider } from './shared';
@@ -611,6 +612,19 @@ function Card({
               <Globe size={13} />
             </button>
           ))}
+          {claude && (session.forkFrom ?? (session.attempted && session.reference)) && (
+            <button
+              className="multichat-fork"
+              aria-label={`Duplicar ${session.title}`}
+              title="Duplicar chat: mismo historial en otro worktree para probar otro enfoque"
+              disabled={disabled || !compatible || pending || !!controls.busy[session.id]}
+              onClick={() =>
+                void controls.run({ type: 'forkSession', sessionId: session.id, isolate: true })
+              }
+            >
+              <Copy size={13} />
+            </button>
+          )}
           <button
             className="multichat-expand"
             aria-label={`Ampliar ${session.title}`}
@@ -637,7 +651,17 @@ function Card({
           <span className="multichat-folder" title={root ?? project}>
             {project}
           </span>
-          <GitSummary git={git} error={gitError} />
+          {session.worktree ? (
+            <span
+              className="multichat-git multichat-worktree"
+              title={`Worktree aislado · ${session.worktree.branch} → ${session.worktree.base}\n${session.worktree.cwd}`}
+            >
+              <GitBranch size={11} />
+              <span className="multichat-branch">{session.worktree.branch}</span>
+            </span>
+          ) : (
+            <GitSummary git={git} error={gitError} />
+          )}
           <button
             className="multichat-git-refresh"
             aria-label={`Actualizar Git de ${project}`}

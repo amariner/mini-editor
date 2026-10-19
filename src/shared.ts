@@ -227,6 +227,17 @@ export interface Message {
   /** Provider-reported duration of the turn that ends with this message. */
   durationMs?: number;
   tool?: ToolInfo;
+  /** UUID the Claude CLI stores for this user message; `rewindFiles` restores files to it. */
+  checkpoint?: string;
+}
+/** Result of Claude's `rewindFiles` (dry run or real). */
+export interface RewindResult {
+  canRewind: boolean;
+  error?: string;
+  filesChanged?: string[];
+  insertions?: number;
+  deletions?: number;
+  skippedLinks?: number;
 }
 export interface Approval {
   id: string | number;
@@ -344,6 +355,13 @@ export interface Session {
   subagents?: { id: string; description: string; summary?: string; tool?: string }[];
   /** Predicted next prompt; filling the draft with it is the user's choice. */
   suggestion?: string;
+  /** Explicit choice for Claude chats; undefined follows the default (isolate when others run). */
+  isolation?: 'worktree' | 'shared';
+  worktree?: import('./git-types').SessionWorktree;
+  /** Claude session to fork on the next start (`resume` + `forkSession`). */
+  forkFrom?: string;
+  /** Chat this one was duplicated from. */
+  forkOf?: string;
 }
 export interface AccountState {
   apiUsage?: ApiUsage;
@@ -418,7 +436,7 @@ export type Action =
     }
   | { type: 'openProjectTerminal'; projectId: string }
   | { type: 'openFreebuff' | 'stopFreebuff'; projectId: string }
-  | { type: 'openPath'; projectId: string; path: string; reveal?: boolean }
+  | { type: 'openPath'; projectId: string; sessionId?: string; path: string; reveal?: boolean }
   | { type: 'listFiles'; projectId: string; query: string }
   | { type: 'setTheme'; theme: Theme }
   | { type: 'accountRefresh' | 'accountCancel'; profile: Profile }
@@ -457,7 +475,11 @@ export type Action =
   | { type: 'terminalWrite'; sessionId: string; data: string }
   | { type: 'terminalResize'; sessionId: string; cols: number; rows: number }
   | { type: 'terminalBuffer'; sessionId: string }
-  | { type: 'diff'; projectId: string }
+  | { type: 'diff'; projectId: string; sessionId?: string }
+  | { type: 'setIsolation'; sessionId: string; isolation: 'worktree' | 'shared' }
+  | { type: 'worktree'; sessionId: string; operation: 'merge' | 'update' | 'discard' }
+  | { type: 'forkSession'; sessionId: string; isolate: boolean }
+  | { type: 'rewindFiles'; sessionId: string; messageId: string; dryRun?: boolean }
   | {
       type: 'gitOperation';
       projectId: string;

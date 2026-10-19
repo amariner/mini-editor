@@ -451,7 +451,12 @@ app.whenReady().then(async () => {
           await manager.terminals.stopFreebuff(a.projectId);
           return true;
         case 'openPath': {
-          const target = await resolveProjectPath(manager.project(a.projectId).path, a.path);
+          const project = manager.project(a.projectId);
+          const chat = a.sessionId ? manager.session(a.sessionId) : undefined;
+          // Paths of an isolated chat resolve inside its worktree.
+          const base =
+            chat?.projectId === project.id && chat.worktree ? chat.worktree.cwd : project.path;
+          const target = await resolveProjectPath(base, a.path);
           if (a.reveal || (!target.directory && !opensAsText(target.path)))
             shell.showItemInFolder(target.path);
           else {
@@ -632,7 +637,15 @@ app.whenReady().then(async () => {
             return manager.accounts.buffers.get(a.sessionId) ?? { data: '', sequence: 0 };
           return manager.buffers.get(a.sessionId) ?? { data: '', sequence: 0 };
         case 'diff':
-          return manager.diff(a.projectId);
+          return manager.diff(a.projectId, a.sessionId);
+        case 'setIsolation':
+          return manager.setIsolation(a.sessionId, a.isolation);
+        case 'worktree':
+          return manager.worktree(a.sessionId, a.operation);
+        case 'forkSession':
+          return manager.fork(a.sessionId, a.isolate);
+        case 'rewindFiles':
+          return manager.rewind(a.sessionId, a.messageId, a.dryRun);
         case 'chooseBinary': {
           const r = await dialog.showOpenDialog(win, {
             title: `Seleccionar ejecutable de ${a.tool}`,

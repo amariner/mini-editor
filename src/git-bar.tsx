@@ -1,6 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GitBranch, RefreshCw, ChevronDown, Check, Upload, Download } from 'lucide-react';
-import type { GitOperation, GitSnapshot } from './git-types';
+import {
+  GitBranch,
+  GitMerge,
+  RefreshCw,
+  ChevronDown,
+  Check,
+  Upload,
+  Download,
+  Trash2,
+} from 'lucide-react';
+import type { GitOperation, GitSnapshot, WorktreeMergeResult } from './git-types';
 import { actionError } from './runtime';
 import { ProjectMark } from './project-mark';
 
@@ -13,6 +22,8 @@ export function GitBar({
   refresh,
   compatible,
   locked,
+  sessionId,
+  agentBusy,
 }: {
   project: { id: string; name: string; path: string };
   state?: GitSnapshot;
@@ -22,6 +33,9 @@ export function GitBar({
   refresh: () => Promise<void>;
   compatible: boolean;
   locked: boolean;
+  /** Chat whose worktree the snapshot describes (`state.worktree`). */
+  sessionId?: string;
+  agentBusy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [branch, setBranch] = useState('');
@@ -84,6 +98,7 @@ export function GitBar({
   const disabled = !!busy || !compatible || locked;
   const dirty = !!state?.files?.length;
   const counts = state?.counts;
+  const worktree = sessionId ? state?.worktree : undefined;
   return (
     <div className="git-context">
       <div className="git-summary" aria-label="Resumen de cambios del proyecto">
@@ -111,7 +126,9 @@ export function GitBar({
                 ? 'Consultando…'
                 : !state.repository
                   ? 'Sin repositorio Git'
-                  : state.branch}
+                  : worktree
+                    ? `Worktree · ${worktree.branch}`
+                    : state.branch}
           </span>
           <ChevronDown size={12} />
         </button>
@@ -165,6 +182,15 @@ export function GitBar({
               Esta carpeta no pertenece a un repositorio Git. Abre un repositorio o inicialízalo
               desde la terminal.
             </p>
+          ) : worktree && sessionId ? (
+            <WorktreePanel
+              sessionId={sessionId}
+              state={state}
+              compatible={compatible}
+              agentBusy={!!agentBusy}
+              onDiff={onDiff}
+              refresh={refresh}
+            />
           ) : (
             <>
               {locked && (
@@ -339,5 +365,160 @@ export function GitBar({
         </section>
       )}
     </div>
+  );
+}
+
+function WorktreePanel({
+  sessionId,
+  state,
+  compatible,
+  agentBusy,
+  onDiff,
+  refresh,
+}: {
+  sessionId: string;
+  state: GitSnapshot;
+  compatible: boolean;
+  agentBusy: boolean;
+  onDiff: () => void;
+  refresh: () => Promise<void>;
+}) {
+  const worktree = state.worktree!;
+  const [busy, setBusy] = useState<string>();
+  const [result, setResult] = useState<WorktreeMergeResult>();
+  const [failure, setFailure] = useState('');
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+  const run = async (operation: 'merge' | 'update' | 'discard') => {
+    if (busy) return;
+    setBusy(operation);
+    setFailure('');
+    setResult(undefined);
+    try {
+      const r: WorktreeMergeResult = await window.desk.invoke({
+        type: 'worktree',
+        sessionId,
+        operation,
+      });
+      if (mounted.current) setResult(r);
+    } catch (e) {
+      if (mounted.current) setFailure(actionError(e));
+    } finally {
+      if (mounted.current) {
+        setConfirmDiscard(false);
+        await refresh();
+        setBusy(undefined);
+      }
+    }
+  };
+  const pending = worktree.dirty + worktree.ahead;
+  const otherBranch = worktree.mainBranch !== worktree.base;
+  const disabled = !!busy || !compatible || !worktree.exists;
+  return (
+    <section className="git-step worktree-panel" aria-label="Worktree del chat">
+      <h4>
+        <GitBranch size={13} /> Worktree aislado
+      </h4>
+      <p className="muted">
+        Rama <code>{worktree.branch}</code> creada desde <code>{worktree.base}</code>. Este chat
+        trabaja aquí sin tocar la copia principal hasta que fusiones.
+      </p>
+      <p className="git-counts">
+        {worktree.dirty} archivos sin commit · {worktree.ahead} commits por fusionar ·{' '}
+        {worktree.behind} commits nuevos en {worktree.base}
+        {worktree.conflicts ? ` · ${worktree.conflicts} conflictos` : ''}
+      </p>
+      {!worktree.exists && (
+        <p className="git-error">La carpeta del worktree ya no existe. Descártalo para limpiar.</p>
+      )}
+      {otherBranch && (
+        <p className="muted">
+          La copia principal está en {worktree.mainBranch ?? 'un HEAD separado'}. Cambia a{' '}
+          {worktree.base} para fusionar.
+        </p>
+      )}
+      {agentBusy && <p className="muted">Espera a que el agente termine el turno.</p>}
+      <div className="git-step-controls">
+        <button
+          className="primary"
+          disabled={disabled || agentBusy || otherBranch || !pending || !!worktree.conflicts}
+          onClick={() => void run('merge')}
+          title="Hace commit de los cambios pendientes del worktree y comprueba conflictos antes de fusionar"
+        >
+          <GitMerge size={13} /> Fusionar en {worktree.base}
+        </button>
+        <button
+          disabled={disabled || agentBusy || !worktree.behind || !!worktree.conflicts}
+          onClick={() => void run('update')}
+          title="Incorpora la rama base al worktree; los conflictos quedan aquí para resolverlos"
+        >
+          <Download size={13} /> Traer cambios de {worktree.base}
+        </button>
+        <button onClick={onDiff}>Ver diferencias</button>
+        <button
+          className="danger"
+          disabled={!!busy || !compatible}
+          onClick={() => setConfirmDiscard(true)}
+        >
+          <Trash2 size={13} /> Descartar worktree
+        </button>
+      </div>
+      {confirmDiscard && (
+        <div className="worktree-confirm" role="alertdialog" aria-label="Confirmar descarte">
+          <span>
+            Se detendrá el agente y se borrarán la carpeta y la rama {worktree.branch}
+            {pending
+              ? `, con ${worktree.dirty} archivos sin commit y ${worktree.ahead} commits sin fusionar`
+              : ''}
+            . No se puede deshacer.
+          </span>
+          <button className="danger" disabled={!!busy} onClick={() => void run('discard')}>
+            Descartar
+          </button>
+          <button disabled={!!busy} onClick={() => setConfirmDiscard(false)}>
+            Cancelar
+          </button>
+        </div>
+      )}
+      {!!result?.conflicts?.length && (
+        <div className="git-error" role="alert">
+          {result.message}
+          <ul className="git-file-list">
+            {result.conflicts.map((file) => (
+              <li key={file}>
+                <code title={file}>{file}</code>
+                <span>Conflicto</span>
+              </li>
+            ))}
+          </ul>
+          Usa «Traer cambios de {worktree.base}» y pide al agente que resuelva los conflictos.
+        </div>
+      )}
+      {result && !result.conflicts?.length && <p role="status">{result.message}</p>}
+      {busy && <p role="status">Operación de Git en curso…</p>}
+      {failure && (
+        <p className="git-error" role="alert">
+          {failure}
+        </p>
+      )}
+      {!!state.files.length && (
+        <ul className="git-file-list">
+          {state.files.map((file) => (
+            <li key={file.path}>
+              <code title={file.path}>{file.path}</code>
+              <span>
+                {file.conflict ? 'Conflicto' : file.index === '?' ? 'Nuevo' : 'Modificado'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

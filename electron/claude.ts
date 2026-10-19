@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Approval, Session } from '../src/shared';
+import type { Approval, RewindResult, Session } from '../src/shared';
 import { applyClaudeMessage, note, settle } from './claude-events';
 import { permissionResult } from './core';
 import { coordinationInput } from './coordination';
@@ -249,12 +249,15 @@ export class ClaudeRuntime {
   }
   send(text: string, images: PreparedAttachment[] = []) {
     const s = this.s;
+    // Our UUID becomes the transcript id of this prompt, so rewindFiles can target the turn.
+    const checkpoint = randomUUID();
     s.messages.push({
-      id: `u-${randomUUID()}`,
+      id: `u-${checkpoint}`,
       role: 'user',
       text,
       attachments: images.map((i) => i.attachment),
       at: Date.now(),
+      checkpoint: this.options.enableFileCheckpointing ? checkpoint : undefined,
     });
     s.status = 'working';
     s.error = undefined;
@@ -267,6 +270,7 @@ export class ClaudeRuntime {
         content: images.length ? claudeAttachmentContent(text, images) : text,
       },
       parent_tool_use_id: null,
+      uuid: checkpoint,
     });
     this.wake?.();
   }
@@ -288,6 +292,11 @@ export class ClaudeRuntime {
     settle(this.s);
     if (busy) note(this.s, 'info', 'Interrumpido · Escribe qué debe hacer en su lugar.');
     if (!this.s.approvals.length) this.s.status = 'ready';
+  }
+  /** Restore files edited by Claude's tools to their state when `checkpoint` was sent. */
+  async rewindFiles(checkpoint: string, dryRun = false) {
+    if (!this.query) throw new Error('Abre el agente primero.');
+    return this.query.rewindFiles(checkpoint, { dryRun }) as Promise<RewindResult>;
   }
   async setModel(model: string) {
     await this.query?.setModel(model === 'default' ? undefined : model);

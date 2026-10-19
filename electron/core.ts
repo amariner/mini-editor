@@ -163,6 +163,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('openPath'),
     projectId: id,
+    sessionId: id.optional(),
     path: z.string().trim().min(1).max(4096),
     reveal: z.boolean().optional(),
   }),
@@ -258,7 +259,30 @@ export const actionSchema = z.discriminatedUnion('type', [
     rows: z.number().int().min(2).max(1000),
   }),
   z.object({ type: z.literal('terminalBuffer'), sessionId: id }),
-  z.object({ type: z.literal('diff'), projectId: id }),
+  z.object({ type: z.literal('diff'), projectId: id, sessionId: id.optional() }),
+  z
+    .object({
+      type: z.literal('setIsolation'),
+      sessionId: id,
+      isolation: z.enum(['worktree', 'shared']),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('worktree'),
+      sessionId: id,
+      operation: z.enum(['merge', 'update', 'discard']),
+    })
+    .strict(),
+  z.object({ type: z.literal('forkSession'), sessionId: id, isolate: z.boolean() }).strict(),
+  z
+    .object({
+      type: z.literal('rewindFiles'),
+      sessionId: id,
+      messageId: z.string().min(1).max(200),
+      dryRun: z.boolean().optional(),
+    })
+    .strict(),
   z.object({
     type: z.literal('gitOperation'),
     projectId: id,
@@ -303,10 +327,11 @@ export function profileDirectory(root: string, profile: string) {
   return path.join(root, 'profiles', profileSchema.parse(profile));
 }
 /** Arguments for the official interactive CLI (terminal mode). */
-export function claudeArgs(s: Pick<Session, 'reference' | 'attempted'>) {
+export function claudeArgs(s: Pick<Session, 'reference' | 'attempted' | 'forkFrom'>) {
   return [
-    s.attempted ? '--resume' : '--session-id',
-    s.reference!,
+    ...(s.forkFrom
+      ? ['--resume', s.forkFrom, '--fork-session', '--session-id', s.reference!]
+      : [s.attempted ? '--resume' : '--session-id', s.reference!]),
     '--setting-sources',
     'user',
     '--settings',
@@ -364,7 +389,7 @@ export function mergeConfig(config?: Partial<ClaudeConfig>): ClaudeConfig {
  * tests can check that no provider, key or global configuration leaks into the agent.
  */
 export function claudeOptions(
-  s: Pick<Session, 'reference' | 'attempted' | 'config'>,
+  s: Pick<Session, 'reference' | 'attempted' | 'config' | 'forkFrom'>,
   context: { cwd: string; binary: string; profileDir: string; env?: NodeJS.ProcessEnv },
 ) {
   const c = mergeConfig(s.config);
@@ -388,7 +413,12 @@ export function claudeOptions(
         ? { type: 'enabled', budgetTokens: c.thinkingBudget, display: c.thinkingDisplay }
         : { type: c.thinking, display: c.thinkingDisplay },
   };
-  if (s.attempted) options.resume = s.reference;
+  if (s.forkFrom) {
+    // Duplicated chat: the CLI copies the source transcript under the new id on first use.
+    options.resume = s.forkFrom;
+    options.forkSession = true;
+    options.sessionId = s.reference;
+  } else if (s.attempted) options.resume = s.reference;
   else options.sessionId = s.reference;
   if (c.model && c.model !== 'default') options.model = c.model;
   if (c.fallbackModel) options.fallbackModel = c.fallbackModel;
