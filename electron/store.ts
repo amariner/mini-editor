@@ -181,6 +181,7 @@ export class Store {
             codexConfig: isCodex(s.profile) ? mergeCodexConfig(s.codexConfig) : undefined,
             status: 'stopped',
             approvals: [],
+            subagents: undefined,
             messages: s.messages.map((m) => ({
               ...m,
               tool: m.tool?.status === 'inProgress' ? { ...m.tool, status: 'failed' } : m.tool,

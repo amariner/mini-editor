@@ -258,6 +258,7 @@ export class ClaudeRuntime {
     });
     s.status = 'working';
     s.error = undefined;
+    s.suggestion = undefined;
     s.activity = 'Enviando…';
     this.queue.push({
       type: 'user',

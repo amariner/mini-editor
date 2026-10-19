@@ -1604,6 +1604,11 @@ export function Composer({
       ? ['ready', 'working', 'waiting', 'stopped', 'error'].includes(session.status) &&
         session.mode !== 'terminal'
       : ['ready', 'stopped', 'error'].includes(session.status));
+  // Offered only on an empty field: a click fills the draft, never sends or replaces your text.
+  const suggestion =
+    enabled && !working && !sending && !draft.trim() && !images.length
+      ? session.suggestion
+      : undefined;
   const attach = async (files?: File[]) => {
     if (!enabled || sendingRef.current || pickingRef.current) return;
     pickingRef.current = true;
@@ -1903,6 +1908,23 @@ export function Composer({
               </div>
             ))}
           </div>
+        )}
+        {suggestion && (
+          <button
+            className="prompt-suggestion"
+            title={`Usar como borrador: ${suggestion}`}
+            aria-label={`Usar sugerencia como borrador: ${suggestion}`}
+            onClick={() => {
+              setDraft(suggestion);
+              requestAnimationFrame(() => {
+                area.current?.focus();
+                area.current?.setSelectionRange(suggestion.length, suggestion.length);
+              });
+            }}
+          >
+            <Sparkles size={12} aria-hidden="true" />
+            <span>{suggestion}</span>
+          </button>
         )}
         <textarea
           ref={area}

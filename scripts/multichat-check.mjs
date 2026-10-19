@@ -49,7 +49,7 @@ try {
       })),
       selectedSession: 's0',
       selectedProject: 'p0',
-      runtime: { protocol: 32 },
+      runtime: { protocol: 34 },
       tools: {},
       coordination: [],
     };
@@ -158,6 +158,22 @@ try {
           });
           session.status = 'ready';
           return true;
+        }
+        if (a.type === 'newSession') {
+          const session = {
+            id: `new-${state.sessions.length}`,
+            projectId: a.projectId,
+            profile: a.profile,
+            mode: 'chat',
+            title: `Chat nuevo ${state.sessions.length + 1}`,
+            status: 'stopped',
+            approvals: [],
+            messages: [],
+          };
+          state.sessions.push(session);
+          state.selectedProject = a.projectId;
+          state.selectedSession = session.id;
+          return structuredClone(session);
         }
         if (a.type === 'pickImages')
           return [{ id: `file-${a.sessionId}`, name: 'nota.txt', kind: 'file' }];
@@ -720,6 +736,247 @@ try {
     .getByRole('button', { name: 'Renombrar Resumen del despliegue', exact: true })
     .waitFor();
   await page.screenshot({ path: 'artifacts/multichat-title-hierarchy.png' });
+  // Supervision: plan progress, this turn's changes and subagents come before the log.
+  await page.evaluate(() => {
+    const base = (id, i, extra) => ({
+      id,
+      projectId: `p${i}`,
+      profile: i === 3 ? 'claude-2' : 'claude-1',
+      mode: 'chat',
+      title: extra.title,
+      status: 'working',
+      approvals: [],
+      messages: [
+        { id: `${id}-u0`, role: 'user', text: 'Turno anterior' },
+        {
+          id: `${id}-a0`,
+          role: 'assistant',
+          text: '',
+          blocks: [
+            {
+              type: 'tool_use',
+              id: `${id}-old`,
+              name: 'Write',
+              input: { file_path: `/tmp/grid-${i}/antiguo.ts`, content: 'x\n'.repeat(40) },
+              done: true,
+            },
+          ],
+        },
+        { id: `${id}-u1`, role: 'user', text: extra.ask },
+        ...extra.messages,
+      ],
+      ...extra.fields,
+    });
+    window.fixture.state.sessions = [
+      base('v1', 0, {
+        title: 'Migrar API',
+        ask: 'Migra la API a la versión 2',
+        messages: [
+          {
+            id: 'v1-a1',
+            role: 'assistant',
+            text: '',
+            blocks: [
+              { type: 'text', text: 'Empiezo por el cliente y los tests.', final: true },
+              {
+                type: 'tool_use',
+                id: 'v1-edit',
+                name: 'Edit',
+                input: {
+                  file_path: '/tmp/grid-0/src/api.ts',
+                  old_string: 'const a = 1;\nconst b = 2;',
+                  new_string: 'const a = 1;\nconst c = 3;\nconst d = 4;',
+                },
+                done: true,
+              },
+              {
+                type: 'tool_use',
+                id: 'v1-write',
+                name: 'Write',
+                input: { file_path: '/tmp/grid-0/src/v2.ts', content: 'a\nb\nc\n' },
+                done: true,
+              },
+              {
+                type: 'tool_use',
+                id: 'v1-test',
+                name: 'Bash',
+                input: { command: 'npm test', description: 'Ejecutar los tests' },
+                done: false,
+              },
+            ],
+          },
+        ],
+        fields: {
+          todos: [
+            { content: 'Leer el cliente', status: 'completed' },
+            { content: 'Migrar endpoints', status: 'completed' },
+            { content: 'Actualizar tipos', status: 'completed' },
+            {
+              content: 'Actualizar los tests',
+              activeForm: 'Actualizando los tests',
+              status: 'in_progress',
+            },
+            { content: 'Documentar', status: 'pending' },
+          ],
+          subagents: [
+            {
+              id: 't1',
+              description: 'Revisar rutas',
+              summary: 'Analizando el módulo de autenticación',
+            },
+            { id: 't2', description: 'Buscar usos de la API antigua' },
+          ],
+        },
+      }),
+      base('v2', 1, {
+        title: 'Revisar PR',
+        ask: 'Revisa el PR de pagos',
+        messages: [
+          {
+            id: 'v2-a1',
+            role: 'assistant',
+            text: 'He revisado el PR: hay dos tests sin actualizar.',
+          },
+        ],
+        fields: { status: 'ready', suggestion: 'Actualiza esos dos tests y vuelve a ejecutarlos' },
+      }),
+      base('v3', 2, {
+        title: 'Corregir estilos',
+        ask: 'Corrige el modo oscuro',
+        messages: [
+          {
+            id: 'v3-a1',
+            role: 'assistant',
+            text: '',
+            blocks: [
+              {
+                type: 'tool_use',
+                id: 'v3-edit',
+                name: 'Edit',
+                input: {
+                  file_path: '/tmp/grid-2/src/style.css',
+                  old_string: 'color: #000;',
+                  new_string: 'color: var(--text);',
+                },
+                done: true,
+              },
+              { type: 'text', text: 'Listo: el texto usa ya la variable del tema.', final: true },
+            ],
+          },
+        ],
+        fields: {
+          status: 'ready',
+          todos: [
+            { content: 'Localizar colores fijos', status: 'completed' },
+            { content: 'Usar variables', status: 'completed' },
+          ],
+        },
+      }),
+      base('v4', 3, {
+        title: 'Investigar error',
+        ask: 'Investiga el error 500',
+        messages: [{ id: 'v4-a1', role: 'assistant', text: 'Buscando en los registros…' }],
+        fields: {},
+      }),
+    ];
+    window.fixture.publish();
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.multichat-card').length === 4);
+  const migrate = grid.locator('[data-session-id="v1"]');
+  const plan = migrate.getByRole('progressbar', { name: 'Progreso del plan' });
+  assert.equal(await plan.getAttribute('aria-valuenow'), '3');
+  assert.equal(await plan.getAttribute('aria-valuemax'), '5');
+  assert.match(await plan.innerText(), /3\/5\s*Actualizando los tests/);
+  // Only the current turn counts: the earlier Write of antiguo.ts is not in the chip.
+  const changes = migrate.locator('.multichat-changes');
+  assert.match(await changes.innerText(), /^2 archivos\s*\+5\s*−1$/);
+  assert.match(await changes.getAttribute('title'), /src\/api\.ts\nsrc\/v2\.ts$/);
+  assert.equal(
+    await migrate.locator('.multichat-agents').innerText(),
+    '2 subagentes · Analizando el módulo de autenticación',
+  );
+  assert.equal(
+    await migrate.evaluate((el) => {
+      const info = el.querySelector('.multichat-info-line').getBoundingClientRect();
+      const supervision = el.querySelector('.multichat-supervision').getBoundingClientRect();
+      const messages = el.querySelector('.multichat-preview').getBoundingClientRect();
+      return info.bottom <= supervision.top && supervision.bottom <= messages.top;
+    }),
+    true,
+    'supervision sits between the header and the full history',
+  );
+  const styles = grid.locator('[data-session-id="v3"]');
+  assert.match(await styles.locator('.multichat-plan').innerText(), /2\/2\s*Plan completado/);
+  assert.match(await styles.locator('.multichat-changes').innerText(), /^1 archivo\s*\+1\s*−1$/);
+  const plain = grid.locator('[data-session-id="v4"]');
+  assert.equal(await plain.locator('.multichat-supervision').count(), 0);
+  // The suggestion only fills the draft: nothing is sent.
+  const review = grid.locator('[data-session-id="v2"]');
+  const suggestion = 'Actualiza esos dos tests y vuelve a ejecutarlos';
+  const sends = () =>
+    page.evaluate(() => window.fixture.actions.filter((a) => a.type === 'send').length);
+  const sentBefore = await sends();
+  assert.equal(await migrate.locator('.prompt-suggestion').count(), 0);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: 'artifacts/multichat-supervision-light.png' });
+  await migrate.screenshot({ path: 'artifacts/multichat-supervision-card-light.png' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: 'artifacts/multichat-supervision-dark.png' });
+  await migrate.screenshot({ path: 'artifacts/multichat-supervision-card-dark.png' });
+  await review
+    .getByRole('button', { name: `Usar sugerencia como borrador: ${suggestion}` })
+    .click();
+  const reviewField = review.getByRole('textbox', { name: 'Mensaje para Revisar PR', exact: true });
+  assert.equal(await reviewField.inputValue(), suggestion);
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'Mensaje para Revisar PR',
+  );
+  assert.equal(await review.locator('.prompt-suggestion').count(), 0);
+  assert.equal(await sends(), sentBefore);
+  await reviewField.fill('');
+  await review.locator('.prompt-suggestion').waitFor();
+  // Same chip in the expanded chat.
+  await review.getByRole('button', { name: 'Ampliar Revisar PR', exact: true }).click();
+  await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
+  await page.locator('.composer .prompt-suggestion').click();
+  assert.equal(await page.locator('.composer textarea').inputValue(), suggestion);
+  assert.equal(await page.locator('.composer .prompt-suggestion').count(), 0);
+  assert.equal(await sends(), sentBefore);
+  await page.locator('.composer textarea').fill('');
+  await page.getByRole('button', { name: 'Volver al grid' }).click();
+  await grid.waitFor({ state: 'visible' });
+  // The chip opens the changes of that chat.
+  await changes.click();
+  await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
+  assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 'v1');
+  await page.getByRole('button', { name: 'Volver al grid' }).click();
+  await grid.waitFor({ state: 'visible' });
+  // New chat without leaving the grid: project and account chosen in place.
+  await toolbar.getByRole('button', { name: 'Nuevo chat', exact: true }).click();
+  const newChat = page.getByRole('form', { name: 'Nuevo chat' });
+  await newChat.getByLabel('Proyecto').selectOption({ label: 'Proyecto 3' });
+  await newChat.getByLabel('Cuenta').selectOption({ label: 'Trabajo' });
+  await page.screenshot({ path: 'artifacts/multichat-new-chat.png' });
+  await newChat.getByRole('button', { name: 'Crear chat', exact: true }).click();
+  await newChat.waitFor({ state: 'detached' });
+  await page.waitForFunction(() => document.querySelectorAll('.multichat-card').length === 5);
+  assert.deepEqual(
+    await page.evaluate(() => window.fixture.actions.filter((a) => a.type === 'newSession').at(-1)),
+    { type: 'newSession', projectId: 'p2', profile: 'claude-2' },
+  );
+  assert.equal(await grid.isVisible(), true);
+  assert.deepEqual(
+    (await grid.locator('.multichat-title strong').allTextContents()).slice(0, 4),
+    ['Migrar API', 'Revisar PR', 'Corregir estilos', 'Investigar error'],
+    'existing cards keep their place',
+  );
+  const created = grid.locator('.multichat-card').last();
+  assert.equal(await created.locator('.multichat-account').innerText(), 'Trabajo');
+  await page.waitForFunction(
+    () => document.activeElement?.closest('.multichat-card')?.dataset.sessionId === 'new-4',
+  );
   await page.evaluate(() => {
     window.fixture.state.sessions = [];
     window.fixture.publish();
@@ -727,7 +984,7 @@ try {
   await grid.getByRole('heading', { name: 'No hay chats en marcha' }).waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    'Multichat: 16 chats, cross-project expansion, Esc, retention, restart, responsive layout, mini-chat sends, attachments, drafts, failures, permissions, interrupt, drag and keyboard reordering, saved order, detailed activity, tool log, account nickname, Git header, per-chat dev ports, Chrome action, account colors, shared rich text, response links, project sidebar navigation, saved and automatic layout, attention and unseen jumps, numbered shortcuts, saved dismissals, title renaming, expanded/collapsed sidebar project dragging and empty state passed.',
+    'Multichat: 16 chats, cross-project expansion, Esc, retention, restart, responsive layout, mini-chat sends, attachments, drafts, failures, permissions, interrupt, drag and keyboard reordering, saved order, detailed activity, tool log, account nickname, Git header, per-chat dev ports, Chrome action, account colors, shared rich text, response links, project sidebar navigation, saved and automatic layout, attention and unseen jumps, numbered shortcuts, saved dismissals, title renaming, plan progress, turn changes, subagent summaries, prompt suggestions, new chat from the grid, expanded/collapsed sidebar project dragging and empty state passed.',
   );
 } finally {
   await browser?.close();

@@ -14,7 +14,9 @@ import { actionSchema } from './core';
 import { opensAsText, resolveProjectPath, searchProjectFiles } from './project-files';
 import { readTheme, writeTheme } from './appearance';
 import { IPC_VERSION } from '../src/runtime';
+import { attentionBadge } from '../src/supervision';
 app.setName('Agent Desk');
+let dockBadge = '';
 if (process.env.AGENT_DESK_DATA_DIR)
   app.setPath('userData', path.resolve(process.env.AGENT_DESK_DATA_DIR));
 const attachments = new Attachments(path.join(app.getPath('userData'), 'attachments'), (data) => {
@@ -202,6 +204,14 @@ app.whenReady().then(async () => {
                   void browser.observe(session.projectId, session.id, output.text);
                 }
               }
+          }
+        }
+        if (e.type === 'state') {
+          // Chats waiting on you stay visible from the Dock while the window is in the background.
+          const badge = attentionBadge(e.state.sessions);
+          if (badge !== dockBadge) {
+            dockBadge = badge;
+            app.dock?.setBadge(badge);
           }
         }
         if (win && !win.isDestroyed())

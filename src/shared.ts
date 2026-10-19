@@ -340,6 +340,10 @@ export interface Session {
   notice?: string;
   todos?: { content: string; status: string; activeForm?: string }[];
   tasks?: { id: string; description: string }[];
+  /** Running subagents and their latest progress summary (Agent SDK task_* events). */
+  subagents?: { id: string; description: string; summary?: string; tool?: string }[];
+  /** Predicted next prompt; filling the draft with it is the user's choice. */
+  suggestion?: string;
 }
 export interface AccountState {
   apiUsage?: ApiUsage;

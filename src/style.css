@@ -6250,6 +6250,97 @@ button.msg-action.reading {
   color: var(--text);
 }
 
+/* Supervision first: plan progress, this turn's changes and subagents, then the log below. */
+.multichat-supervision {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 8px 0;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+.multichat-supervision-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.multichat-plan {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.multichat-plan-count {
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.multichat-plan-bar {
+  position: relative;
+  flex: 0 1 64px;
+  min-width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.multichat-plan-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--ok);
+  transition: width 0.3s;
+}
+.multichat-plan-current {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.multichat-changes {
+  flex-shrink: 0;
+  min-height: 20px;
+  margin-left: auto;
+  gap: 5px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--tile);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.multichat-changes:hover:enabled {
+  background: var(--tile-hover);
+  color: var(--text);
+}
+.multichat-changes:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.multichat-agents {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+}
+.multichat-agents svg {
+  flex-shrink: 0;
+}
+.multichat-agents span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .multichat-card .compact-activity {
   margin: 2px 8px 0;
 }
@@ -6433,6 +6524,107 @@ button.msg-action.reading {
   background: color-mix(in srgb, var(--danger) 8%, var(--card));
   color: var(--text-2);
   font-size: 11px;
+}
+
+/* The predicted next prompt: a quiet chip that only fills the draft. */
+.prompt-suggestion {
+  display: flex;
+  justify-content: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 24px;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  text-align: left;
+}
+.prompt-suggestion:hover {
+  border-style: solid;
+  background: var(--tile-hover);
+  color: var(--text);
+}
+.prompt-suggestion svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.prompt-suggestion span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.multichat-composer .prompt-suggestion {
+  width: 100%;
+  min-height: 22px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+/* New chat from the grid, next to the layout picker. */
+.multichat-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.multichat-new {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+.multichat-new-button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  background: transparent;
+  color: var(--ui-text-color, var(--text-2));
+}
+.multichat-new-button:hover,
+.multichat-new-button[aria-expanded='true'] {
+  background: var(--card);
+  color: var(--ui-text-color, var(--text));
+}
+.multichat-new-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px #00000030;
+  font-size: 12px;
+}
+.multichat-new-menu label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.multichat-new-menu select {
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+.multichat-new-menu button[type='submit'] {
+  min-height: 28px;
+  background: var(--sel);
+  color: var(--sel-text);
+  font-size: 12px;
+}
+.multichat-new-menu p {
+  margin: 0;
+  color: var(--text-2);
 }
 
 /* Composer: one quiet field that grows with the draft; send is the only filled control. */

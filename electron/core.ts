@@ -378,6 +378,9 @@ export function claudeOptions(
     // Enable switching modes later; the permissionMode above still controls every tool request.
     allowDangerouslySkipPermissions: true,
     includePartialMessages: true,
+    // Both reuse the prompt cache: a one-line subagent status and the likely next prompt.
+    agentProgressSummaries: true,
+    promptSuggestions: true,
     enableFileCheckpointing: c.fileCheckpointing,
     toolConfig: { askUserQuestion: { previewFormat: 'markdown' } },
     thinking:

@@ -40,6 +40,7 @@ function push(s: Session, m: Message) {
 }
 /** Mark every tool still running as finished (after an interruption or exit). */
 export function settle(s: Session) {
+  s.subagents = undefined;
   for (const m of s.messages)
     for (const b of walk(m.blocks)) if (b.type === 'tool_use' && !b.done) b.done = true;
 }
@@ -287,6 +288,24 @@ export function applyClaudeMessage(s: Session, m: any) {
         );
     } else if (sub === 'background_tasks_changed') {
       s.tasks = (m.tasks ?? []).map((t: any) => ({ id: t.task_id, description: t.description }));
+    } else if (sub === 'task_started') {
+      // Subagents only: background shells and housekeeping tasks are not progress to supervise.
+      if (m.ambient || m.skip_transcript || !(m.task_type === 'local_agent' || m.subagent_type))
+        return;
+      const agents = (s.subagents ?? []).filter((a) => a.id !== m.task_id);
+      s.subagents = [...agents, { id: m.task_id, description: m.description ?? '' }];
+    } else if (sub === 'task_progress') {
+      const agent = s.subagents?.find((a) => a.id === m.task_id);
+      if (!agent) return;
+      if (m.summary) agent.summary = m.summary;
+      if (m.description) agent.description = m.description;
+      if (m.last_tool_name) agent.tool = m.last_tool_name;
+    } else if (sub === 'task_updated' || sub === 'task_notification') {
+      const status = sub === 'task_updated' ? m.patch?.status : m.status;
+      if (['completed', 'failed', 'killed', 'stopped'].includes(status) && s.subagents) {
+        s.subagents = s.subagents.filter((a) => a.id !== m.task_id);
+        if (!s.subagents.length) s.subagents = undefined;
+      }
     } else if (sub === 'worker_shutting_down') {
       note(s, 'info', `El agente se está cerrando: ${m.reason ?? ''}`);
     }
@@ -324,6 +343,11 @@ export function applyClaudeMessage(s: Session, m: any) {
       'info',
       `Tarea en segundo plano: ${m.summary ?? m.description ?? m.status ?? 'actualizada'}`,
     );
+    return;
+  }
+  if (m.type === 'prompt_suggestion') {
+    s.suggestion =
+      typeof m.suggestion === 'string' && m.suggestion.trim() ? m.suggestion.trim() : undefined;
     return;
   }
   if (m.type === 'conversation_reset') {

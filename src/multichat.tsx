@@ -11,8 +11,11 @@ import {
   GitBranch,
   RefreshCw,
   ChevronDown,
+  Plus,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
-import type { Action, Attachment, Session, Snapshot } from './shared';
+import type { Action, Attachment, Profile, Session, Snapshot } from './shared';
 import { providerKind, providerNames, isConnectedProvider } from './shared';
 import { sessionIsLive } from './session-tabs';
 import { compatibleRuntime } from './runtime';
@@ -28,6 +31,14 @@ import { ChatActionsContext, type ChatActions } from './markdown';
 import { EditableName } from './editable-name';
 import { accountCardStyle } from './account-color';
 import type { GitSnapshot } from './git-types';
+import {
+  cardStatus as status,
+  isPending,
+  lastTurnChanges,
+  planProgress,
+  subagentLine,
+} from './supervision';
+import { shortPath } from './activity';
 import {
   autoLayout,
   fitColumns,
@@ -64,20 +75,6 @@ function store(key: string, value: unknown) {
   } catch {}
 }
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const isPending = (s: Session) =>
-  ['working', 'starting', 'waiting', 'stopping'].includes(s.status) || !!s.approvals.length;
-function status(session: Session) {
-  if (session.approvals.length) return ['attention', 'Permiso o respuesta pendiente'];
-  if (session.status === 'waiting') return ['attention', 'Esperando tu respuesta'];
-  if (session.status === 'error' || session.error) return ['error', 'Error'];
-  if (session.status === 'working') return ['working', 'Trabajando'];
-  if (session.status === 'starting') return ['working', 'Abriendo…'];
-  if (session.status === 'stopping') return ['working', 'Cerrando…'];
-  if (session.mode === 'terminal' || session.status === 'terminal')
-    return ['idle', sessionIsLive(session) ? 'Terminal abierta' : 'Terminal detenida'];
-  if (session.messages.some((m) => m.role === 'assistant')) return ['done', 'Terminado'];
-  return ['idle', 'En espera'];
-}
 
 type ChatControls = {
   drafts: Record<string, string>;
@@ -117,6 +114,184 @@ function GitSummary({ git, error }: { git?: GitSnapshot; error?: string }) {
       {!!git.ahead && <span title="Commits por subir">↑{git.ahead}</span>}
       {!!git.behind && <span title="Commits por bajar">↓{git.behind}</span>}
     </span>
+  );
+}
+
+/** What a supervisor needs before the log: plan progress, changes of this turn, subagents. */
+function Supervision({
+  session,
+  root,
+  showChanges,
+}: {
+  session: Session;
+  root?: string;
+  showChanges?: () => void;
+}) {
+  const plan = planProgress(session);
+  const changes = lastTurnChanges(session);
+  const agents = subagentLine(session);
+  if (!plan && !changes && !agents) return null;
+  const files = changes?.files.map((f) => shortPath(f.path, root)) ?? [];
+  return (
+    <div className="multichat-supervision">
+      {(plan || changes) && (
+        <div className="multichat-supervision-row">
+          {plan && (
+            <div
+              className="multichat-plan"
+              role="progressbar"
+              aria-label="Progreso del plan"
+              aria-valuemin={0}
+              aria-valuemax={plan.total}
+              aria-valuenow={plan.done}
+              aria-valuetext={`${plan.done} de ${plan.total} tareas${plan.current ? ` · ${plan.current}` : ''}`}
+              title={plan.current ? `En curso: ${plan.current}` : undefined}
+            >
+              <span className="multichat-plan-count">
+                {plan.done}/{plan.total}
+              </span>
+              <span className="multichat-plan-bar" aria-hidden="true">
+                <i style={{ width: `${(plan.done / plan.total) * 100}%` }} />
+              </span>
+              <span className="multichat-plan-current">
+                {plan.current ?? (plan.done === plan.total ? 'Plan completado' : 'Pendiente')}
+              </span>
+            </div>
+          )}
+          {changes && (
+            <button
+              className="multichat-changes"
+              title={`Cambios de este turno:\n${files.slice(0, 12).join('\n')}${files.length > 12 ? `\n… y ${files.length - 12} más` : ''}`}
+              aria-label={`${plural(files.length, 'archivo cambiado', 'archivos cambiados')} en este turno, ${changes.added} líneas añadidas y ${changes.removed} eliminadas. Ver cambios`}
+              disabled={!showChanges}
+              onClick={showChanges}
+            >
+              {plural(files.length, 'archivo', 'archivos')}
+              {!!changes.added && <span className="git-added">+{changes.added}</span>}
+              {!!changes.removed && <span className="git-removed">−{changes.removed}</span>}
+            </button>
+          )}
+        </div>
+      )}
+      {agents && (
+        <div className="multichat-agents" title={agents}>
+          <Bot size={11} aria-hidden="true" />
+          <span>{agents}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** New chat from the grid: choose project and account, the card appears ready to write. */
+function NewChatPicker({
+  state,
+  disabled,
+  create,
+}: {
+  state: Snapshot;
+  disabled: boolean;
+  create: (projectId: string, profile: Profile) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const profiles = state.profiles ?? [];
+  const [projectId, setProjectId] = useState('');
+  const [profile, setProfile] = useState('');
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [open]);
+  const project = state.projects.some((p) => p.id === projectId)
+    ? projectId
+    : (state.selectedProject ?? state.projects[0]?.id ?? '');
+  const account = profiles.some((p) => p.id === profile)
+    ? profile
+    : (state.defaultProfile ?? profiles[0]?.id ?? '');
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  return (
+    <div
+      className="multichat-new"
+      ref={root}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && open) {
+          e.stopPropagation();
+          close();
+        }
+      }}
+    >
+      <button
+        ref={trigger}
+        className="multichat-new-button"
+        aria-label="Nuevo chat"
+        aria-expanded={open}
+        title="Nuevo chat en cualquier proyecto"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Plus size={14} />
+      </button>
+      {open && (
+        <form
+          className="multichat-new-menu"
+          aria-label="Nuevo chat"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!project || !account || creating) return;
+            setCreating(true);
+            try {
+              if (await create(project, account as Profile)) setOpen(false);
+            } finally {
+              setCreating(false);
+            }
+          }}
+        >
+          {!state.projects.length || !profiles.length ? (
+            <p>
+              {!state.projects.length
+                ? 'Abre una carpeta desde la barra lateral para crear chats.'
+                : 'Añade una cuenta en Ajustes para crear chats.'}
+            </p>
+          ) : (
+            <>
+              <label>
+                Proyecto
+                <select autoFocus value={project} onChange={(e) => setProjectId(e.target.value)}>
+                  {state.projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Cuenta
+                <select value={account} onChange={(e) => setProfile(e.target.value)}>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {state.accounts?.[p.id]?.status === 'signedOut' ? ' · sin sesión' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="submit" disabled={creating || disabled}>
+                {creating ? 'Creando…' : 'Crear chat'}
+              </button>
+            </>
+          )}
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -289,6 +464,7 @@ function Card({
   const sendingRef = useRef(false);
   const pickingRef = useRef(false);
   const preview = useRef<HTMLDivElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
   const following = useRef(true);
   const draft = controls.drafts[session.id] ?? '';
   const images = controls.images[session.id] ?? [];
@@ -309,6 +485,8 @@ function Card({
   }, [lastText, messages.length, visible, session.approvals.length]);
   const terminal = session.mode === 'terminal' || session.status === 'terminal';
   const pending = isPending(session);
+  // Offered only on an empty field: a click fills the draft, never sends or replaces your text.
+  const suggestion = !pending && !draft.trim() && !images.length ? session.suggestion : undefined;
   const claude =
     providerKind(session.profile) === 'claude' && !isConnectedProvider(session.profile);
   const enabled =
@@ -470,6 +648,9 @@ function Card({
             <RefreshCw size={11} className={gitBusy ? 'spinner' : ''} />
           </button>
         </div>
+        {visible && !terminal && (
+          <Supervision session={session} root={root} showChanges={actions.showChanges} />
+        )}
         {visible && !terminal && !session.approvals.length && (
           <ActivityDock session={session} kind={providerKind(session.profile)} compact />
         )}
@@ -576,8 +757,28 @@ function Card({
                 ))}
               </div>
             )}
+            {suggestion && (
+              <button
+                type="button"
+                className="prompt-suggestion"
+                title={`Usar como borrador: ${suggestion}`}
+                aria-label={`Usar sugerencia como borrador: ${suggestion}`}
+                onClick={() => {
+                  setDraft(suggestion);
+                  requestAnimationFrame(() => {
+                    const field = textarea.current;
+                    field?.focus();
+                    field?.setSelectionRange(suggestion.length, suggestion.length);
+                  });
+                }}
+              >
+                <Sparkles size={11} aria-hidden="true" />
+                <span>{suggestion}</span>
+              </button>
+            )}
             <div className="multichat-compose-row">
               <textarea
+                ref={textarea}
                 aria-label={`Mensaje para ${session.title}`}
                 placeholder={pending && claude ? 'Añade indicaciones…' : 'Escribe un mensaje…'}
                 rows={1}
@@ -836,6 +1037,26 @@ export function Multichat({
     setDragged(undefined);
     setTarget(undefined);
   };
+  const focusNext = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (focusNext.current && order.current.includes(focusNext.current)) {
+      focusCard(focusNext.current);
+      focusNext.current = undefined;
+    }
+  });
+  const createChat = async (projectId: string, profile: Profile) => {
+    const created: Session | undefined = await controls.run({
+      type: 'newSession',
+      projectId,
+      profile,
+    });
+    if (!created?.id) return false;
+    // A new chat is stopped until its first message; track it so its card is there to write in.
+    setDismissed((ids) => ids.filter((id) => id !== created.id));
+    setTracked((ids) => (ids.includes(created.id) ? ids : [...ids, created.id]));
+    focusNext.current = created.id;
+    return true;
+  };
   const bar = (
     <div className="multichat-toolbar">
       <div className="multichat-summary">
@@ -873,7 +1094,12 @@ export function Multichat({
           </button>
         )}
       </div>
-      {sessions.length > 0 && <LayoutPicker layout={layout} shape={shape} setLayout={setLayout} />}
+      <div className="multichat-tools">
+        <NewChatPicker state={state} disabled={disabled} create={createChat} />
+        {sessions.length > 0 && (
+          <LayoutPicker layout={layout} shape={shape} setLayout={setLayout} />
+        )}
+      </div>
     </div>
   );
   return (
@@ -965,7 +1191,7 @@ export function Multichat({
         <div className="empty">
           <LayoutGrid size={28} />
           <h2>No hay chats en marcha</h2>
-          <p>Inicia un chat en cualquier proyecto para verlo aquí.</p>
+          <p>Crea uno con + o inicia un chat en cualquier proyecto para verlo aquí.</p>
         </div>
       )}
     </section>
