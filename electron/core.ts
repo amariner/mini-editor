@@ -185,7 +185,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('select'),
     projectId: id,
-    sessionId: id.optional(),
+    sessionId: id.nullable().optional(),
     profile: profile.optional(),
   }),
   z.object({

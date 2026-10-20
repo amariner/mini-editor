@@ -457,7 +457,7 @@ export type Action =
   | { type: 'moveProject'; projectId: string; targetProjectId: string }
   | { type: 'removeProject'; projectId: string }
   | { type: 'renameProject'; projectId: string; name: string }
-  | { type: 'select'; projectId: string; sessionId?: string; profile?: Profile }
+  | { type: 'select'; projectId: string; sessionId?: string | null; profile?: Profile }
   | { type: 'newSession'; projectId: string; profile?: Profile; mode?: 'chat' | 'terminal' }
   | { type: 'start' | 'stop' | 'interrupt' | 'login' | 'cancelLogin'; sessionId: string }
   | { type: 'pickImages'; sessionId: string }

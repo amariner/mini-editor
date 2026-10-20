@@ -41,7 +41,7 @@ try {
       selectedProject: 'p',
       tools: {},
       coordination: [],
-      runtime: { protocol: 38 },
+      runtime: { protocol: 39 },
     };
     state.profiles.push({ id: 'codex', kind: 'codex', name: 'Codex' });
     state.sessions[0].profile = 'codex';
@@ -170,6 +170,21 @@ try {
     await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
     0,
   );
+  await page.locator('[data-project-id="p2"] .project-name').click();
+  assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), null);
+  await page.locator('[data-project-id="p"] .project-name').click();
+  await page.locator('[data-project-id="p2"] .project-name').click();
+  assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), null);
+  assert.equal(
+    await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
+    0,
+  );
+  await page.reload();
+  assert.equal(
+    await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
+    0,
+  );
+  await page.getByRole('button', { name: 'Multichat', exact: true }).click();
   await rootCard.locator('.team-indicator').click();
   await page
     .locator('.team-popover:popover-open')

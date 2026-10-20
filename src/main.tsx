@@ -178,12 +178,20 @@ function App() {
   const accountProfiles = state?.profiles ?? [];
   const project = state?.projects.find((p) => p.id === state.selectedProject),
     selectedSession = state?.sessions.find((s) => s.id === state.selectedSession),
-    session = selectedSession?.id === closedSelection ? undefined : selectedSession,
+    session =
+      selectedSession &&
+      (selectedSession.id === closedSelection || hiddenChats.includes(selectedSession.id))
+        ? undefined
+        : selectedSession,
     profile = selectedSession?.profile ?? state?.defaultProfile ?? accountProfiles[0]?.id,
     kind = providerKind(profile);
   useEffect(() => {
-    if (!selectedSession || selectedSession.id === closedSelection) return;
-    setHiddenChats((ids) => ids.filter((id) => id !== selectedSession.id));
+    if (
+      !selectedSession ||
+      selectedSession.id === closedSelection ||
+      hiddenChats.includes(selectedSession.id)
+    )
+      return;
     setTabs((v) => ({
       ...v,
       [sessionGroup(selectedSession)]: openSessionTab(
@@ -192,7 +200,7 @@ function App() {
         stateRef.current!.sessions,
       ),
     }));
-  }, [selectedSession?.id, closedSelection]);
+  }, [selectedSession?.id, closedSelection, hiddenChats]);
   const openTabs = selectedSession
     ? (tabs[sessionGroup(selectedSession)] ?? [])
         .map((id) => state?.sessions.find((s) => s.id === id))
@@ -213,8 +221,7 @@ function App() {
     setTabs((v) => ({ ...v, [sessionGroup(s)]: remaining }));
     if (stateRef.current?.selectedSession === s.id) {
       setClosedSelection(s.id);
-      if (remaining.length)
-        await run({ type: 'select', projectId: s.projectId, sessionId: remaining.at(-1) });
+      await run({ type: 'select', projectId: s.projectId, sessionId: remaining.at(-1) ?? null });
     }
   };
   if (session) recentSessions.current[session.projectId] = session.id;
@@ -226,9 +233,12 @@ function App() {
   }, [project?.id]);
   const switchProject = async (projectId: string) => {
     const previousId = recentSessions.current[projectId];
-    const sessionId = stateRef.current?.sessions.some((s) => s.id === previousId)
-      ? previousId
-      : undefined;
+    const available =
+      stateRef.current?.sessions.filter(
+        (s) => s.projectId === projectId && !hiddenChats.includes(s.id),
+      ) ?? [];
+    const sessionId =
+      available.find((s) => s.id === previousId)?.id ?? available.at(-1)?.id ?? null;
     const result = await run({ type: 'select', projectId, sessionId });
     if (stateRef.current?.selectedProject === projectId) {
       setMultichat('off');
@@ -264,7 +274,11 @@ function App() {
       const snap = await window.desk.invoke({ type: 'snapshot' });
       stateRef.current = snap;
       setState(snap);
-      if (navigation) setClosedSelection(undefined);
+      if (navigation) {
+        if (action.type === 'select' && action.sessionId)
+          setHiddenChats((ids) => ids.filter((id) => id !== action.sessionId));
+        setClosedSelection(undefined);
+      }
       return r;
     } catch (e) {
       setError(actionError(e));

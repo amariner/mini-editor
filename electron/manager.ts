@@ -469,8 +469,14 @@ export class Manager {
     this.select(project.id);
     return project;
   }
-  select(projectId: string, sessionId?: string, profile?: Profile) {
+  select(projectId: string, sessionId?: string | null, profile?: Profile) {
     this.project(projectId);
+    if (sessionId === null) {
+      this.state.selectedProject = projectId;
+      this.state.selectedSession = undefined;
+      this.changed();
+      return;
+    }
     let s = sessionId
       ? this.session(sessionId)
       : [...this.state.sessions]
