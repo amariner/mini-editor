@@ -516,6 +516,10 @@ app.whenReady().then(async () => {
           if (!r.canceled) return manager.addProject(r.filePaths[0]);
           return;
         }
+        case 'deleteSession':
+          return manager.deleteSession(a.sessionId, (sessions) =>
+            attachments.removeSessions(sessions),
+          );
         case 'removeProject': {
           await manager.removeProject(a.projectId, async (sessions) => {
             await browser.removeProject(

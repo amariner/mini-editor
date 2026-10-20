@@ -420,6 +420,8 @@ function Card({
   root,
   open,
   dismiss,
+  hidden,
+  toggleHidden,
   disabled,
   visible,
   compatible,
@@ -451,6 +453,8 @@ function Card({
   root?: string;
   open: () => void;
   dismiss: () => void;
+  hidden: boolean;
+  toggleHidden: () => void;
   disabled: boolean;
   visible: boolean;
   compatible: boolean;
@@ -563,7 +567,13 @@ function Card({
         <div
           className="multichat-card-head"
           draggable={!editingTitle}
-          onDragStart={dragStart}
+          onDragStart={(e) => {
+            if ((e.target as HTMLElement).closest('button:not(.multichat-title)')) {
+              e.preventDefault();
+              return;
+            }
+            dragStart(e);
+          }}
           onDragEnd={dragEnd}
         >
           <i className="multichat-dot" title={unseen ? 'Terminado sin revisar' : label} />
@@ -642,9 +652,18 @@ function Card({
             <Maximize2 size={13} />
           </button>
           <button
+            className="multichat-hide"
+            aria-label={`${hidden ? 'Mostrar' : 'Ocultar'} ${session.title} en el grid`}
+            title={hidden ? 'Mostrar en el grid' : 'Ocultar del grid'}
+            onClick={toggleHidden}
+          >
+            {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
+          </button>
+          <button
             className="multichat-dismiss"
+            draggable={false}
             onClick={dismiss}
-            title="Cerrar chat y ocultar del grid"
+            title="Eliminar chat"
             aria-label={`Retirar ${session.title} del grid`}
           >
             <X size={13} />
@@ -893,12 +912,14 @@ export function Multichat({
   openDev,
   actionsFor,
   dismissed,
+  toggleHidden,
   opened,
   close,
   ...controls
 }: {
   opened: string[];
   dismissed: string[];
+  toggleHidden: (id: string) => void;
   close: (session: Session) => void;
   state: Snapshot;
   visible: boolean;
@@ -932,6 +953,14 @@ export function Multichat({
   const section = useRef<HTMLElement>(null);
   const [tracked, setTracked] = useState<string[]>(() => savedIds(orderKey));
   const [showHidden, setShowHidden] = useState(false);
+  const previouslyDismissed = useRef(dismissed);
+  useEffect(() => {
+    if (dismissed.some((id) => !previouslyDismissed.current.includes(id))) setShowHidden(false);
+    previouslyDismissed.current = dismissed;
+  }, [dismissed]);
+  useEffect(() => {
+    if (!visible) setShowHidden(false);
+  }, [visible]);
   const [unseen, setUnseen] = useState<string[]>([]);
   const [layout, setLayout] = useState(savedLayout);
   const [fit, setFit] = useState(4);
@@ -985,6 +1014,9 @@ export function Multichat({
     });
   }, [state.sessions, opened.join('\0')]);
   useEffect(() => store(orderKey, tracked), [tracked]);
+  const hiddenCount = tracked.filter(
+    (id) => dismissed.includes(id) && state.sessions.some((s) => s.id === id),
+  ).length;
   const sessions = tracked
     .filter((id) => showHidden || !dismissed.includes(id))
     .map((id) => state.sessions.find((s) => s.id === id))
@@ -1138,11 +1170,12 @@ export function Multichat({
         <button
           onClick={() => setShowHidden((v) => !v)}
           aria-pressed={showHidden}
-          aria-label={showHidden ? 'Ocultar chats cerrados' : 'Ver chats cerrados'}
-          title={showHidden ? 'Ocultar chats cerrados' : 'Ver chats cerrados'}
+          aria-label={showHidden ? 'Ocultar chats ocultos' : 'Ver chats ocultos'}
+          title={showHidden ? 'Ocultar chats ocultos' : 'Ver chats ocultos'}
         >
           {showHidden ? <Eye size={14} /> : <EyeOff size={14} />}
-          {dismissed.length > 0 && ` ${dismissed.length} ocultos`}
+          {hiddenCount > 0 &&
+            (showHidden ? ` Ocultar ${hiddenCount} ocultos` : ` Ver ${hiddenCount} ocultos`)}
         </button>
       </div>
       <div className="multichat-tools">
@@ -1208,7 +1241,12 @@ export function Multichat({
                   setUnseen((ids) => (ids.includes(s.id) ? ids.filter((id) => id !== s.id) : ids));
                 }}
                 open={() => open(s)}
-                dismiss={() => close(s)}
+                hidden={dismissed.includes(s.id)}
+                toggleHidden={() => toggleHidden(s.id)}
+                dismiss={() => {
+                  setShowHidden(false);
+                  close(s);
+                }}
                 dragging={dragged === s.id}
                 dropTarget={target === s.id}
                 dragStart={(e) => {

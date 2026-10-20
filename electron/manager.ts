@@ -564,6 +564,25 @@ export class Manager {
     this.changed();
     return true;
   }
+  deleteSession(id: string, cleanup: (sessions: Session[]) => Promise<void> = async () => {}) {
+    return this.exclusive(id, async () => {
+      const s = this.session(id);
+      this.pendingInputs.pause(s);
+      await this.stopRuntime(id);
+      if (this.runtimes.has(id)) throw new Error('No se ha confirmado la parada del chat.');
+      await cleanup([s]);
+      this.buffers.delete(id);
+      this.coordinator.unregister(id);
+      this.state.sessions = this.state.sessions.filter((chat) => chat.id !== id);
+      for (const chat of this.state.sessions) {
+        if (chat.parentId === id) delete chat.parentId;
+      }
+      if (this.state.selectedSession === id) this.state.selectedSession = undefined;
+      this.store.flush();
+      this.changed();
+      return true;
+    });
+  }
   removeProject(id: string, cleanup: (sessions: Session[]) => Promise<void> = async () => {}) {
     const pending = this.removingProjects.get(id);
     if (pending) return pending;

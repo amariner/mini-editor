@@ -41,7 +41,7 @@ try {
       selectedProject: 'p',
       tools: {},
       coordination: [],
-      runtime: { protocol: 39 },
+      runtime: { protocol: 40 },
     };
     state.profiles.push({ id: 'codex', kind: 'codex', name: 'Codex' });
     state.sessions[0].profile = 'codex';
@@ -59,6 +59,10 @@ try {
         if (a.type === 'select') {
           state.selectedProject = a.projectId;
           state.selectedSession = a.sessionId;
+        }
+        if (a.type === 'deleteSession') {
+          state.sessions = state.sessions.filter((s) => s.id !== a.sessionId);
+          if (state.selectedSession === a.sessionId) state.selectedSession = undefined;
         }
         if (a.type === 'stop') state.sessions.find((s) => s.id === a.sessionId).status = 'stopped';
         if (a.type === 'send') {
@@ -160,37 +164,35 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.team-popover:popover-open').count(), 0);
   await page.screenshot({ path: 'artifacts/team-grid-check.png' });
-  await grid.locator('[data-session-id="c2"]').getByTitle('Cerrar chat y ocultar del grid').click();
+  const child = grid.locator('[data-session-id="c2"]');
+  await child.getByTitle('Ocultar del grid').click();
+  await child.waitFor({ state: 'hidden' });
+  assert.equal(
+    await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
+    1,
+  );
+  assert.equal(
+    await page.evaluate(() => window.fixture.actions.some((a) => a.type === 'stop')),
+    false,
+  );
+  await page.getByRole('button', { name: 'Ver chats ocultos', exact: true }).click();
+  await child.getByTitle('Mostrar en el grid').click();
+  await child.waitFor();
+  await child.getByTitle('Eliminar chat').click();
   await page.getByRole('button', { name: 'Detener y cerrar', exact: true }).click();
-  await page
-    .locator('.project-chat')
-    .filter({ hasText: 'Alinear reservas' })
-    .waitFor({ state: 'hidden' });
+  await child.waitFor({ state: 'hidden' });
+  assert.equal(
+    await page.evaluate(() => window.fixture.state.sessions.some((s) => s.id === 'c2')),
+    false,
+  );
   assert.equal(
     await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
     0,
   );
+  await page.getByRole('button', { name: 'Ver chats ocultos', exact: true }).click();
+  assert.equal(await child.count(), 0);
   await page.locator('[data-project-id="p2"] .project-name').click();
   assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), null);
-  await page.locator('[data-project-id="p"] .project-name').click();
-  await page.locator('[data-project-id="p2"] .project-name').click();
-  assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), null);
-  assert.equal(
-    await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
-    0,
-  );
-  await page.reload();
-  assert.equal(
-    await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
-    0,
-  );
-  await page.getByRole('button', { name: 'Multichat', exact: true }).click();
-  await rootCard.locator('.team-indicator').click();
-  await page
-    .locator('.team-popover:popover-open')
-    .getByRole('button', { name: /Alinear reservas/ })
-    .click();
-  await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).waitFor();
   assert.deepEqual(errors, []);
   console.log(
     'Equipo UI: filas compactas, indicador superior dinámico, sin bloque vacío, navegación y popover en grid correctos.',

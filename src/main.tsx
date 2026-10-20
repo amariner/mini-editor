@@ -179,19 +179,11 @@ function App() {
   const project = state?.projects.find((p) => p.id === state.selectedProject),
     selectedSession = state?.sessions.find((s) => s.id === state.selectedSession),
     session =
-      selectedSession &&
-      (selectedSession.id === closedSelection || hiddenChats.includes(selectedSession.id))
-        ? undefined
-        : selectedSession,
+      selectedSession && selectedSession.id === closedSelection ? undefined : selectedSession,
     profile = selectedSession?.profile ?? state?.defaultProfile ?? accountProfiles[0]?.id,
     kind = providerKind(profile);
   useEffect(() => {
-    if (
-      !selectedSession ||
-      selectedSession.id === closedSelection ||
-      hiddenChats.includes(selectedSession.id)
-    )
-      return;
+    if (!selectedSession || selectedSession.id === closedSelection) return;
     setTabs((v) => ({
       ...v,
       [sessionGroup(selectedSession)]: openSessionTab(
@@ -216,10 +208,12 @@ function App() {
       setConfirmClose(s);
       return;
     }
-    setHiddenChats((ids) => [...new Set([...ids, s.id])]);
+    const wasSelected = stateRef.current?.selectedSession === s.id;
+    if (!(await run({ type: 'deleteSession', sessionId: s.id }))) return;
+    setHiddenChats((ids) => ids.filter((id) => id !== s.id));
     const remaining = (tabs[sessionGroup(s)] ?? []).filter((id) => id !== s.id);
     setTabs((v) => ({ ...v, [sessionGroup(s)]: remaining }));
-    if (stateRef.current?.selectedSession === s.id) {
+    if (wasSelected) {
       setClosedSelection(s.id);
       await run({ type: 'select', projectId: s.projectId, sessionId: remaining.at(-1) ?? null });
     }
@@ -233,10 +227,7 @@ function App() {
   }, [project?.id]);
   const switchProject = async (projectId: string) => {
     const previousId = recentSessions.current[projectId];
-    const available =
-      stateRef.current?.sessions.filter(
-        (s) => s.projectId === projectId && !hiddenChats.includes(s.id),
-      ) ?? [];
+    const available = stateRef.current?.sessions.filter((s) => s.projectId === projectId) ?? [];
     const sessionId =
       available.find((s) => s.id === previousId)?.id ?? available.at(-1)?.id ?? null;
     const result = await run({ type: 'select', projectId, sessionId });
@@ -275,8 +266,6 @@ function App() {
       stateRef.current = snap;
       setState(snap);
       if (navigation) {
-        if (action.type === 'select' && action.sessionId)
-          setHiddenChats((ids) => ids.filter((id) => id !== action.sessionId));
         setClosedSelection(undefined);
       }
       return r;
@@ -884,7 +873,7 @@ function App() {
               <ProjectChats
                 state={state}
                 projectId={p.id}
-                hiddenChats={hiddenChats}
+                hiddenChats={[]}
                 open={(s) => {
                   setClosedSelection(undefined);
                   setMultichat('off');
@@ -968,6 +957,11 @@ function App() {
         <Multichat
           opened={Object.values(tabs).flat()}
           dismissed={hiddenChats}
+          toggleHidden={(id) =>
+            setHiddenChats((ids) =>
+              ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id],
+            )
+          }
           close={(s) => void closeTab(s)}
           drafts={drafts}
           setDrafts={setDrafts}
@@ -1760,10 +1754,10 @@ function App() {
       {confirmClose && (
         <div className="overlay">
           <section className="modal small" role="dialog" aria-label="Cerrar conversación">
-            <h2>¿Detener y cerrar la pestaña?</h2>
+            <h2>¿Detener y eliminar el chat?</h2>
             <p className="muted">
               «{confirmClose.title}» tiene un agente abierto. Se detendrá antes de cerrar la
-              pestaña. Podrás recuperar la conversación con ⌘K.
+              pestaña. Se eliminará la conversación y sus adjuntos.
             </p>
             <div className="modal-actions">
               <button disabled={busy[confirmClose.id]} onClick={() => setConfirmClose(undefined)}>

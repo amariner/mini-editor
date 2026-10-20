@@ -136,6 +136,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({ type: z.literal('accountOpenLogin'), profile }).strict(),
   z.object({ type: z.literal('snapshot') }),
+  z.object({ type: z.literal('deleteSession'), sessionId: id }).strict(),
   z.object({ type: z.literal('browser'), sessionId: id, input: browserInput }),
   z.object({
     type: z.literal('browserNew'),

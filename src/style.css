@@ -6172,14 +6172,15 @@ button.msg-action.reading {
 .multichat.show-keys .multichat-key {
   display: inline-block;
 }
-/* Secondary actions appear with the pointer or keyboard focus; a busy chat cannot be retired. */
-.multichat-card .multichat-dismiss,
+/* Keep the close control discoverable even without hover. */
+.multichat-card .multichat-dismiss {
+  opacity: 1;
+}
+/* Refresh is a secondary action shown on pointer or keyboard focus. */
 .multichat-card .multichat-git-refresh {
   opacity: 0;
   transition: opacity 0.12s;
 }
-.multichat-card:hover .multichat-dismiss:enabled,
-.multichat-card:focus-within .multichat-dismiss:enabled,
 .multichat-card:hover .multichat-git-refresh,
 .multichat-card:focus-within .multichat-git-refresh {
   opacity: 1;

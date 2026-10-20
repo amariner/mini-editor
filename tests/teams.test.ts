@@ -199,3 +199,39 @@ test('el agente descubre metadatos de chats independientes y puede vincularlos m
     /coordinador/,
   );
 });
+
+test('eliminar un chat lo borra de persistencia y conserva sus subchats independientes', async () => {
+  const { Manager } = await import('../electron/manager');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'desk-delete-chat-'));
+  const manager = new Manager(directory, () => {});
+  try {
+    manager.state.profiles = [{ id: 'claude-1', name: 'Claude', kind: 'claude' }];
+    manager.state.projects = [{ id: 'p', name: 'Proyecto', path: directory }];
+    const parent = manager.newSession('p', 'claude-1', 'chat');
+    const child = manager.newSession('p', 'claude-1', 'chat');
+    child.parentId = parent.id;
+    manager.state.selectedSession = parent.id;
+    let cleaned = false;
+    await manager.deleteSession(parent.id, async (sessions) => {
+      assert.deepEqual(
+        sessions.map((s) => s.id),
+        [parent.id],
+      );
+      cleaned = true;
+    });
+    assert.ok(cleaned);
+    assert.equal(manager.state.selectedSession, undefined);
+    assert.equal(child.parentId, undefined);
+    assert.equal(
+      manager.state.sessions.some((s) => s.id === parent.id),
+      false,
+    );
+    assert.equal(
+      new Store(directory).state.sessions.some((s) => s.id === parent.id),
+      false,
+    );
+  } finally {
+    await manager.shutdown();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
