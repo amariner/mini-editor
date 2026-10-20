@@ -173,6 +173,7 @@ try {
   await launch();
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   const router = page.getByRole('region', { name: 'Cuenta Router prueba' }); // section aria-label maps to region
+  await router.getByRole('button', { name: 'Opciones de Router prueba', exact: true }).click();
   await router.getByLabel('Clave API de Router prueba').fill('sk-or-fixture-not-real');
   await router.getByRole('button', { name: 'Conectar OpenRouter', exact: true }).click();
   await until(
@@ -206,7 +207,10 @@ try {
   await page.getByRole('button', { name: 'Permitir carpeta en este chat', exact: true }).waitFor();
   await page.screenshot({ path: 'artifacts/provider-external-permission.png' });
   await page.getByRole('button', { name: 'Permitir carpeta en este chat', exact: true }).click();
-  await page.getByText('Respuesta OpenRouter verificada', { exact: true }).waitFor();
+  await page
+    .locator('.workspace')
+    .getByText('Respuesta OpenRouter verificada', { exact: true })
+    .waitFor();
   assert.equal(await fs.readFile(path.join(project, 'resultado.txt'), 'utf8'), 'Prueba aprobada');
   const snapshot = await call({ type: 'snapshot' });
   assert.ok(
@@ -232,7 +236,10 @@ try {
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Hola Gemini');
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).press('Enter');
   await page.getByRole('button', { name: 'Permitir una vez', exact: true }).click();
-  await page.getByText('Respuesta Gemini verificada', { exact: true }).waitFor();
+  await page
+    .locator('.workspace')
+    .getByText('Respuesta Gemini verificada', { exact: true })
+    .waitFor();
   await call({ type: 'stop', sessionId: g.id });
   await app.close();
   app = undefined;
@@ -255,6 +262,7 @@ try {
   app = undefined;
   await launch();
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
+  await page.getByRole('button', { name: 'Opciones de Google prueba', exact: true }).click();
   await page
     .getByRole('button', { name: 'Ver guía oficial de migración a Antigravity', exact: true })
     .waitFor();

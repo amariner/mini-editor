@@ -79,7 +79,7 @@ try {
     path.join(project, 'informes', 'seguimiento.pdf'),
     path.join(project, 'notas.md'),
   ]);
-  const groups = page.locator('.response-group');
+  const groups = page.locator('.workspace .response-group');
   await groups.first().hover();
   const copy = groups.first().getByRole('button', { name: 'Copiar respuesta', exact: true });
   const read = groups

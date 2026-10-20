@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { BrowserInput, BrowserState } from './browser-protocol';
 import { isAuthenticationURL } from './browser-urls';
+import { navigateTabs } from './tab-keyboard';
 export function BrowserPanel({
   tabs,
   selected,
@@ -35,8 +36,7 @@ export function BrowserPanel({
   onError: (message: string) => void;
 }) {
   const state =
-    tabs.find((tab) => tab.id === selected) ??
-    tabs.find((tab) => tab.projectId === projectId);
+    tabs.find((tab) => tab.id === selected) ?? tabs.find((tab) => tab.projectId === projectId);
   const host = useRef<HTMLDivElement>(null);
   const [address, setAddress] = useState(state?.url ?? '');
   const [busy, setBusy] = useState(false);
@@ -230,6 +230,8 @@ export function BrowserPanel({
                 <button
                   role="tab"
                   aria-selected={tab.id === state?.id}
+                  tabIndex={tab.id === state?.id ? 0 : -1}
+                  onKeyDown={navigateTabs}
                   aria-label={title(tab)}
                   title={`${projects.find((p) => p.id === tab.projectId)?.name ?? 'Navegador'} · ${tab.title}${tab.suspended ? ' · Suspendida' : ''}`}
                   onClick={() => {

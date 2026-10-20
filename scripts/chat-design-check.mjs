@@ -1,9 +1,24 @@
 // Renderer fixture test for the chat design: no real accounts, agents or model calls.
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { build, preview } from 'vite';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+const protocol = Number(
+  (await fs.readFile(new URL('../src/runtime.ts', import.meta.url), 'utf8')).match(
+    /IPC_VERSION = (\d+)/,
+  )[1],
+);
+const testBuild = process.env.SOURCE_BUILD
+  ? await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-chat-'))
+  : undefined;
+if (testBuild) await build({ build: { outDir: testBuild, emptyOutDir: true }, logLevel: 'silent' });
+const server = await preview({
+  build: { outDir: testBuild ?? 'dist' },
+  preview: { host: '127.0.0.1', port: 0 },
+  logLevel: 'silent',
+});
 let browser;
 const answer = [
   'He bajado los últimos cambios de los dos repos y los dos están ya al día con `origin/main`.',
@@ -45,7 +60,7 @@ try {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.addInitScript(
-      ({ answer, second }) => {
+      ({ answer, second, protocol }) => {
         const now = Date.now();
         const session = {
           id: 's',
@@ -179,7 +194,7 @@ try {
           selectedProject: 'p',
           tools: {},
           dataDir: '/tmp/chat-design',
-          runtime: { protocol: 29 },
+          runtime: { protocol },
           coordination: [],
         };
         const listeners = new Set();
@@ -223,41 +238,101 @@ try {
           },
         };
       },
-      { answer, second },
+      { answer, second, protocol },
     );
     await page.goto(server.resolvedUrls.local[0]);
-    await page.getByText('He bajado los últimos cambios', { exact: false }).waitFor();
-    const summary = page.locator('.response-work > summary').first();
+    const chat = page.locator('.workspace');
+    await chat.getByText('He bajado los últimos cambios', { exact: false }).waitFor();
+    const summary = chat.locator('.response-work > summary').first();
     assert.equal(
       (await summary.innerText()).replace(/\s+/g, ' ').trim(),
       'Leyó 1 archivo, hizo 1 búsqueda, ejecutó 2 comandos y editó 1 archivo 1 min 23 s',
     );
-    assert.equal(await page.locator('.turn-changes').count(), 1);
-    assert.match(await page.locator('.turn-changes').innerText(), /README\.md/);
-    assert.equal(await page.locator('.md :not(pre) > code').first().innerText(), 'origin/main');
-    assert.equal(await page.locator('a.md-link.path').count(), 1);
-    assert.equal(await page.locator('a.md-link.url').count(), 1);
-    assert.equal(await page.getByRole('button', { name: 'Pegar en la terminal' }).count(), 1);
-    assert.ok((await page.locator('.md-code .tk-f').count()) >= 1);
-    assert.equal(await page.locator('.md-table th').count(), 3);
-    assert.equal(await page.locator('.md-callout.warning').count(), 1);
-    assert.match(await page.locator('.task-signature').innerText(), /34%/);
+    assert.equal(await chat.locator('.turn-changes').count(), 1);
+    assert.equal(await chat.locator('.turn-changes-toggle').getAttribute('aria-expanded'), 'false');
+    await chat.locator('.turn-changes-toggle').click();
+    assert.match(await chat.locator('.turn-changes').innerText(), /README\.md/);
+    await chat.locator('.turn-changes-toggle').click();
+    assert.equal(await chat.locator('.md :not(pre) > code').first().innerText(), 'origin/main');
+    assert.equal(await chat.locator('a.md-link.path').count(), 1);
+    assert.equal(await chat.locator('a.md-link.url').count(), 1);
+    assert.equal(await chat.getByRole('button', { name: 'Pegar en la terminal' }).count(), 1);
+    assert.ok((await chat.locator('.md-code .tk-f').count()) >= 1);
+    assert.equal(await chat.locator('.md-table th').count(), 3);
+    assert.equal(await chat.locator('.md-callout.warning').count(), 1);
+    assert.match(await chat.locator('.task-signature').innerText(), /34%/);
     await page.screenshot({
       path: `artifacts/chat-v2-respuesta-${colorScheme === 'dark' ? 'oscuro' : 'claro'}.png`,
     });
-    await page.locator('a.md-link.path').click();
-    await page.locator('a.md-link.url').click();
+    await chat.locator('a.md-link.path').click();
+    await chat.locator('a.md-link.url').click();
     const actions = await page.evaluate(() => window.fixture.actions.map((a) => a.type));
     assert.ok(actions.includes('openPath') && actions.includes('browserNew'));
     if (colorScheme === 'dark') {
       await summary.click();
-      await page.locator('.response-work .tool-head').filter({ hasText: 'Editó' }).click();
-      await page.locator('.response-work pre.diff').waitFor();
-      assert.equal(await page.locator('.response-work pre.diff .added').count(), 2);
-      assert.equal(await page.locator('.response-work pre.diff .removed').count(), 1);
-      await page.locator('.response-work').scrollIntoViewIfNeeded();
+      await chat.locator('.response-work .tool-head').filter({ hasText: 'Editó' }).click();
+      await chat.locator('.response-work pre.diff').waitFor();
+      assert.equal(await chat.locator('.response-work pre.diff .added').count(), 2);
+      assert.equal(await chat.locator('.response-work pre.diff .removed').count(), 1);
+      await chat.locator('.response-work').scrollIntoViewIfNeeded();
       await page.screenshot({ path: 'artifacts/chat-v2-pasos.png' });
       await summary.click();
+      // Composer menus retain context, support arrows, and return focus without interrupting.
+      const modelMenu = chat.getByRole('button', { name: 'Modelo', exact: true });
+      await modelMenu.focus();
+      await modelMenu.press('ArrowDown');
+      const menu = chat.getByRole('dialog', { name: 'Modelo', exact: true });
+      await menu.waitFor();
+      assert.equal(
+        await menu
+          .getByRole('button')
+          .first()
+          .evaluate((el) => el === document.activeElement),
+        true,
+      );
+      await page.keyboard.press('End');
+      assert.equal(
+        await menu
+          .getByRole('button')
+          .last()
+          .evaluate((el) => el === document.activeElement),
+        true,
+      );
+      await page.keyboard.press('Home');
+      assert.equal(
+        await menu
+          .getByRole('button')
+          .first()
+          .evaluate((el) => el === document.activeElement),
+        true,
+      );
+      await page.keyboard.press('Escape');
+      assert.equal(await modelMenu.evaluate((el) => el === document.activeElement), true);
+      assert.equal(await menu.count(), 0);
+      assert.equal(
+        await page.evaluate(
+          () => window.fixture.actions.filter((a) => a.type === 'interrupt').length,
+        ),
+        0,
+      );
+      await modelMenu.click();
+      await chat.getByRole('textbox', { name: 'Mensaje', exact: true }).click();
+      assert.equal(await menu.count(), 0);
+      await page.setViewportSize({ width: 480, height: 620 });
+      await chat.getByRole('button', { name: 'Esfuerzo de razonamiento', exact: true }).click();
+      const effortBounds = await chat
+        .getByRole('dialog', { name: 'Esfuerzo de razonamiento', exact: true })
+        .boundingBox();
+      const chatBounds = await chat.locator('.conversation').boundingBox();
+      assert.ok(
+        effortBounds.x >= chatBounds.x &&
+          effortBounds.x + effortBounds.width <= chatBounds.x + chatBounds.width,
+        'El menú debe caber en un chat estrecho',
+      );
+      assert.ok(effortBounds.y >= chatBounds.y, 'El menú debe caber en un chat de poca altura');
+      await page.screenshot({ path: 'artifacts/chat-v20-menu-estrecho.png' });
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({ width: 1180, height: 860 });
       // Working state: dock, plan strip and a permission card.
       await page.evaluate(() => {
         const f = window.fixture;
@@ -313,10 +388,16 @@ try {
         ];
         f.publish();
       });
-      await page.getByText('Esperando tu respuesta', { exact: true }).waitFor();
-      await page.locator('.approval').scrollIntoViewIfNeeded();
+      await chat.getByText('Esperando tu respuesta', { exact: true }).waitFor();
+      const plan = chat.locator('.todo-panel > button');
+      assert.equal(await plan.getAttribute('aria-expanded'), 'false');
+      assert.match(await plan.innerText(), /Borrando la rama fusionada/);
+      await plan.click();
+      assert.equal(await chat.locator('.todo-panel .todos > li').count(), 3);
+      await plan.click();
+      await chat.locator('.approval').scrollIntoViewIfNeeded();
       assert.match(
-        await page.locator('.approval').innerText(),
+        await chat.locator('.approval').innerText(),
         /Siempre: Bash\(git branch -D:\*\)/,
       );
       await page.screenshot({ path: 'artifacts/chat-v2-permiso.png' });
@@ -325,12 +406,12 @@ try {
       await page.screenshot({ path: 'artifacts/chat-v2-permiso-claro.png' });
       await page.emulateMedia({ colorScheme: 'dark' });
       await page.waitForTimeout(400);
-      assert.equal(await page.getByRole('button', { name: 'Permitir', exact: true }).count(), 1);
+      assert.equal(await chat.getByRole('button', { name: 'Permitir', exact: true }).count(), 1);
       assert.equal(
-        await page.getByRole('button', { name: 'Permitir siempre', exact: true }).count(),
+        await chat.getByRole('button', { name: 'Permitir siempre', exact: true }).count(),
         1,
       );
-      await page.locator('.approval .primary').focus();
+      await chat.locator('.approval .primary').focus();
       await page.keyboard.press('2');
       const approve = await page.evaluate(() =>
         window.fixture.actions.filter((a) => a.type === 'approve').at(-1),
@@ -343,21 +424,22 @@ try {
         f.session.status = 'ready';
         f.publish();
       });
-      const box = page.getByRole('textbox', { name: 'Mensaje', exact: true });
+      const box = chat.getByRole('textbox', { name: 'Mensaje', exact: true });
       await box.click();
       await box.pressSequentially('Revisa @chat');
-      await page.locator('.slash-menu .file-option').first().waitFor();
+      await chat.locator('.slash-menu .file-option').first().waitFor();
       await page.screenshot({ path: 'artifacts/chat-v2-menciones.png' });
       await page.keyboard.press('Enter');
       assert.equal(await box.inputValue(), 'Revisa @src/chat.tsx ');
       await box.fill('');
+      await chat.locator('.slash-menu').waitFor({ state: 'hidden' });
       await page.keyboard.press('ArrowUp');
       assert.equal(await box.inputValue(), 'Borra la rama local');
       // /copy copies the last answer without sending anything.
       await box.fill('/copy');
       await page.keyboard.press('Escape');
       await page.keyboard.press('Enter');
-      await page.locator('.composer-flash').waitFor();
+      await chat.locator('.composer-flash').waitFor();
       assert.equal(await box.inputValue(), '');
       // ⌘K also finds text inside conversations.
       await page.keyboard.press('Meta+k');
@@ -375,7 +457,7 @@ try {
   });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.addInitScript((protocol) => {
     const session = {
       id: 'c',
       projectId: 'p',
@@ -462,7 +544,7 @@ try {
       selectedProject: 'p',
       tools: {},
       dataDir: '/tmp/codex',
-      runtime: { protocol: 29 },
+      runtime: { protocol },
       coordination: [],
     };
     window.desk = {
@@ -473,18 +555,20 @@ try {
         return true;
       },
     };
-  });
+  }, protocol);
   await page.goto(server.resolvedUrls.local[0]);
-  await page.getByText('Corregido:', { exact: false }).waitFor();
-  const codexSummary = page.locator('.response-work > summary');
+  const chat = page.locator('.workspace');
+  await chat.getByText('Corregido:', { exact: false }).waitFor();
+  const codexSummary = chat.locator('.response-work > summary');
   assert.equal(
     (await codexSummary.innerText()).replace(/\s+/g, ' ').trim(),
     'Leyó 1 archivo, ejecutó 1 comando y editó 1 archivo 47 s 1 error',
   );
   await codexSummary.click();
-  assert.equal(await page.locator('.response-work .tool.failed').count(), 1);
-  assert.match(await page.locator('.turn-changes').innerText(), /src\/dates\.ts/);
-  assert.equal(await page.locator('.todo-panel').count(), 1);
+  assert.equal(await chat.locator('.response-work .tool.failed').count(), 1);
+  await chat.locator('.turn-changes-toggle').click();
+  assert.match(await chat.locator('.turn-changes').innerText(), /src\/dates\.ts/);
+  assert.equal(await chat.locator('.todo-panel').count(), 1);
   await page.screenshot({ path: 'artifacts/chat-v2-codex.png' });
   assert.deepEqual(errors, []);
   await page.close();
@@ -493,5 +577,6 @@ try {
   );
 } finally {
   await browser?.close();
-  await new Promise((resolve) => server.httpServer.close(resolve));
+  await server.close();
+  if (testBuild) await fs.rm(testBuild, { recursive: true, force: true });
 }

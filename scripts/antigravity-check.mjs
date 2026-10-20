@@ -92,7 +92,10 @@ try {
   await page.getByRole('button', { name: 'Cerrar ajustes', exact: true }).click();
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Hola Gemini');
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).press('Enter');
-  await page.getByText('Gemini en Agent Desk', { exact: true }).waitFor();
+  await page
+    .getByRole('tabpanel', { name: 'Gemini', exact: true })
+    .getByText('Gemini en Agent Desk', { exact: true })
+    .waitFor();
   await wait(async () => (await call({ type: 'snapshot' })).sessions[0].status === 'ready');
   assert.equal((await call({ type: 'snapshot' })).sessions[0].reference, 'agy:fixture');
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('bloqueo');

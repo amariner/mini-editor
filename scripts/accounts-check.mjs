@@ -79,6 +79,7 @@ try {
   assert.equal((await snapshot()).accounts.codex.status, 'signedOut');
   // Actual logout commands on empty profiles: idempotent and harmless, no credentials copied.
   for (const name of ['Claude 1', 'Claude 2', 'Codex']) {
+    await page.getByRole('button', { name: `Opciones de ${name}`, exact: true }).click();
     await page
       .getByRole('region', { name: `Cuenta ${name}`, exact: true })
       .getByRole('button', { name: 'Cerrar sesión', exact: true })
@@ -121,6 +122,7 @@ try {
   assert.equal((await snapshot()).sessions.find((s) => s.id === sessionId).status, 'ready');
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   await settled();
+  await codex.getByRole('button', { name: 'Opciones de Codex', exact: true }).click();
   await codex.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
   await page.getByRole('alertdialog').getByText('Cancelar', { exact: true }).click();
   assert.equal((await snapshot()).sessions.find((s) => s.id === sessionId).status, 'ready');
@@ -141,9 +143,18 @@ try {
     s.sessions.map(({ id, messages, reference }) => ({ id, messages, reference })),
     saved,
   );
-  assert.equal(s.accounts.codex.status, 'unknown');
+  // Startup checks profiles sequentially. An unknown account may still be queued,
+  // so waiting only for !busy can race its refresh when starting the next login.
+  s = await poll((state) =>
+    Object.values(state.accounts).every((account) => account.status !== 'unknown' && !account.busy),
+  );
+  for (const profile of ['claude-1', 'claude-2', 'codex'])
+    assert.equal(s.accounts[profile].status, 'signedOut');
   // Quitting also cancels pending account authentication and reaps its process.
   await call({ type: 'accountLogin', profile: 'codex', stopSessions: false });
+  await poll(
+    (state) => state.accounts.codex.cancellable && state.accounts.codex.busy === 'signingIn',
+  );
   const appPid = app.process().pid;
   const children = execFileSync('ps', ['-axo', 'pid,ppid'], { encoding: 'utf8' })
     .trim()

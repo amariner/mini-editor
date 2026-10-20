@@ -2,7 +2,24 @@ import { ProviderAccountSettings } from './provider-account-settings';
 import { providerNames, type ProviderKind } from './shared';
 import { NetworkSettings } from './network-settings';
 import React, { useEffect, useState } from 'react';
-import { LogIn, LogOut, RefreshCw, X, Plus, Leaf, Trash2 } from 'lucide-react';
+import {
+  LogIn,
+  LogOut,
+  RefreshCw,
+  X,
+  Plus,
+  Leaf,
+  Trash2,
+  SlidersHorizontal,
+  Check,
+  RotateCcw,
+  FolderOpen,
+  UserRound,
+  Palette,
+  Globe,
+  ChevronDown,
+  Star,
+} from 'lucide-react';
 import {
   defaultOptimization,
   savingLevels,
@@ -30,6 +47,9 @@ export function AccountsSettings({
   appearance: ReturnType<typeof useInterfacePreferences>;
   onOpenFreebuff?: () => Promise<void>;
 }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggleAccount = (id: string) =>
+    setExpanded((previous) => ({ ...previous, [id]: !previous[id] }));
   const [tab, setTab] = useState<'accounts' | 'interface' | 'network'>('accounts');
   const [confirmation, setConfirmation] = useState<{
     profile: Profile;
@@ -90,45 +110,61 @@ export function AccountsSettings({
     <div className="overlay" onClick={close}>
       <section
         className="modal account-settings"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            if (confirmation) setConfirmation(undefined);
+            else close();
+          }
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Ajustes"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-title">
-          <h2>Ajustes</h2>
-          <button aria-label="Cerrar ajustes" onClick={close}>
-            <X size={17} />
-          </button>
-        </div>
-        <div className="settings-tabs" role="tablist" aria-label="Secciones de ajustes">
-          {(['accounts', 'interface', 'network'] as const).map((id) => (
-            <button
-              key={id}
-              id={`settings-tab-${id}`}
-              role="tab"
-              aria-selected={tab === id}
-              aria-controls={`settings-panel-${id}`}
-              tabIndex={tab === id ? 0 : -1}
-              onClick={() => setTab(id)}
-              onKeyDown={(e) => {
-                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-                e.preventDefault();
-                const sections = ['accounts', 'interface', 'network'] as const;
-                const index = sections.indexOf(id);
-                const next =
-                  e.key === 'Home'
-                    ? sections[0]
-                    : e.key === 'End'
-                      ? sections[2]
-                      : sections[(index + (e.key === 'ArrowRight' ? 1 : 2)) % sections.length];
-                setTab(next);
-                document.getElementById(`settings-tab-${next}`)?.focus();
-              }}
-            >
-              {id === 'accounts' ? 'Cuentas' : id === 'interface' ? 'Interfaz' : 'Red'}
+        <div className="settings-header">
+          <div className="modal-title">
+            <h2>Ajustes</h2>
+            <button title="Cerrar ajustes" aria-label="Cerrar ajustes" onClick={close}>
+              <X size={17} />
             </button>
-          ))}
+          </div>
+          <div className="settings-tabs" role="tablist" aria-label="Secciones de ajustes">
+            {(['accounts', 'interface', 'network'] as const).map((id) => (
+              <button
+                key={id}
+                id={`settings-tab-${id}`}
+                role="tab"
+                aria-selected={tab === id}
+                aria-controls={`settings-panel-${id}`}
+                tabIndex={tab === id ? 0 : -1}
+                onClick={() => setTab(id)}
+                onKeyDown={(e) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+                  e.preventDefault();
+                  const sections = ['accounts', 'interface', 'network'] as const;
+                  const index = sections.indexOf(id);
+                  const next =
+                    e.key === 'Home'
+                      ? sections[0]
+                      : e.key === 'End'
+                        ? sections[2]
+                        : sections[(index + (e.key === 'ArrowRight' ? 1 : 2)) % sections.length];
+                  setTab(next);
+                  document.getElementById(`settings-tab-${next}`)?.focus();
+                }}
+              >
+                {id === 'accounts' ? (
+                  <UserRound size={15} aria-hidden="true" />
+                ) : id === 'interface' ? (
+                  <Palette size={15} aria-hidden="true" />
+                ) : (
+                  <Globe size={15} aria-hidden="true" />
+                )}
+                {id === 'accounts' ? 'Cuentas' : id === 'interface' ? 'Interfaz' : 'Red'}
+              </button>
+            ))}
+          </div>
         </div>
         <div
           role="tabpanel"
@@ -230,10 +266,6 @@ export function AccountsSettings({
               </div>
             </form>
           )}
-          <p className="muted">
-            Las cuentas e integraciones son opcionales. Puedes quitarlas y volver a añadirlas cuando
-            quieras.
-          </p>
           <div className="account-list">
             {!accountProfiles.length && (
               <p className="muted">No hay cuentas. Pulsa «Añadir cuenta» para crear la primera.</p>
@@ -267,11 +299,35 @@ export function AccountsSettings({
                 !compatible ||
                 !!busy ||
                 (p.kind !== 'openrouter' && p.kind !== 'opencode' && !state.tools[p.kind]);
+              const loginLabel =
+                p.kind === 'opencode'
+                  ? account?.status === 'signedIn'
+                    ? 'Cambiar cuenta en el navegador'
+                    : 'Iniciar sesión en el navegador'
+                  : p.kind === 'gemini' && /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
+                    ? account?.status === 'signedIn'
+                      ? 'Verificar conexión Google'
+                      : 'Conectar Google con Antigravity'
+                    : account?.status === 'signedIn'
+                      ? 'Cambiar cuenta'
+                      : p.kind === 'gemini'
+                        ? 'Iniciar sesión con Google'
+                        : 'Iniciar sesión';
               return (
                 <section className="account-card" key={p.id} aria-label={`Cuenta ${p.name}`}>
                   <div className="account-heading">
                     <div>
-                      <strong>{p.name}</strong>
+                      <strong>
+                        {p.name}
+                        {(defaultDraft ?? state.defaultProfile ?? accountProfiles[0]?.id) ===
+                          p.id && (
+                          <Star
+                            className="account-default-mark"
+                            size={11}
+                            aria-label="Cuenta predeterminada"
+                          />
+                        )}
+                      </strong>
                       <small>
                         {p.kind === 'codex'
                           ? 'ChatGPT · Codex'
@@ -280,71 +336,59 @@ export function AccountsSettings({
                             : providerNames[p.kind]}
                       </small>
                     </div>
-                    <span className={`account-status ${account?.status ?? ''}`}>{status}</span>
-                  </div>
-                  <div className="account-color-setting">
-                    <label>
-                      Color en Multichat
-                      <input
-                        type="color"
-                        aria-label={`Color de ${p.name}`}
-                        value={colorDrafts[p.id] ?? p.color ?? '#f5f5f4'}
-                        disabled={!compatible || !!savingColor || busy === 'removing'}
-                        onChange={(e) => setColorDrafts((v) => ({ ...v, [p.id]: e.target.value }))}
-                      />
-                    </label>
-                    <button
-                      disabled={
-                        !compatible ||
-                        !!savingColor ||
-                        !colorDrafts[p.id] ||
-                        colorDrafts[p.id] === p.color ||
-                        busy === 'removing'
-                      }
-                      onClick={() => void saveColor(p.id, colorDrafts[p.id]!)}
-                    >
-                      Guardar color
-                    </button>
-                    <button
-                      disabled={
-                        !compatible ||
-                        !!savingColor ||
-                        (!p.color && !colorDrafts[p.id]) ||
-                        busy === 'removing'
-                      }
-                      onClick={() => void saveColor(p.id, null)}
-                    >
-                      Sin color
-                    </button>
+                    <div className="account-heading-actions">
+                      <span className={`account-status ${account?.status ?? ''}`} title={status}>
+                        {status}
+                      </span>
+                      {p.kind !== 'openrouter' && (
+                        <button
+                          className={`account-login ${account?.status === 'signedIn' ? 'is-connected' : ''}`}
+                          title={loginLabel}
+                          aria-label={loginLabel}
+                          disabled={disabled}
+                          onClick={() => request(p.id, 'accountLogin')}
+                        >
+                          <LogIn size={14} />
+                          <span className="action-label">{loginLabel}</span>
+                        </button>
+                      )}
+                      {p.kind === 'openrouter' && account?.status !== 'signedIn' && (
+                        <button
+                          className="account-login"
+                          disabled={!compatible || !!busy}
+                          onClick={() => setExpanded((previous) => ({ ...previous, [p.id]: true }))}
+                        >
+                          <LogIn size={14} aria-hidden="true" /> Conectar
+                        </button>
+                      )}
+                      <button
+                        aria-label={`Actualizar estado de ${p.name}`}
+                        title={`Actualizar estado de ${p.name}`}
+                        disabled={disabled}
+                        onClick={() => void run({ type: 'accountRefresh', profile: p.id })}
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                      <button
+                        className="account-options-trigger"
+                        data-account-options={p.id}
+                        aria-label={`Opciones de ${p.name}`}
+                        title={`Opciones de ${p.name}`}
+                        aria-expanded={!!expanded[p.id] || !!account?.loginCode}
+                        aria-controls={`account-options-${p.id}`}
+                        onClick={() => toggleAccount(p.id)}
+                      >
+                        <SlidersHorizontal size={15} aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
                   {account?.label && (
                     <div className="account-identity">
                       {account.label}
-                      {account.plan ? ` · ${account.plan}` : ' · Plan no disponible'}
+                      {account.plan ? ` · ${account.plan}` : ''}
                     </div>
                   )}
-                  <label className="default-account-option">
-                    <input
-                      type="radio"
-                      name="default-account"
-                      aria-label={`Usar ${p.name} como cuenta predeterminada`}
-                      checked={
-                        (defaultDraft ?? state.defaultProfile ?? accountProfiles[0]?.id) === p.id
-                      }
-                      disabled={!compatible || savingDefault || busy === 'removing'}
-                      onChange={async () => {
-                        setSavingDefault(true);
-                        setDefaultDraft(p.id);
-                        try {
-                          await run({ type: 'setDefaultAccount', profile: p.id });
-                        } finally {
-                          setSavingDefault(false);
-                          setDefaultDraft(undefined);
-                        }
-                      }}
-                    />
-                    Predeterminada para chats nuevos
-                  </label>
+
                   {p.kind !== 'openrouter' && p.kind !== 'opencode' && !state.tools[p.kind] && (
                     <p className="muted">Selecciona el ejecutable para conectar esta cuenta.</p>
                   )}
@@ -361,63 +405,83 @@ export function AccountsSettings({
                   )}
                   {running(p.id).length > 0 && (
                     <p className="muted">
-                      {running(p.id).length} sesiones abiertas con este perfil.
+                      {running(p.id).length}{' '}
+                      {running(p.id).length === 1 ? 'sesión abierta' : 'sesiones abiertas'}
                     </p>
                   )}
-                  {['openrouter', 'opencode', 'gemini'].includes(p.kind) && (
-                    <ProviderAccountSettings
-                      profile={p}
-                      account={account}
-                      disabled={!compatible || !!busy}
-                      run={run}
-                      antigravity={/[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')}
-                    />
+                  {account?.cancellable && (
+                    <button onClick={() => void run({ type: 'accountCancel', profile: p.id })}>
+                      Cancelar acceso
+                    </button>
                   )}
-                  <div className="account-actions">
-                    {p.kind !== 'openrouter' && (
-                      <button disabled={disabled} onClick={() => request(p.id, 'accountLogin')}>
-                        <LogIn size={14} />
-                        {p.kind === 'opencode'
-                          ? account?.status === 'signedIn'
-                            ? 'Cambiar cuenta en el navegador'
-                            : 'Iniciar sesión en el navegador'
-                          : p.kind === 'gemini' &&
-                              /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
-                            ? account?.status === 'signedIn'
-                              ? 'Verificar conexión Google'
-                              : 'Conectar Google con Antigravity'
-                            : account?.status === 'signedIn'
-                              ? 'Cambiar cuenta'
-                              : p.kind === 'gemini'
-                                ? 'Iniciar sesión con Google'
-                                : 'Iniciar sesión'}
+                  <div
+                    id={`account-options-${p.id}`}
+                    className="account-options"
+                    hidden={!expanded[p.id] && !account?.loginCode}
+                  >
+                    <div className="account-color-setting">
+                      <label>
+                        Color en Multichat
+                        <input
+                          type="color"
+                          aria-label={`Color de ${p.name}`}
+                          value={colorDrafts[p.id] ?? p.color ?? '#f5f5f4'}
+                          disabled={!compatible || !!savingColor || busy === 'removing'}
+                          onChange={(e) =>
+                            setColorDrafts((v) => ({ ...v, [p.id]: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <button
+                        disabled={
+                          !compatible ||
+                          !!savingColor ||
+                          !colorDrafts[p.id] ||
+                          colorDrafts[p.id] === p.color ||
+                          busy === 'removing'
+                        }
+                        aria-label="Guardar color"
+                        title="Guardar color"
+                        onClick={() => void saveColor(p.id, colorDrafts[p.id]!)}
+                      >
+                        <Check size={14} aria-hidden="true" />
                       </button>
-                    )}
-                    <button disabled={disabled} onClick={() => request(p.id, 'accountLogout')}>
-                      <LogOut size={14} />
-                      {p.kind === 'gemini' && /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
-                        ? 'Desvincular de Agent Desk'
-                        : 'Cerrar sesión'}
-                    </button>
-                    <button
-                      aria-label={`Actualizar estado de ${p.name}`}
-                      disabled={disabled}
-                      onClick={() => void run({ type: 'accountRefresh', profile: p.id })}
-                    >
-                      <RefreshCw size={14} />
-                    </button>
-                    <button
-                      className="danger-ghost"
-                      disabled={
-                        !compatible ||
-                        !!removing ||
-                        (!!busy && busy !== 'checking' && !account?.cancellable)
-                      }
-                      onClick={() => setConfirmation({ profile: p.id, type: 'removeAccount' })}
-                      aria-label={`Eliminar cuenta ${p.name}`}
-                    >
-                      <Trash2 size={14} /> Eliminar cuenta
-                    </button>
+                      <button
+                        disabled={
+                          !compatible ||
+                          !!savingColor ||
+                          (!p.color && !colorDrafts[p.id]) ||
+                          busy === 'removing'
+                        }
+                        aria-label="Sin color"
+                        title="Sin color"
+                        onClick={() => void saveColor(p.id, null)}
+                      >
+                        <RotateCcw size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                    <label className="default-account-option">
+                      <input
+                        type="radio"
+                        name="default-account"
+                        aria-label={`Usar ${p.name} como cuenta predeterminada`}
+                        checked={
+                          (defaultDraft ?? state.defaultProfile ?? accountProfiles[0]?.id) === p.id
+                        }
+                        disabled={!compatible || savingDefault || busy === 'removing'}
+                        onChange={async () => {
+                          setSavingDefault(true);
+                          setDefaultDraft(p.id);
+                          try {
+                            await run({ type: 'setDefaultAccount', profile: p.id });
+                          } finally {
+                            setSavingDefault(false);
+                            setDefaultDraft(undefined);
+                          }
+                        }}
+                      />
+                      Predeterminada para chats nuevos
+                    </label>
                     {(p.kind === 'claude' || p.kind === 'codex') && (
                       <fieldset
                         className="token-settings"
@@ -458,13 +522,36 @@ export function AccountsSettings({
                         </label>
                       </fieldset>
                     )}
-                    {account?.cancellable && (
-                      <button onClick={() => void run({ type: 'accountCancel', profile: p.id })}>
-                        Cancelar acceso
-                      </button>
+                    {['openrouter', 'opencode', 'gemini'].includes(p.kind) && (
+                      <ProviderAccountSettings
+                        profile={p}
+                        account={account}
+                        disabled={!compatible || !!busy}
+                        run={run}
+                        antigravity={/[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')}
+                      />
                     )}
+                    <div className="account-actions account-secondary-actions">
+                      <button disabled={disabled} onClick={() => request(p.id, 'accountLogout')}>
+                        <LogOut size={14} />
+                        {p.kind === 'gemini' && /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
+                          ? 'Desvincular de Agent Desk'
+                          : 'Cerrar sesión'}
+                      </button>
+                      <button
+                        className="danger-ghost"
+                        disabled={
+                          !compatible ||
+                          !!removing ||
+                          (!!busy && busy !== 'checking' && !account?.cancellable)
+                        }
+                        onClick={() => setConfirmation({ profile: p.id, type: 'removeAccount' })}
+                        aria-label={`Eliminar cuenta ${p.name}`}
+                      >
+                        <Trash2 size={14} /> Eliminar cuenta
+                      </button>
+                    </div>
                   </div>
-
                   {busy === 'signingIn' && (p.kind === 'codex' || p.kind === 'gemini') && (
                     <p className="muted">
                       Continúa en el navegador. Puedes cerrar Ajustes y volver aquí mientras
@@ -488,72 +575,80 @@ export function AccountsSettings({
             })}
           </div>
           {confirmation && (
-            <section
-              className="account-confirm"
-              role="alertdialog"
-              aria-label={
-                confirmation.type === 'removeAccount'
-                  ? 'Confirmar eliminación de cuenta'
-                  : 'Confirmar cambio de cuenta'
-              }
-            >
-              <strong>
-                {confirmation.type === 'removeAccount'
-                  ? 'Eliminar cuenta'
-                  : confirmation.type === 'accountLogout'
-                    ? 'Cerrar sesión de'
-                    : 'Cambiar el acceso de'}{' '}
-                {accountProfiles.find((p) => p.id === confirmation.profile)?.name}
-              </strong>
-              <p>
-                {running(confirmation.profile).length
-                  ? 'Se detendrán estas sesiones antes de continuar:'
-                  : confirmation.type === 'removeAccount'
-                    ? 'Se quitarán esta cuenta y sus conversaciones de Agent Desk.'
-                    : 'Se actualizará únicamente la autenticación de este perfil.'}
-              </p>
-              {running(confirmation.profile).map((s) => (
-                <div key={s.id}>
-                  {state.projects.find((p) => p.id === s.projectId)?.name} · {s.title}
-                </div>
-              ))}
-              <p className="muted">
-                {confirmation.type === 'removeAccount'
-                  ? 'Se cancelará cualquier acceso pendiente. La carpeta local del perfil y una copia de sus conversaciones se enviarán a la Papelera. Los proyectos, sus archivos y las demás cuentas se conservan. Tu cuenta del proveedor no se elimina.'
-                  : 'Las conversaciones y los archivos se conservan.'}
-              </p>
-              <div className="modal-actions">
-                <button onClick={() => setConfirmation(undefined)}>Cancelar</button>
-                <button
-                  className="danger"
-                  onClick={async () => {
-                    const action = confirmation;
-                    setConfirmation(undefined);
-                    if (action.type === 'removeAccount') {
-                      setRemoving(action.profile);
-                      try {
-                        await run({
-                          type: 'removeAccount',
-                          profile: action.profile,
-                          confirmed: true,
-                        });
-                      } catch (error) {
-                        onError((error as Error).message);
-                      } finally {
-                        setRemoving(undefined);
-                      }
-                    } else
-                      void run({ type: action.type, profile: action.profile, stopSessions: true });
-                  }}
-                >
+            <div className="account-confirm-overlay" onClick={() => setConfirmation(undefined)}>
+              <section
+                onClick={(event) => event.stopPropagation()}
+                className="account-confirm"
+                role="alertdialog"
+                aria-modal="true"
+                aria-label={
+                  confirmation.type === 'removeAccount'
+                    ? 'Confirmar eliminación de cuenta'
+                    : 'Confirmar cambio de cuenta'
+                }
+              >
+                <strong>
                   {confirmation.type === 'removeAccount'
-                    ? 'Confirmar eliminación'
+                    ? 'Eliminar cuenta'
                     : confirmation.type === 'accountLogout'
-                      ? 'Confirmar cierre de sesión'
-                      : 'Detener y continuar'}
-                </button>
-              </div>
-            </section>
+                      ? 'Cerrar sesión de'
+                      : 'Cambiar el acceso de'}{' '}
+                  {accountProfiles.find((p) => p.id === confirmation.profile)?.name}
+                </strong>
+                <p>
+                  {running(confirmation.profile).length
+                    ? 'Se detendrán estas sesiones antes de continuar:'
+                    : confirmation.type === 'removeAccount'
+                      ? 'Se quitarán esta cuenta y sus conversaciones de Agent Desk.'
+                      : 'Se actualizará únicamente la autenticación de este perfil.'}
+                </p>
+                {running(confirmation.profile).map((s) => (
+                  <div key={s.id}>
+                    {state.projects.find((p) => p.id === s.projectId)?.name} · {s.title}
+                  </div>
+                ))}
+                <p className="muted">
+                  {confirmation.type === 'removeAccount'
+                    ? 'Se cancelará cualquier acceso pendiente. La carpeta local del perfil y una copia de sus conversaciones se enviarán a la Papelera. Los proyectos, sus archivos y las demás cuentas se conservan. Tu cuenta del proveedor no se elimina.'
+                    : 'Las conversaciones y los archivos se conservan.'}
+                </p>
+                <div className="modal-actions">
+                  <button onClick={() => setConfirmation(undefined)}>Cancelar</button>
+                  <button
+                    className="danger"
+                    onClick={async () => {
+                      const action = confirmation;
+                      setConfirmation(undefined);
+                      if (action.type === 'removeAccount') {
+                        setRemoving(action.profile);
+                        try {
+                          await run({
+                            type: 'removeAccount',
+                            profile: action.profile,
+                            confirmed: true,
+                          });
+                        } catch (error) {
+                          onError((error as Error).message);
+                        } finally {
+                          setRemoving(undefined);
+                        }
+                      } else
+                        void run({
+                          type: action.type,
+                          profile: action.profile,
+                          stopSessions: true,
+                        });
+                    }}
+                  >
+                    {confirmation.type === 'removeAccount'
+                      ? 'Confirmar eliminación'
+                      : confirmation.type === 'accountLogout'
+                        ? 'Confirmar cierre de sesión'
+                        : 'Detener y continuar'}
+                  </button>
+                </div>
+              </section>
+            </div>
           )}
           {state.freebuffEnabled && (
             <section className="account-card" aria-label="Freebuff CLI">
@@ -605,7 +700,10 @@ export function AccountsSettings({
             </section>
           )}
           <details className="account-tools">
-            <summary>Herramientas y datos locales</summary>
+            <summary>
+              <ChevronDown size={14} aria-hidden="true" />
+              Herramientas y datos locales
+            </summary>
             {(['claude', 'codex', 'gemini', 'freebuff'] as const)
               .filter((tool) =>
                 tool === 'freebuff'
@@ -624,8 +722,12 @@ export function AccountsSettings({
                           : 'Codex app-server'}
                   </strong>
                   <code>{state.tools[tool] ?? 'No encontrado'}</code>
-                  <button onClick={() => void run({ type: 'chooseBinary', tool })}>
-                    Seleccionar ejecutable
+                  <button
+                    title="Seleccionar ejecutable"
+                    aria-label={`Seleccionar ejecutable de ${tool === 'claude' ? 'Claude Code' : tool === 'codex' ? 'Codex' : tool === 'gemini' ? 'Google' : 'Freebuff'}`}
+                    onClick={() => void run({ type: 'chooseBinary', tool })}
+                  >
+                    <FolderOpen size={15} aria-hidden="true" />
                   </button>
                 </div>
               ))}

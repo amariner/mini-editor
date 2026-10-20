@@ -1,0 +1,278 @@
+/* Shared chrome: comfortable targets, restrained surfaces, one spacing rhythm. */
+:root {
+  --muted: #696966;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --muted: #969693;
+  }
+}
+.app input::placeholder,
+.app textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.app {
+  --control-size: 30px;
+}
+.app > main {
+  padding: 0 12px 12px 4px;
+}
+.app .sidebar.compact:not(.collapsed) {
+  width: 232px;
+  min-width: 232px;
+  padding-inline: 10px;
+}
+.app .sidebar .projects {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.app .sidebar .project-block {
+  margin-bottom: 10px;
+}
+.app .sidebar .project-row {
+  min-height: 36px;
+}
+.app .sidebar .project-name {
+  min-height: 32px;
+  gap: 9px;
+}
+.app .sidebar .project-chats {
+  padding: 3px 2px 5px 24px;
+}
+.app .sidebar .project-chat,
+.app .sidebar .project-chat-row {
+  min-height: 30px;
+  height: auto;
+}
+.app .sidebar .project-chat {
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 11.5px;
+}
+.app .sidebar .project-chat small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.app .sidebar .project-chat.selected {
+  color: var(--text);
+  background: var(--tile);
+}
+.app .sidebar.compact .section-label {
+  height: 42px;
+  min-height: 42px;
+}
+.app .sidebar .section-label button,
+.app .sidebar.compact .sidebar-bottom button {
+  height: var(--control-size);
+  min-height: var(--control-size);
+  width: var(--control-size);
+  border-radius: 8px;
+}
+.app .sidebar.compact .sidebar-bottom {
+  gap: 8px;
+  padding-top: 12px;
+}
+.app .sidebar.compact:not(.collapsed) .sidebar-bottom {
+  flex-direction: row;
+  justify-content: space-between;
+  padding-inline: 4px;
+}
+.app .sidebar.compact.collapsed .sidebar-bottom button {
+  width: 100%;
+}
+.app .topbar {
+  height: 48px;
+  padding-right: 0;
+}
+/* Native macOS window controls extend beyond the narrow project rail. */
+.app:has(.sidebar.collapsed) > main > .topbar {
+  padding-left: max(8px, calc(98px - var(--project-icon-size, 20px)));
+}
+.app .topbar .top-actions {
+  gap: 4px;
+}
+.app .topbar .top-actions button {
+  width: var(--control-size);
+  height: var(--control-size);
+  min-height: var(--control-size);
+  border-radius: 8px;
+}
+.app .topbar .top-actions button.on {
+  background: var(--tile);
+}
+.app .workspace .session-tabs-bar {
+  gap: 6px;
+  padding-inline: 10px;
+  border-bottom-color: color-mix(in srgb, var(--line) 65%, transparent);
+}
+.app .workspace .session-tab {
+  max-width: 240px;
+}
+.app .workspace .session-tab > button[role='tab'] {
+  gap: 8px;
+  font-size: 12px;
+}
+.app .workspace .tab-close {
+  opacity: 0;
+  width: 24px;
+  min-height: 28px;
+}
+.app .workspace .session-tab:is(:hover, :focus-within, .selected) .tab-close {
+  opacity: 1;
+}
+.app .terminal-panel-heading {
+  gap: 10px;
+  min-height: 38px;
+  padding-inline: 12px;
+}
+.app .terminal-panel-heading button {
+  min-height: 28px;
+  border-radius: 6px;
+}
+.app .browser-toolbar {
+  gap: 3px;
+  padding-inline: 6px;
+}
+.app .browser-toolbar button {
+  min-width: 25px;
+  min-height: 28px;
+}
+.app .browser-toolbar input {
+  background: color-mix(in srgb, var(--tile) 65%, transparent);
+  border-radius: 6px;
+  padding-inline: 8px;
+}
+.app .welcome,
+.app .no-session {
+  gap: 12px;
+  text-align: center;
+  padding: 32px;
+}
+.app .welcome > svg,
+.app .no-session > svg {
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.app .welcome h1,
+.app .no-session h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+.app .welcome p,
+.app .no-session p {
+  max-width: 320px;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.app .welcome .primary.large {
+  min-height: 36px;
+  font-size: 12px;
+  padding: 8px 16px;
+}
+.app .palette {
+  width: min(560px, calc(100vw - 40px));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.app .palette-search {
+  min-height: 58px;
+  padding-inline: 18px;
+  gap: 12px;
+}
+.app .palette-results {
+  padding: 8px;
+  scrollbar-width: thin;
+}
+.app .palette-results button {
+  padding: 10px 12px;
+  gap: 12px;
+  border-radius: 8px;
+}
+.app .palette-results button strong {
+  font-weight: 500;
+}
+.app .palette-results button small {
+  margin-top: 3px;
+}
+.app .toast {
+  max-width: min(560px, calc(100vw - 40px));
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.app .modal.small {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+}
+.app .modal.small h2 {
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+.app .modal.small p {
+  line-height: 1.65;
+}
+.app summary:focus-visible,
+.app [tabindex='0']:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+  border-radius: 5px;
+}
+@media (max-width: 900px) {
+  .app .sidebar.compact:not(.collapsed) {
+    width: 192px;
+    min-width: 192px;
+  }
+  .app > main {
+    padding-right: 8px;
+  }
+  .app .sidebar .project-chats {
+    padding-left: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* Terminal reading controls stay on one quiet row, including narrow side panels. */
+.app .terminal-reading-controls {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: 38px;
+  padding: 4px 12px;
+}
+.app .terminal-reading-controls button {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+.app .terminal-reading-controls button:hover,
+.app .terminal-reading-controls button[aria-expanded='true'],
+.app .terminal-reading-controls button[aria-pressed='true'] {
+  background: var(--tile);
+  color: var(--text);
+}
+.app .terminal-model-help {
+  padding: 2px 16px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+}

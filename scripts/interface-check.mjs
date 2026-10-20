@@ -1,19 +1,39 @@
 // Renderer fixture test for Settings → Interfaz: theme switch and the user CSS editor.
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { build, preview } from 'vite';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
-let browser;
+const expectedBase = (
+  await Promise.all(
+    ['style', 'shell-polish', 'settings-polish', 'chat-polish', 'multichat-polish'].map((name) =>
+      fs.readFile(`src/${name}.css`, 'utf8'),
+    ),
+  )
+).join('\n\n');
+const testBuild = process.env.SOURCE_BUILD
+  ? await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-interface-'))
+  : undefined;
+if (testBuild) await build({ build: { outDir: testBuild, emptyOutDir: true }, logLevel: 'silent' });
+const server = await preview({
+  build: { outDir: testBuild ?? 'dist' },
+  preview: { host: '127.0.0.1', port: 0 },
+  logLevel: 'silent',
+});
+const protocol = Number(
+  (await fs.readFile('src/runtime.ts', 'utf8')).match(/IPC_VERSION = (\d+)/)[1],
+);
+let browser, page;
 try {
-  browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({
+  browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  page = await browser.newPage({
     viewport: { width: 1100, height: 900 },
     colorScheme: 'dark',
   });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.addInitScript((protocol) => {
     const state = {
       theme: 'system',
       profiles: [{ id: 'claude-1', name: 'Personal', kind: 'claude' }],
@@ -35,7 +55,7 @@ try {
       selectedProject: 'p',
       tools: {},
       dataDir: '/tmp/interface-fixture',
-      runtime: { protocol: 29 },
+      runtime: { protocol },
       coordination: [],
     };
     const listeners = new Set();
@@ -58,20 +78,26 @@ try {
         return true;
       },
     };
-  });
+  }, protocol);
   const brand = () =>
     page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--brand').trim(),
     );
   const sendRadius = () =>
-    page.evaluate(() => getComputedStyle(document.querySelector('.send')).borderTopLeftRadius);
+    page.evaluate(
+      () =>
+        getComputedStyle(document.querySelector('.workspace .desk-input .send'))
+          .borderTopLeftRadius,
+    );
   const openInterface = async () => {
     await page.keyboard.press('Meta+,');
     await page.getByRole('tab', { name: 'Interfaz', exact: true }).click();
+    await page.locator('summary').filter({ hasText: 'Temas y CSS' }).click();
   };
   await page.goto(server.resolvedUrls.local[0]);
   await page.locator('.desk-input').waitFor();
   const original = await brand();
+  const originalRadius = await sendRadius();
   assert.equal(original, '#9eaaf3');
   await openInterface();
   // Theme: three choices, the selection goes to the main process.
@@ -92,10 +118,55 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('.style-editor textarea')?.value.includes('--brand'),
   );
+  await editor.scrollIntoViewIfNeeded();
   const css = await editor.inputValue();
-  assert.ok(css.length > 50000, 'debe incluir todo el CSS del editor');
+  assert.ok(
+    css === expectedBase,
+    'debe incluir exactamente las cinco fuentes CSS, en el orden de aplicación',
+  );
   assert.equal(await page.locator('.style-state').innerText(), 'Estilos originales');
-  await editor.fill(css.replace('--brand: #9eaaf3;', '--brand: #ff3366;'));
+  // A fixture clipboard exercises the paste event without reading or changing the system clipboard.
+  await editor.focus();
+  await editor.evaluate((el, text) => {
+    el.setSelectionRange(17, 35);
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', text.replace(/\n/g, '\r\n'));
+    el.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
+    );
+  }, css);
+  const pasted = css.slice(0, 17) + css + css.slice(35);
+  assert.ok(
+    (await editor.inputValue()) === pasted,
+    'multiline paste must replace only the selection and normalize line endings',
+  );
+  assert.equal(await editor.evaluate((el) => el.selectionStart), 17 + css.length);
+  await editor.press('Meta+z');
+  assert.ok((await editor.inputValue()) === css);
+  assert.deepEqual(await editor.evaluate((el) => [el.selectionStart, el.selectionEnd]), [17, 35]);
+  await editor.press('Meta+Shift+z');
+  assert.ok((await editor.inputValue()) === pasted);
+  await editor.press('Meta+z');
+  assert.ok((await editor.inputValue()) === css);
+  const changedCss = css.replace('--brand: #9eaaf3;', '--brand: #ff3366;');
+  await editor.fill(changedCss, { timeout: 5000 });
+  await editor.press('Meta+z');
+  assert.ok(
+    (await editor.inputValue()) === css,
+    'undo must restore the complete stylesheet after bulk replacement',
+  );
+  await editor.press('Meta+Shift+z');
+  assert.ok((await editor.inputValue()) === changedCss, 'redo must restore the bulk edit');
+  const colorStart = changedCss.indexOf('#ff3366');
+  await editor.evaluate((el, start) => el.setSelectionRange(start, start + 7), colorStart);
+  await page.keyboard.insertText('#35c997');
+  assert.ok((await editor.inputValue()).includes('--brand: #35c997;'));
+  assert.equal(await editor.evaluate((el) => el.selectionStart), colorStart + 7);
+  await editor.press('Meta+z');
+  assert.ok(
+    (await editor.inputValue()) === changedCss,
+    'undo must preserve small edits inside a large stylesheet',
+  );
   assert.equal(await page.locator('.style-state').innerText(), 'Cambios sin guardar');
   await page.getByRole('button', { name: 'Guardar', exact: true }).click();
   assert.equal(await brand(), '#ff3366');
@@ -124,7 +195,7 @@ try {
   assert.equal(await sendRadius(), '50%');
   // Window → Restablecer estilos de la interfaz (native menu) always recovers.
   await page.evaluate(() => window.fixture.emit({ type: 'shortcut', action: 'resetStyles' }));
-  assert.equal(await sendRadius(), '8px');
+  assert.equal(await sendRadius(), originalRadius);
   await page.waitForFunction(
     () => document.querySelector('.style-state')?.textContent === 'Estilos originales',
     null,
@@ -199,7 +270,17 @@ try {
   console.log(
     'PASS: tema Sistema/Claro/Oscuro, CSS completo copiable, guardar, recarga, parcial, inválido, restablecer y temas guardados.',
   );
+} catch (error) {
+  console.error(String(error.message).split('Call log:')[0]);
+  console.error(
+    String(error.stack)
+      .split('\n')
+      .filter((line) => line.includes('scripts/interface-check.mjs'))
+      .join('\n'),
+  );
+  process.exitCode = 1;
 } finally {
   await browser?.close();
-  await new Promise((resolve) => server.httpServer.close(resolve));
+  await server.close();
+  if (testBuild) await fs.rm(testBuild, { recursive: true, force: true });
 }

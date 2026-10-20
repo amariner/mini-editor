@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { ChevronsDown, ChevronsUp, MoveVertical, ScanLine, SlidersHorizontal } from 'lucide-react';
 import type { Session } from './shared';
 export { sessionIsLive as live } from './session-tabs';
 import { sessionIsLive as live } from './session-tabs';
@@ -183,8 +184,14 @@ export function TerminalView({
       <div
         className={`terminal-wrap interactive-terminal ${readingScreen ? 'reading-screen' : ''} ${visible ? '' : 'hidden'}`}
       >
-        <div className="terminal-reading-controls" aria-label="Desplazamiento de la terminal">
+        <div
+          className="terminal-reading-controls"
+          role="toolbar"
+          aria-label="Desplazamiento de la terminal"
+        >
           <button
+            aria-label="Cambiar modelo"
+            title="Cambiar modelo"
             aria-expanded={modelHelp}
             onClick={() => {
               setModelHelp((v) => !v);
@@ -192,33 +199,42 @@ export function TerminalView({
               terminal.current?.focus();
             }}
           >
-            Cambiar modelo
+            <SlidersHorizontal size={15} aria-hidden="true" />
           </button>
           <button
+            aria-label={readingScreen ? 'Ajustar al panel' : 'Leer pantalla larga'}
             aria-pressed={readingScreen}
             onClick={() => setReadingScreen((v) => !v)}
-            title="Alternar entre ajustar al panel y una pantalla larga desplazable"
+            title={readingScreen ? 'Ajustar al panel' : 'Leer pantalla larga'}
           >
-            {readingScreen ? 'Ajustar al panel' : 'Leer pantalla larga'}
+            {readingScreen ? (
+              <ScanLine size={15} aria-hidden="true" />
+            ) : (
+              <MoveVertical size={15} aria-hidden="true" />
+            )}
           </button>
           {readingScreen && (
             <>
               <button
+                aria-label="Inicio"
+                title="Inicio"
                 onClick={() => {
                   terminal.current?.scrollToTop();
                   viewport.current?.scrollTo({ top: 0 });
                 }}
               >
-                Inicio
+                <ChevronsUp size={15} aria-hidden="true" />
               </button>
               <button
+                aria-label="Final"
+                title="Final"
                 onClick={() => {
                   terminal.current?.scrollToBottom();
                   const view = viewport.current;
                   if (view) view.scrollTo({ top: view.scrollHeight });
                 }}
               >
-                Final
+                <ChevronsDown size={15} aria-hidden="true" />
               </button>
             </>
           )}

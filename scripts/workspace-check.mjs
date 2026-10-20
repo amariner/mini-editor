@@ -10,6 +10,8 @@ const folder = path.join(root, 'Proyecto de prueba');
 await fs.mkdir(folder);
 execFileSync('git', ['init', '-q', folder]);
 await fs.writeFile(path.join(folder, 'nota.txt'), 'Prueba local\n');
+// Give the diff real changed lines; zero-line counters are intentionally omitted.
+execFileSync('git', ['-C', folder, 'add', '--intent-to-add', 'nota.txt']);
 let app, page;
 const errors = [];
 const call = (a) => page.evaluate((a) => window.desk.invoke(a), a);

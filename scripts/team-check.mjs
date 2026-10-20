@@ -137,7 +137,7 @@ try {
     .locator('.project-subchats .project-chat')
     .first()
     .evaluate((el) => el.getBoundingClientRect().height);
-  assert.ok(height <= 24, `Altura compacta: ${height}`);
+  assert.ok(height >= 28 && height <= 36, `Altura cómoda de navegación: ${height}`);
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/team-check.png' });
   await page.getByRole('button', { name: 'Multichat', exact: true }).click();
@@ -155,7 +155,12 @@ try {
   );
   await grid.locator('.team-indicator').first().click();
   await page.locator('.team-popover:popover-open').waitFor();
-  assert.ok((await grid.locator('.team-indicator').first().boundingBox()).width > 40);
+  assert.ok((await grid.locator('.team-indicator').first().boundingBox()).width >= 28);
+  assert.equal(await grid.locator('.team-indicator').first().innerText(), '9');
+  assert.equal(
+    await grid.locator('.team-indicator').first().getAttribute('aria-label'),
+    'Ver equipo: 9 chats',
+  );
   assert.ok(
     (await page.locator('.team-popover:popover-open .team-member').first().boundingBox()).width >
       200,
@@ -165,7 +170,10 @@ try {
   assert.equal(await page.locator('.team-popover:popover-open').count(), 0);
   await page.screenshot({ path: 'artifacts/team-grid-check.png' });
   const child = grid.locator('[data-session-id="c2"]');
-  await child.getByTitle('Ocultar del grid').click();
+  await child.getByRole('button', { name: 'Opciones de Alinear reservas', exact: true }).click();
+  await page
+    .getByRole('menuitem', { name: 'Ocultar Alinear reservas en el grid', exact: true })
+    .click();
   await child.waitFor({ state: 'hidden' });
   assert.equal(
     await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
@@ -176,10 +184,17 @@ try {
     false,
   );
   await page.getByRole('button', { name: 'Ver chats ocultos', exact: true }).click();
-  await child.getByTitle('Mostrar en el grid').click();
+  await child.getByRole('button', { name: 'Opciones de Alinear reservas', exact: true }).click();
+  await page
+    .getByRole('menuitem', { name: 'Mostrar Alinear reservas en el grid', exact: true })
+    .click();
   await child.waitFor();
-  await child.getByTitle('Eliminar chat').click();
-  await page.getByRole('button', { name: 'Detener y cerrar', exact: true }).click();
+  await child.getByRole('button', { name: 'Opciones de Alinear reservas', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Eliminar Alinear reservas', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Eliminar conversación', exact: true })
+    .getByRole('button', { name: 'Detener y eliminar', exact: true })
+    .click();
   await child.waitFor({ state: 'hidden' });
   assert.equal(
     await page.evaluate(() => window.fixture.state.sessions.some((s) => s.id === 'c2')),

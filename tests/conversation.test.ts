@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { conversationEntries, currentActivity } from '../src/conversation';
-import { ConversationMessages, ActivityDock } from '../src/chat';
+import { ConversationMessages, ActivityDock, ExecutionPanel, TodoPanel } from '../src/chat';
 import type { Session, Message } from '../src/shared';
 const fixture = (): Session => ({
   id: 's',
@@ -75,7 +75,7 @@ test('progreso activo en el dock; no oculta una respuesta terminada durante arra
   assert.equal(currentActivity(session)?.answer, undefined);
   const html = renderToStaticMarkup(React.createElement(ActivityDock, { session, kind: 'claude' }));
   assert.match(html, /activity-current/);
-  assert.match(html, /Usa JavaScript/);
+  assert.match(html, /Redactando respuesta…/);
   for (const status of ['ready', 'stopped', 'starting', 'stopping', 'error'] as const) {
     session.status = status;
     assert.equal(currentActivity(session), undefined);
@@ -83,7 +83,7 @@ test('progreso activo en el dock; no oculta una respuesta terminada durante arra
     assert.equal(tail.type === 'response' && tail.answer?.id, 'a3');
   }
 });
-test('los mensajes de progreso se leen en el chat durante el turno y permanecen al terminar', () => {
+test('el progreso permanece visible durante el turno y se conserva dentro de actividad al terminar', () => {
   for (const kind of ['claude', 'codex'] as const) {
     const session = fixture();
     if (kind === 'codex') {
@@ -106,9 +106,44 @@ test('los mensajes de progreso se leen en el chat durante el turno y permanecen 
     session.status = 'ready';
     const finished = render();
     assert.equal(finished.split('Voy a revisar el proyecto.').length - 1, 1);
-    assert.ok(finished.indexOf('Voy a revisar el proyecto.') < finished.indexOf('<details'));
+    assert.ok(finished.indexOf('Voy a revisar el proyecto.') > finished.indexOf('<details'));
+    assert.ok(finished.indexOf('Voy a revisar el proyecto.') < finished.indexOf('</details>'));
+    assert.doesNotMatch(finished, /<details[^>]* open=/);
     assert.match(finished, kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
   }
+});
+
+test('subagentes resumen la ejecución sin repetir la descripción y mantienen los detalles plegados', () => {
+  const session = fixture();
+  session.subagents = [
+    { id: 'a', description: 'Revisar componentes', summary: 'Revisar componentes' },
+  ];
+  const html = renderToStaticMarkup(React.createElement(ExecutionPanel, { session }));
+  assert.match(html, /execution-count.*1 agente/);
+  assert.doesNotMatch(html, /<details[^>]* open=/);
+  assert.doesNotMatch(html, /<strong>Revisar componentes<\/strong><span>/);
+  session.subagents[0].summary = 'Validando el compositor';
+  assert.match(
+    renderToStaticMarkup(React.createElement(ExecutionPanel, { session })),
+    /Validando el compositor/,
+  );
+});
+
+test('el plan resume la tarea actual por defecto y permite abrir sus pasos desde el grid', () => {
+  const todos = [
+    { content: 'Inspeccionar', status: 'completed' as const },
+    { content: 'Comprobar', activeForm: 'Comprobando teclado', status: 'in_progress' as const },
+  ];
+  const collapsed = renderToStaticMarkup(React.createElement(TodoPanel, { todos }));
+  assert.match(collapsed, /aria-expanded="false"/);
+  assert.match(collapsed, /Comprobando teclado/);
+  assert.doesNotMatch(collapsed, /class="todos"/);
+  const expanded = renderToStaticMarkup(
+    React.createElement(TodoPanel, { todos, defaultOpen: true }),
+  );
+  assert.match(expanded, /aria-expanded="true"/);
+  assert.match(expanded, /class="todos"/);
+  assert.match(expanded, /Hecha: /);
 });
 test('texto antes de herramientas y después de herramientas del mismo mensaje se separa sin pérdidas', () => {
   const session = fixture();
@@ -134,6 +169,11 @@ test('texto antes de herramientas y después de herramientas del mismo mensaje s
   session.messages[1].blocks!.pop();
   const interrupted = conversationEntries(session).at(-1)!;
   assert.equal(interrupted.type === 'response' && interrupted.answer, undefined);
+  const html = renderToStaticMarkup(
+    React.createElement(ConversationMessages, { session, kind: 'claude' }),
+  );
+  assert.ok(html.indexOf('Consultando…') < html.indexOf('<details'));
+  assert.equal(html.split('Consultando…').length - 1, 1);
 });
 test('Codex, avisos de error, adjuntos y varios turnos mantienen orden y datos', () => {
   const session = fixture();

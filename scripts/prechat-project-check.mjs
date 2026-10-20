@@ -153,10 +153,10 @@ try {
   await call({ type: 'browserNew', projectId: 'p', sessionId: second.id });
   await app.evaluate(async ({ session }) => {
     await session
-      .fromPartition('desk-browser-p')
+      .fromPartition('persist:desk-browser-p')
       .cookies.set({ url: 'https://fixture.test', name: 'cached', value: 'value' });
     await session
-      .fromPartition('desk-browser-keep')
+      .fromPartition('persist:desk-browser-keep')
       .cookies.set({ url: 'https://fixture.test', name: 'keep', value: 'value' });
   });
   // A valid PNG attachment is removed along with its original bytes.
@@ -190,8 +190,8 @@ try {
   assert.deepEqual(await fs.readdir(path.join(data, 'attachments')), []);
   assert.equal(await fs.readFile(path.join(project, 'source.txt'), 'utf8'), 'source stays');
   const cookies = await app.evaluate(async ({ session }) => ({
-    removed: await session.fromPartition('desk-browser-p').cookies.get({}),
-    keep: await session.fromPartition('desk-browser-keep').cookies.get({}),
+    removed: await session.fromPartition('persist:desk-browser-p').cookies.get({}),
+    keep: await session.fromPartition('persist:desk-browser-keep').cookies.get({}),
   }));
   assert.equal(cookies.removed.length, 0);
   assert.equal(cookies.keep.length, 1);

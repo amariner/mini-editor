@@ -54,6 +54,7 @@ try {
   let page = await launch();
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   const oldCard = page.getByRole('region', { name: 'Cuenta Antigua', exact: true });
+  await oldCard.getByRole('button', { name: 'Opciones de Antigua', exact: true }).click();
   await oldCard.getByText('Comprobando cuenta…', { exact: true }).waitFor();
   assert.equal(
     await oldCard.getByRole('button', { name: 'Eliminar cuenta Antigua', exact: true }).isEnabled(),
@@ -71,6 +72,7 @@ try {
     .getByRole('region', { name: 'Cuenta Antigua', exact: true })
     .waitFor({ state: 'detached' });
   assert.equal(await page.locator('.account-card[aria-label^="Cuenta "]').count(), 1);
+  await page.getByRole('button', { name: 'Opciones de Otra', exact: true }).click();
   await page.getByRole('button', { name: 'Eliminar cuenta Otra', exact: true }).click();
   await confirmation.getByRole('button', { name: 'Confirmar eliminación', exact: true }).click();
   await page.getByText('No hay cuentas. Pulsa «Añadir cuenta» para crear la primera.').waitFor();

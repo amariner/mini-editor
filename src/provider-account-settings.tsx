@@ -76,7 +76,8 @@ export function ProviderAccountSettings({
   };
   if (profile.kind === 'gemini' && antigravity)
     return (
-      <div className="provider-settings">
+      <details className="provider-settings settings-disclosure">
+        <summary>Conexión con Antigravity</summary>
         <p className="muted">
           Gemini funciona mediante Antigravity CLI. Al conectar se verifica la sesión Google de
           Antigravity en macOS; si falta el acceso, complétalo en la terminal que aparece aquí y
@@ -92,7 +93,7 @@ export function ProviderAccountSettings({
           permiso, el chat la rechaza: pulsa Abrir terminal Antigravity, escribe «continúa» y
           aprueba la solicitud allí. El chat no muestra solicitudes de permiso de Antigravity.
         </p>
-      </div>
+      </details>
     );
   if (profile.kind === 'gemini')
     return (
@@ -233,11 +234,14 @@ export function ProviderAccountSettings({
         </small>
       </form>
       {openCode && (
-        <p className="muted">
-          La clave API es una alternativa al acceso por navegador. Guardarla no envía consultas; la
-          autenticación de la clave se comprobará al usarla. Los tokens del navegador se guardan
-          cifrados y se renuevan automáticamente.
-        </p>
+        <details className="settings-disclosure provider-help">
+          <summary>Sobre la conexión</summary>
+          <p className="muted">
+            La clave API es una alternativa al acceso por navegador. Guardarla no envía consultas;
+            la autenticación de la clave se comprobará al usarla. Los tokens del navegador se
+            guardan cifrados y se renuevan automáticamente.
+          </p>
+        </details>
       )}
       {!openCode && account?.apiUsage && (
         <p className="muted">
@@ -250,7 +254,7 @@ export function ProviderAccountSettings({
           if (e.currentTarget.open && !models.length && !loading) void load();
         }}
       >
-        <summary>Modelos que quieres probar · {selection.models.length} seleccionados</summary>
+        <summary>Modelos · {selection.models.length} seleccionados</summary>
         <div className="provider-model-filters">
           <label>
             <input

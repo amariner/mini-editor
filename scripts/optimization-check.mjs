@@ -29,6 +29,7 @@ try {
   await call({ type: 'addAccount', kind: 'codex', name: 'Trabajo' });
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   const account = page.getByRole('region', { name: 'Cuenta Personal', exact: true });
+  await account.getByRole('button', { name: 'Opciones de Personal', exact: true }).click();
   await account.getByLabel('Ahorro de tokens', { exact: true }).selectOption('2');
   await account.getByRole('switch', { name: 'Modelo auto' }).check();
   await page.waitForFunction(
@@ -50,6 +51,7 @@ try {
   });
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   const restored = page.getByRole('region', { name: 'Cuenta Personal', exact: true });
+  await restored.getByRole('button', { name: 'Opciones de Personal', exact: true }).click();
   assert.equal(await restored.getByLabel('Ahorro de tokens', { exact: true }).inputValue(), '2');
   assert.equal(await restored.getByRole('switch', { name: 'Modelo auto' }).isChecked(), true);
   await restored.getByLabel('Ahorro de tokens', { exact: true }).selectOption('0');

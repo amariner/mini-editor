@@ -134,12 +134,19 @@ export function GitBar({
         </button>
         {state?.repository && (
           <>
-            <span className={`git-state-label ${counts?.conflicts ? 'has-conflicts' : ''}`}>
-              {counts?.conflicts
-                ? `${counts.conflicts} conflictos`
-                : dirty
-                  ? `${state.files.length} archivos`
-                  : 'Sin cambios'}
+            <span
+              className={`git-state-label ${counts?.conflicts ? 'has-conflicts' : ''}`}
+              title={!dirty ? 'Sin cambios locales' : undefined}
+              aria-label={!dirty ? 'Sin cambios locales' : undefined}
+              role={!dirty ? 'img' : undefined}
+            >
+              {counts?.conflicts ? (
+                `${counts.conflicts} conflictos`
+              ) : dirty ? (
+                `${state.files.length} archivos`
+              ) : (
+                <Check size={11} aria-hidden="true" />
+              )}
             </span>
             {state.upstream && (
               <span
@@ -149,7 +156,7 @@ export function GitBar({
                 ↑{state.ahead ?? '—'} ↓{state.behind ?? '—'}
               </span>
             )}
-            {state.lines && (
+            {state.lines && (state.lines.added > 0 || state.lines.removed > 0) && (
               <button
                 className="git-summary-lines"
                 onClick={onDiff}

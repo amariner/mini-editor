@@ -15,6 +15,7 @@ import { opensAsText, resolveProjectPath, searchProjectFiles } from './project-f
 import { readTheme, writeTheme } from './appearance';
 import { IPC_VERSION } from '../src/runtime';
 import { attentionBadge } from '../src/supervision';
+import { editHistoryMenu } from './edit-menu';
 app.setName('Agent Desk');
 let dockBadge = '';
 if (process.env.AGENT_DESK_DATA_DIR)
@@ -262,8 +263,7 @@ app.whenReady().then(async () => {
       {
         label: 'Edición',
         submenu: [
-          { role: 'undo' },
-          { role: 'redo' },
+          ...editHistoryMenu(() => win?.webContents),
           { type: 'separator' },
           { role: 'cut' },
           { role: 'copy' },

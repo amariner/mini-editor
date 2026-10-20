@@ -1,0 +1,270 @@
+/* Calm conversation surfaces; details stay one deliberate action away. */
+.response-group {
+  gap: 12px;
+}
+.response-group .response-work > summary {
+  min-height: 28px;
+  max-width: 100%;
+  font-size: 11.5px;
+  gap: 8px;
+  line-height: 1.5;
+}
+.response-work .work-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.response-work > summary > :not(.work-summary) {
+  flex-shrink: 0;
+}
+.response-work > summary:focus-visible,
+.execution-panel > summary:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.response-work > .activity-messages {
+  padding-left: 16px;
+  margin-block: 8px 6px;
+}
+.response-group .response-actions {
+  gap: 6px;
+  min-height: 28px;
+  margin-top: 0;
+}
+.response-actions .msg-meta {
+  font-size: 10.5px;
+  opacity: 1;
+}
+.response-group .turn-changes {
+  border-color: transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+  max-width: 560px;
+}
+.turn-changes > header {
+  background: transparent;
+  min-height: 36px;
+  padding: 3px 8px;
+}
+.turn-changes .turn-changes-toggle {
+  min-height: 28px;
+  padding: 3px 2px;
+  min-width: 0;
+  justify-content: flex-start;
+  background: transparent;
+  color: var(--ui-text-color, var(--text-2));
+  gap: 7px;
+}
+.turn-changes .turn-changes-toggle strong {
+  font-size: 11.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turn-changes-toggle[aria-expanded='true'] > svg:last-child {
+  transform: rotate(90deg);
+}
+.turn-changes .turn-changes-open {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--ui-text-color, var(--muted));
+}
+.turn-changes > ul {
+  border-color: color-mix(in srgb, var(--line) 65%, transparent);
+  padding-block: 6px;
+}
+.turn-changes > ul > li {
+  min-height: 28px;
+}
+.todo-panel,
+.multichat-card .todo-panel {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-block: 2px;
+}
+.todo-panel > button {
+  padding: 4px 8px;
+  min-height: 30px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ui-text-color, var(--muted));
+  font-size: 11px;
+}
+.todo-panel > button:hover,
+.todo-panel > button[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--ui-text-color, var(--text-2));
+}
+.todo-panel .todos {
+  margin: 6px 0 10px 14px;
+  padding: 4px 12px;
+  border-left: 1px solid var(--line);
+}
+.todo-panel .todo-progress {
+  width: 36px;
+  height: 2px;
+}
+.execution-panel {
+  min-width: 0;
+  flex-shrink: 0;
+  margin: 2px 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.execution-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 6px;
+  list-style: none;
+  border-radius: 7px;
+}
+.execution-panel > summary::-webkit-details-marker {
+  display: none;
+}
+.execution-panel > summary:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--ui-text-color, var(--text-2));
+}
+.execution-panel > summary > svg {
+  flex-shrink: 0;
+  margin: 0;
+}
+.execution-panel .execution-count {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.execution-panel .execution-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-color, var(--text-2));
+}
+.execution-panel .execution-chevron {
+  margin-left: auto;
+}
+.execution-panel[open] .execution-chevron {
+  transform: rotate(90deg);
+}
+.execution-panel > ul {
+  list-style: none;
+  border-left: 1px solid var(--line);
+  margin: 6px 0 10px 12px;
+  padding: 4px 14px;
+}
+.execution-panel > ul strong {
+  font-weight: 500;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.execution-panel > ul li span {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.team-indicator.compact {
+  gap: 4px;
+  min-height: 28px;
+  padding: 4px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.team-popover .team-member {
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 7px;
+}
+.composer .popover {
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px #00000020;
+  max-height: min(360px, 60vh);
+  overscroll-behavior: contain;
+}
+.popover .popover-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px 10px;
+  color: var(--ui-text-color, var(--text-2));
+  font-size: 11px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.popover-heading > span {
+  color: var(--ui-text-color, var(--muted));
+  font-size: 10px;
+  font-weight: 400;
+}
+.composer .popover > button {
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: 7px;
+}
+.composer .popover > button > strong {
+  font-weight: 500;
+}
+.desk-input .composer-area .composer {
+  padding: 12px 12px 10px 14px;
+}
+.desk-input .composer-area .composer textarea {
+  padding-block: 2px 8px;
+  line-height: 1.6;
+}
+.desk-input .composer .composer-bar {
+  margin-top: 4px;
+}
+.desk-input .composer .composer-chips {
+  gap: 3px;
+}
+.desk-input .composer .chip-btn {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+}
+.desk-input .composer .chip-btn.labeled {
+  width: auto;
+}
+.desk-input .composer-footer {
+  min-height: 30px;
+  padding-inline: 4px;
+}
+.multichat-card .response-group {
+  gap: 9px;
+}
+.multichat-card .response-work > summary {
+  font-size: 10.5px;
+  gap: 6px;
+}
+.multichat-card .execution-panel {
+  margin: 0 10px;
+}
+.multichat-card .execution-panel > summary {
+  min-height: 28px;
+  font-size: 10.5px;
+}
+@container (max-width: 400px) {
+  .response-work .work-summary {
+    max-width: 100%;
+  }
+  .response-work .work-time {
+    display: none;
+  }
+  .composer .popover {
+    min-width: 0;
+    width: min(300px, calc(100cqw - 24px));
+    max-width: calc(100cqw - 24px);
+  }
+  .desk-input .composer-area .composer {
+    padding: 10px;
+  }
+}

@@ -1,9 +1,24 @@
 // Renderer fixture test: no real accounts, agents, or model calls.
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { build, preview } from 'vite';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+const protocol = Number(
+  (await fs.readFile(new URL('../src/runtime.ts', import.meta.url), 'utf8')).match(
+    /IPC_VERSION = (\d+)/,
+  )[1],
+);
+const testBuild = process.env.SOURCE_BUILD
+  ? await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-chat-'))
+  : undefined;
+if (testBuild) await build({ build: { outDir: testBuild, emptyOutDir: true }, logLevel: 'silent' });
+const server = await preview({
+  build: { outDir: testBuild ?? 'dist' },
+  preview: { host: '127.0.0.1', port: 0 },
+  logLevel: 'silent',
+});
 let browser;
 try {
   browser = await chromium.launch({ headless: true });
@@ -13,7 +28,7 @@ try {
   });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.addInitScript((protocol) => {
     const session = {
       id: 's',
       projectId: 'p',
@@ -74,7 +89,7 @@ try {
       selectedProject: 'p',
       tools: {},
       dataDir: '/tmp/compact-chat-fixture',
-      runtime: { protocol: 29 },
+      runtime: { protocol },
       coordination: [],
     };
     const listeners = new Set();
@@ -98,35 +113,36 @@ try {
         throw new Error(`Unexpected fixture action: ${action.type}`);
       },
     };
-  });
+  }, protocol);
   await page.goto(server.resolvedUrls.local[0]);
-  const progress = page.getByRole('button', { name: 'Ver progreso', exact: true });
+  const chat = page.locator('.workspace');
+  const progress = chat.getByRole('button', { name: 'Ver progreso', exact: true });
   await progress.waitFor();
-  assert.equal(await page.locator('.messages .tool').count(), 0);
-  assert.equal(await page.locator('.messages .author').count(), 0);
-  const narration = page.locator('.messages .progress-message');
+  assert.equal(await chat.locator('.messages .tool').count(), 0);
+  assert.equal(await chat.locator('.messages .author').count(), 0);
+  const narration = chat.locator('.messages .progress-message');
   assert.equal(await narration.innerText(), 'Voy a revisar el proyecto para responderte.');
   assert.ok(await narration.isVisible());
   assert.equal(
     await progress.locator('.activity-current-text').innerText(),
     'Revisando la estructura del proyecto',
   );
-  const composer = await page.locator('.composer').boundingBox();
-  const context = await page.locator('.git-summary').boundingBox();
+  const composer = await chat.locator('.composer').boundingBox();
+  const context = await chat.locator('.git-summary').boundingBox();
   const dock = await progress.boundingBox();
   assert.ok(dock.y + dock.height <= context.y);
   assert.ok(context.y - (dock.y + dock.height) < 10);
   assert.ok(context.y + context.height <= composer.y);
   assert.ok(dock.height <= 26);
   assert.equal(
-    await page.locator('.task-signature').innerText(),
+    await chat.locator('.task-signature').innerText(),
     'Personal\n5 h\n—\n·\nSonnet 5.5\n·\n↑— ↓—',
   );
   await progress.click();
-  assert.equal(await page.locator('.activity-log .tool').count(), 2);
-  assert.equal(await page.locator('.activity-log .step-text').count(), 0);
-  await page.locator('.activity-log .tool-head').first().click();
-  assert.equal(await page.locator('.activity-log .result').innerText(), '{}');
+  assert.equal(await chat.locator('.activity-log .tool').count(), 2);
+  assert.equal(await chat.locator('.activity-log .step-text').count(), 0);
+  await chat.locator('.activity-log .tool-head').first().click();
+  assert.equal(await chat.locator('.activity-log .result').innerText(), '{}');
   await progress.click();
   await page.evaluate(() => {
     const f = window.compactFixture;
@@ -142,6 +158,27 @@ try {
   await narration
     .getByText('He encontrado la configuración y sigo comprobando los archivos.', { exact: true })
     .waitFor();
+  assert.equal(
+    await progress.locator('.activity-current-text').innerText(),
+    'Redactando respuesta…',
+  );
+  await page.evaluate(() => {
+    const f = window.compactFixture;
+    f.session.subagents = [
+      { id: 'review', description: 'Revisar los componentes', summary: 'Revisar los componentes' },
+    ];
+    f.publish();
+  });
+  const execution = chat.locator('.execution-panel');
+  await execution.waitFor();
+  assert.equal(await execution.getAttribute('open'), null);
+  assert.match(
+    await execution.locator('summary').innerText(),
+    /1 agente.*Revisar los componentes/s,
+  );
+  await execution.locator('summary').click();
+  assert.equal(await execution.locator('li').innerText(), 'Revisar los componentes');
+  await execution.locator('summary').click();
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/chat-compacto-progreso.png' });
   await page.evaluate(() => {
@@ -169,38 +206,50 @@ try {
     };
     f.publish();
   });
-  await page.getByText('El proyecto usa', { exact: false }).waitFor();
-  assert.equal(await page.locator('.task-signature-tokens').innerText(), '↑1,2k ↓340');
+  await chat.getByText('El proyecto usa', { exact: false }).waitFor();
+  assert.equal(await chat.locator('.task-signature-tokens').innerText(), '↑1,2k ↓340');
   assert.match(
-    await page.locator('.task-signature-tokens').getAttribute('title'),
+    await chat.locator('.task-signature-tokens').getAttribute('title'),
     /Entrada: 1234|Entrada: 1.234/,
   );
-  const signature = await page.locator('.task-signature').boundingBox();
-  const finishedComposer = await page.locator('.composer').boundingBox();
+  const signature = await chat.locator('.task-signature').boundingBox();
+  const finishedComposer = await chat.locator('.composer').boundingBox();
   assert.ok(signature.y >= finishedComposer.y + finishedComposer.height);
-  await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Otra tarea');
-  assert.equal(await page.locator('.task-signature-model').innerText(), 'Auto');
-  await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('');
+  await chat.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Otra tarea');
+  assert.equal(await chat.locator('.task-signature-model').innerText(), 'Auto');
+  await chat.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('');
   assert.equal(await progress.count(), 0);
-  assert.equal(await page.locator('.response-work').count(), 1);
-  assert.equal(await page.locator('.response-work').getAttribute('open'), null);
+  assert.equal(await chat.locator('.response-work').count(), 1);
+  assert.equal(await chat.locator('.response-work').getAttribute('open'), null);
+  assert.equal(
+    await chat
+      .getByText('Voy a revisar el proyecto para responderte.', { exact: true })
+      .isVisible(),
+    false,
+  );
+  assert.equal(
+    await chat
+      .getByText('He encontrado la configuración y sigo comprobando los archivos.', { exact: true })
+      .isVisible(),
+    false,
+  );
+  await chat.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
+  assert.equal(await chat.locator('.response-work .tool').count(), 2);
   assert.ok(
-    await page
+    await chat
       .getByText('Voy a revisar el proyecto para responderte.', { exact: true })
       .isVisible(),
   );
   assert.ok(
-    await page
+    await chat
       .getByText('He encontrado la configuración y sigo comprobando los archivos.', { exact: true })
       .isVisible(),
   );
-  await page.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
-  assert.equal(await page.locator('.response-work .tool').count(), 2);
   assert.equal(
-    await page.getByText('Voy a revisar el proyecto para responderte.', { exact: true }).count(),
+    await chat.getByText('Voy a revisar el proyecto para responderte.', { exact: true }).count(),
     1,
   );
-  await page.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
+  await chat.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
   await page.screenshot({ path: 'artifacts/chat-compacto-respuesta.png' });
   // Existing final response must remain visible while the next process starts.
   await page.evaluate(() => {
@@ -208,8 +257,8 @@ try {
     f.session.status = 'starting';
     f.publish();
   });
-  await page.getByText('Abriendo agente…', { exact: true }).waitFor();
-  assert.ok(await page.getByText('El proyecto usa', { exact: false }).isVisible());
+  await chat.getByText('Abriendo agente…', { exact: true }).waitFor();
+  assert.ok(await chat.getByText('El proyecto usa', { exact: false }).isVisible());
   await page.evaluate(() => {
     const f = window.compactFixture;
     f.session.messages.push({ id: 'u2', role: 'user', text: 'Crea un archivo' });
@@ -225,8 +274,8 @@ try {
     ];
     f.publish();
   });
-  await page.getByText('Esperando tu respuesta', { exact: true }).waitFor();
-  assert.ok(await page.locator('.approval').isVisible());
+  await chat.getByText('Esperando tu respuesta', { exact: true }).waitFor();
+  assert.ok(await chat.locator('.approval').isVisible());
   await page.setViewportSize({ width: 900, height: 650 });
   assert.ok((await progress.boundingBox()).height <= 26);
   assert.deepEqual(errors, []);
@@ -235,5 +284,6 @@ try {
   );
 } finally {
   await browser?.close();
-  await new Promise((resolve) => server.httpServer.close(resolve));
+  await server.close();
+  if (testBuild) await fs.rm(testBuild, { recursive: true, force: true });
 }

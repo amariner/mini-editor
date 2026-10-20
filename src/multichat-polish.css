@@ -1,0 +1,374 @@
+/* Grid: quiet surfaces, one title, and secondary controls on demand. */
+.multichat-scroll {
+  padding: 8px 12px 12px;
+  scrollbar-gutter: stable;
+}
+.multichat-grid.auto:has(> .multichat-card:only-child) {
+  width: 100%;
+  max-width: 1100px;
+  margin-inline: auto;
+}
+.multichat-card {
+  container-type: inline-size;
+  border-color: color-mix(in srgb, var(--text) 11%, var(--card));
+  border-radius: 14px;
+  box-shadow: 0 2px 8px #00000005;
+}
+.multichat-card-head {
+  flex-shrink: 0;
+  min-height: 46px;
+  padding: 8px 8px 2px 16px;
+  gap: 4px;
+  background: transparent;
+  border-bottom: 0;
+}
+.multichat-title strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+.multichat-dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+}
+.multichat-card-head button:not(.multichat-title, .team-indicator, .team-member) {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 7px;
+}
+.multichat-card-head .multichat-expand {
+  opacity: 0.45;
+}
+.multichat-card:hover .multichat-expand,
+.multichat-card:focus-within .multichat-expand {
+  opacity: 1;
+}
+.multichat-card-head .multichat-menu-trigger[aria-expanded='true'] {
+  background: var(--tile-hover);
+  color: var(--text);
+}
+.multichat-info-line {
+  flex-shrink: 0;
+  gap: 10px;
+  min-height: 26px;
+  padding: 0 16px 6px;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.multichat-account {
+  flex-shrink: 1;
+  max-width: 34%;
+  font-weight: 500;
+  color: var(--muted);
+}
+.multichat-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 36%;
+  color: var(--muted);
+}
+.multichat-folder svg {
+  flex-shrink: 0;
+}
+.multichat-folder > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.multichat-git {
+  gap: 4px;
+}
+.multichat-file-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.multichat-supervision {
+  margin: 0 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+.multichat-supervision-row {
+  min-height: 26px;
+  gap: 6px;
+}
+.multichat-plan-toggle {
+  min-height: 26px;
+  padding: 2px 4px;
+  gap: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.multichat-plan-toggle:hover,
+.multichat-plan-toggle[aria-expanded='true'] {
+  background: var(--tile);
+  color: var(--text);
+}
+.multichat-plan-toggle > .expanded {
+  transform: rotate(180deg);
+}
+.multichat-plan {
+  gap: 7px;
+}
+.multichat-plan-count {
+  font-weight: 500;
+  color: inherit;
+}
+.multichat-plan-bar {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 2px;
+}
+.multichat-changes {
+  min-height: 26px;
+  margin-left: 0;
+  padding: 2px 5px;
+  gap: 4px;
+  background: transparent;
+  color: var(--muted);
+}
+.multichat-plan-details {
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-block: 2px 6px;
+}
+.multichat-plan-details .todo-panel {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+.multichat-card > .execution-panel {
+  flex-shrink: 0;
+  margin: 0 12px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-size: 10.5px;
+}
+.multichat-card > .execution-panel > summary {
+  min-height: 26px;
+  padding: 4px;
+}
+.multichat-card > .execution-panel[open] {
+  max-height: 150px;
+  overflow: auto;
+}
+.multichat-card .compact-activity {
+  margin: 0 12px;
+}
+.multichat-card .compact-activity .activity-current {
+  min-height: 24px;
+  align-items: center;
+}
+.multichat-card .compact-activity .activity-current-text {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 16px;
+}
+.multichat-history {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.multichat-preview.compact-conversation {
+  padding: 14px 16px;
+  gap: 16px;
+  scrollbar-width: thin;
+}
+.multichat-history-content {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 0;
+  gap: 16px;
+}
+.multichat-history-content > * {
+  flex-shrink: 0;
+}
+.multichat-card .multichat-preview .md,
+.multichat-card .multichat-preview .bubble {
+  font-size: var(--chat-font-size, 13px);
+  line-height: 1.65;
+}
+.multichat-card .multichat-preview .bubble {
+  padding: 8px 11px;
+  border-radius: 11px;
+}
+.multichat-latest {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 2px 8px #00000012;
+  color: var(--text-2);
+  z-index: 1;
+}
+.multichat-latest:active {
+  transform: translateX(-50%);
+}
+.multichat-composer {
+  align-self: center;
+  width: 100%;
+  max-width: 820px;
+  padding: 0 10px 10px;
+  border-top: 0;
+}
+.multichat-compose-row {
+  min-height: 40px;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--text) 5%, var(--card));
+  box-shadow: none;
+}
+.multichat-compose-row:focus-within {
+  border-color: color-mix(in srgb, var(--text) 23%, var(--card));
+  box-shadow: none;
+}
+.multichat-compose-row textarea {
+  padding: 7px 6px;
+  min-height: 30px;
+  font-size: var(--chat-font-size, 13px);
+  line-height: 1.4;
+}
+.multichat-compose-row button {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 8px;
+}
+.multichat-composer .prompt-suggestion {
+  border: 0;
+  padding: 4px 6px;
+  min-height: 26px;
+  color: var(--muted);
+}
+.multichat-toolbar {
+  gap: 8px;
+}
+.multichat-summary {
+  gap: 4px;
+}
+.multichat-summary strong {
+  margin-right: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.multichat-summary > * {
+  gap: 5px;
+}
+.multichat-summary > button {
+  min-height: 28px;
+}
+.multichat-summary .multichat-overflow {
+  color: var(--muted);
+  font-size: 11px;
+}
+.multichat-card-menu {
+  position: fixed;
+  z-index: 120;
+  width: 252px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 8px 32px #00000024;
+  color: var(--text);
+  -webkit-app-region: no-drag;
+}
+.multichat-card-menu button {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  gap: 10px;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+}
+.multichat-card-menu button:hover:enabled,
+.multichat-card-menu button:focus-visible {
+  background: var(--tile-hover);
+}
+.multichat-card-menu button:focus-visible {
+  outline-offset: -2px;
+}
+.multichat-card-menu button > svg {
+  color: var(--muted);
+}
+.multichat-card-menu button > span {
+  flex: 1;
+}
+.multichat-card-menu .multichat-dismiss:hover:enabled,
+.multichat-card-menu .multichat-dismiss:focus-visible {
+  color: var(--danger);
+}
+.multichat-card-menu .multichat-dismiss:hover:enabled > svg,
+.multichat-card-menu .multichat-dismiss:focus-visible > svg {
+  color: inherit;
+}
+.multichat-card-menu kbd {
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+.multichat-menu-divider {
+  height: 1px;
+  margin: 4px 7px;
+  background: var(--line);
+}
+@container (max-width: 330px) {
+  .multichat-card-head {
+    min-height: 40px;
+    padding: 5px 6px 0 12px;
+  }
+  .multichat-info-line {
+    padding-inline: 12px;
+    gap: 7px;
+  }
+  .multichat-git .multichat-branch {
+    max-width: 56px;
+  }
+  .multichat-preview.compact-conversation {
+    padding: 10px 12px;
+    gap: 12px;
+  }
+  .multichat-history-content {
+    gap: 12px;
+  }
+  .multichat-composer {
+    padding: 0 7px 7px;
+  }
+  .multichat-card .compact-activity .activity-time {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .multichat-card,
+  .multichat-card * {
+    scroll-behavior: auto;
+  }
+}

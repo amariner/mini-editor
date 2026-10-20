@@ -12,6 +12,8 @@ export function NetworkSettings({
   run: (action: Action) => Promise<any>;
 }) {
   const [draft, setDraft] = useState({ ...defaultProxy, ...snapshot });
+  const [authOpen, setAuthOpen] = useState(Boolean(snapshot?.username || snapshot?.hasPassword));
+  const [certificateOpen, setCertificateOpen] = useState(Boolean(snapshot?.caFile));
   const [password, setPassword] = useState('');
   const [clearPassword, setClearPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -54,32 +56,30 @@ export function NetworkSettings({
         }
       }}
     >
-      <h3>Proxy corporativo</h3>
-      <p className="muted">
-        Configura la conexión de Claude, ChatGPT y el navegador integrado. El navegador externo de
-        inicio de sesión conserva sus ajustes del sistema.
-      </p>
-      <button
-        type="button"
-        aria-pressed={draft.enabled}
-        disabled={!compatible || busy}
-        onClick={async () => {
-          const enabled = !draft.enabled;
-          const saved = await execute({ type: 'saveProxy', config: { ...config(), enabled } });
-          if (saved?.ok) {
-            setDraft((v) => ({ ...v, enabled }));
-            setPassword('');
-            setClearPassword(false);
-          }
-          if (saved) setResult(saved);
-        }}
-      >
-        {draft.enabled ? 'Desactivar proxy' : 'Activar proxy'}
-      </button>
-      <p className="muted">
+      <div className="proxy-heading">
+        <h3>Proxy corporativo</h3>
+        <button
+          type="button"
+          aria-pressed={draft.enabled}
+          disabled={!compatible || busy}
+          onClick={async () => {
+            const enabled = !draft.enabled;
+            const saved = await execute({ type: 'saveProxy', config: { ...config(), enabled } });
+            if (saved?.ok) {
+              setDraft((v) => ({ ...v, enabled }));
+              setPassword('');
+              setClearPassword(false);
+            }
+            if (saved) setResult(saved);
+          }}
+        >
+          {draft.enabled ? 'Desactivar proxy' : 'Activar proxy'}
+        </button>
+      </div>
+      <p className="muted proxy-connection-state">
         {draft.enabled
-          ? 'Proxy activado. Se utiliza el modo de conexión seleccionado.'
-          : 'Proxy desactivado. Conexión directa, sin proxy del sistema. Puedes configurar y guardar los datos antes de activarlo.'}
+          ? 'Se aplica a los agentes y al navegador integrado.'
+          : 'Conexión directa. Guarda los ajustes antes de activarlos.'}
       </p>
       {snapshot?.error && <p className="error">{snapshot.error}</p>}
       <label>
@@ -101,6 +101,7 @@ export function NetworkSettings({
           const detected = await execute({ type: 'detectProxy' });
           if (detected) {
             edit({ ...detected, mode: 'manual' });
+            if (detected.username) setAuthOpen(true);
             setPassword('');
             setClearPassword(false);
           }
@@ -108,132 +109,155 @@ export function NetworkSettings({
       >
         Detectar proxy del sistema
       </button>
-      <fieldset disabled={!manual || !compatible || busy}>
-        <legend>Servidor</legend>
-        <div className="proxy-endpoint">
-          <label>
-            Protocolo
-            <select
-              aria-label="Protocolo del proxy"
-              value={draft.protocol}
-              onChange={(e) => edit({ protocol: e.target.value as 'http' | 'https' })}
-            >
-              <option value="http">HTTP</option>
-              <option value="https">HTTPS</option>
-            </select>
-          </label>
-          <label>
-            Servidor
-            <input
-              aria-label="Servidor del proxy"
-              placeholder="proxy.empresa.local"
-              value={draft.host}
-              onChange={(e) => edit({ host: e.target.value })}
-              autoComplete="off"
-              spellCheck={false}
-              required={manual && draft.enabled}
-            />
-          </label>
-          <label>
-            Puerto
-            <input
-              aria-label="Puerto del proxy"
-              type="number"
-              min={1}
-              max={65535}
-              value={draft.port || ''}
-              onChange={(e) => edit({ port: Number(e.target.value) })}
-              required={manual && draft.enabled}
-            />
-          </label>
-        </div>
-        <p className="muted">Autenticación básica (opcional)</p>
-        <div className="proxy-auth">
-          <label>
-            Usuario
-            <input
-              aria-label="Usuario del proxy"
-              value={draft.username}
-              onChange={(e) => edit({ username: e.target.value })}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            Contraseña
-            <input
-              aria-label="Contraseña del proxy"
-              type="password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setClearPassword(false);
-                setResult(undefined);
-              }}
-              autoComplete="new-password"
-              placeholder={
-                snapshot?.hasPassword ? 'Guardada · deja vacío para conservarla' : 'Opcional'
-              }
-            />
-          </label>
-        </div>
-        {snapshot?.hasPassword && (
-          <label className="proxy-checkbox">
-            <input
-              type="checkbox"
-              checked={clearPassword}
-              onChange={(e) => {
-                setClearPassword(e.target.checked);
-                setPassword('');
-              }}
-            />
-            Eliminar contraseña guardada
-          </label>
-        )}
-        <p className="muted">
-          La contraseña se guarda cifrada en este equipo. No se reutiliza al cambiar de servidor,
-          puerto o usuario.
-        </p>
-        {snapshot?.secureStorage === false && (
-          <p className="muted">
-            El almacenamiento seguro no está disponible; no se podrá guardar una contraseña.
-          </p>
-        )}
-      </fieldset>
-      <label>
-        Certificado CA corporativo (PEM, opcional)
-        <div className="proxy-certificate">
-          <input
-            aria-label="Certificado CA corporativo"
-            value={draft.caFile}
-            readOnly
-            placeholder="Certificados de confianza predeterminados"
-          />
-          <button
-            type="button"
-            disabled={!compatible || busy}
-            onClick={async () => {
-              const file = await execute({ type: 'chooseProxyCertificate' });
-              if (file) edit({ caFile: file });
-            }}
+      {manual && (
+        <fieldset disabled={!compatible || busy}>
+          <legend>Servidor</legend>
+          <div className="proxy-endpoint">
+            <label>
+              Protocolo
+              <select
+                aria-label="Protocolo del proxy"
+                value={draft.protocol}
+                onChange={(e) => edit({ protocol: e.target.value as 'http' | 'https' })}
+              >
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+              </select>
+            </label>
+            <label>
+              Servidor
+              <input
+                aria-label="Servidor del proxy"
+                placeholder="proxy.empresa.local"
+                value={draft.host}
+                onChange={(e) => edit({ host: e.target.value })}
+                autoComplete="off"
+                spellCheck={false}
+                required={manual && draft.enabled}
+              />
+            </label>
+            <label>
+              Puerto
+              <input
+                aria-label="Puerto del proxy"
+                type="number"
+                min={1}
+                max={65535}
+                value={draft.port || ''}
+                onChange={(e) => edit({ port: Number(e.target.value) })}
+                required={manual && draft.enabled}
+              />
+            </label>
+          </div>
+          <details
+            className="settings-disclosure proxy-credentials"
+            open={authOpen}
+            onToggle={(event) => setAuthOpen(event.currentTarget.open)}
           >
-            Elegir…
-          </button>
-          {draft.caFile && (
+            <summary>Autenticación (opcional)</summary>
+            <div className="proxy-auth">
+              <label>
+                Usuario
+                <input
+                  aria-label="Usuario del proxy"
+                  value={draft.username}
+                  onChange={(e) => edit({ username: e.target.value })}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                Contraseña
+                <input
+                  aria-label="Contraseña del proxy"
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setClearPassword(false);
+                    setResult(undefined);
+                  }}
+                  autoComplete="new-password"
+                  placeholder={
+                    snapshot?.hasPassword ? 'Guardada · deja vacío para conservarla' : 'Opcional'
+                  }
+                />
+              </label>
+            </div>
+            {snapshot?.hasPassword && (
+              <label className="proxy-checkbox">
+                <input
+                  type="checkbox"
+                  checked={clearPassword}
+                  onChange={(e) => {
+                    setClearPassword(e.target.checked);
+                    setPassword('');
+                  }}
+                />
+                Eliminar contraseña guardada
+              </label>
+            )}
+            <p className="muted">
+              La contraseña se guarda cifrada en este equipo. No se reutiliza al cambiar de
+              servidor, puerto o usuario.
+            </p>
+            {snapshot?.secureStorage === false && (
+              <p className="muted">
+                El almacenamiento seguro no está disponible; no se podrá guardar una contraseña.
+              </p>
+            )}
+          </details>
+        </fieldset>
+      )}
+      <details
+        className="settings-disclosure proxy-certificate-settings"
+        open={certificateOpen}
+        onToggle={(event) => setCertificateOpen(event.currentTarget.open)}
+      >
+        <summary>Certificado corporativo</summary>
+        <label>
+          Certificado CA (PEM, opcional)
+          <div className="proxy-certificate">
+            <input
+              aria-label="Certificado CA corporativo"
+              value={draft.caFile}
+              readOnly
+              placeholder="Certificados de confianza predeterminados"
+            />
             <button
               type="button"
               disabled={!compatible || busy}
-              onClick={() => edit({ caFile: '' })}
+              onClick={async () => {
+                const file = await execute({ type: 'chooseProxyCertificate' });
+                if (file) edit({ caFile: file });
+              }}
             >
-              Quitar
+              Elegir…
             </button>
-          )}
-        </div>
-      </label>
-      <p className="muted">
-        El PEM se aplica a Claude y Codex. El navegador integrado utiliza los certificados de
-        confianza del sistema. Las conexiones locales se mantienen fuera del proxy.
-      </p>
+            {draft.caFile && (
+              <button
+                type="button"
+                disabled={!compatible || busy}
+                onClick={() => edit({ caFile: '' })}
+              >
+                Quitar
+              </button>
+            )}
+          </div>
+        </label>
+        <p className="muted">
+          El PEM se aplica a Claude y Codex. El navegador integrado utiliza los certificados de
+          confianza del sistema. Las conexiones locales se mantienen fuera del proxy.
+        </p>
+      </details>
+      <details className="settings-disclosure proxy-help">
+        <summary>Detalles de conexión</summary>
+        <p className="muted">
+          El navegador externo de inicio de sesión conserva los ajustes del sistema. Con el proxy
+          desactivado se usa una conexión directa, sin proxy del sistema. Las conexiones locales se
+          mantienen fuera del proxy.
+        </p>
+      </details>
       <div className="proxy-actions">
         <button type="submit" disabled={!compatible || busy}>
           {busy ? 'Procesando…' : 'Guardar configuración'}

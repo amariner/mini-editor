@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, Copy, RotateCcw, Save, Trash2 } from 'lucide-react';
 /**
  * User CSS lives in an adopted stylesheet, which always cascades after the editor's own
@@ -78,6 +78,159 @@ function ruleCount(css: string) {
   probe.replaceSync(css);
   return probe.cssRules.length;
 }
+type CssEdit = { value: string; start: number; end: number; scrollTop: number };
+const cssEdit = (input: HTMLTextAreaElement): CssEdit => ({
+  value: input.value,
+  start: input.selectionStart,
+  end: input.selectionEnd,
+  scrollTop: input.scrollTop,
+});
+function useCssInput(
+  value: string,
+  change: (value: string) => void,
+  source: string,
+  version: number,
+) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const changeRef = useRef(change);
+  changeRef.current = change;
+  const history = useRef({
+    current: { value, start: 0, end: 0, scrollTop: 0 } as CssEdit,
+    past: [] as CssEdit[],
+    future: [] as CssEdit[],
+    before: undefined as CssEdit | undefined,
+    restore: undefined as CssEdit | undefined,
+    group: '',
+    time: 0,
+  });
+  const documentRef = useRef({ source, version });
+  useLayoutEffect(() => {
+    const state = history.current;
+    const replaced =
+      documentRef.current.source !== source || documentRef.current.version !== version;
+    documentRef.current = { source, version };
+    // Reset only for an external document change. Rapid menu actions may reach the
+    // next history entry before React commits the preceding draft.
+    if (replaced && state.current.value !== value) {
+      state.current = ref.current
+        ? cssEdit(ref.current)
+        : { value, start: 0, end: 0, scrollTop: 0 };
+      state.past = [];
+      state.future = [];
+      state.before = undefined;
+      state.restore = undefined;
+      state.group = '';
+    } else if (ref.current && state.restore?.value === value) {
+      ref.current.setSelectionRange(state.restore.start, state.restore.end);
+      ref.current.scrollTop = state.restore.scrollTop;
+      state.restore = undefined;
+    }
+  }, [value, source, version]);
+  useEffect(() => {
+    const input = ref.current;
+    if (!input) return;
+    const state = history.current;
+    const apply = (edit: CssEdit) => {
+      input.value = edit.value;
+      input.setSelectionRange(edit.start, edit.end);
+      input.scrollTop = edit.scrollTop;
+      state.current = edit;
+      state.before = undefined;
+      state.restore = edit;
+      state.group = '';
+      changeRef.current(edit.value);
+    };
+    const undo = (redo: boolean) => {
+      const from = redo ? state.future : state.past;
+      const edit = from.pop();
+      if (!edit) return;
+      (redo ? state.past : state.future).push(cssEdit(input));
+      apply(edit);
+    };
+    const record = (before: CssEdit, next: CssEdit, group = '') => {
+      if (before.value === next.value) return;
+      const time = Date.now();
+      const continuous =
+        group &&
+        group === state.group &&
+        time - state.time < 1000 &&
+        before.start === state.current.start &&
+        before.end === state.current.end;
+      if (!continuous) {
+        state.past.push(before);
+        if (state.past.length > 60) state.past.shift();
+      }
+      state.future = [];
+      state.current = next;
+      state.before = undefined;
+      state.restore = undefined;
+      state.group = group;
+      state.time = time;
+      changeRef.current(next.value);
+    };
+    const insert = (event: Event, text: string | null) => {
+      if (!text || text.length < 4096 || !/[\r\n]/.test(text)) return false;
+      event.preventDefault();
+      const before = cssEdit(input);
+      // Blink's native insertion becomes quadratic for thousands of lines. Assigning
+      // the completed value avoids that work; local history also covers this paste.
+      const normalized = text.replace(/\r\n?/g, '\n');
+      input.value =
+        before.value.slice(0, before.start) + normalized + before.value.slice(before.end);
+      input.setSelectionRange(before.start + normalized.length, before.start + normalized.length);
+      record(before, cssEdit(input));
+      return true;
+    };
+    const beforeInput = (event: Event) => {
+      const edit = event as InputEvent;
+      if (edit.inputType === 'historyUndo' || edit.inputType === 'historyRedo') {
+        event.preventDefault();
+        undo(edit.inputType === 'historyRedo');
+        return;
+      }
+      if (
+        !edit.isComposing &&
+        insert(event, edit.data ?? edit.dataTransfer?.getData('text/plain') ?? null)
+      )
+        return;
+      state.before = cssEdit(input);
+    };
+    const onInput = (event: Event) => {
+      const edit = event as InputEvent;
+      const before = state.before ?? state.current;
+      const group =
+        !edit.isComposing && before.start === before.end
+          ? edit.inputType === 'insertText' && edit.data?.length === 1
+            ? 'typing'
+            : /^deleteContent(Backward|Forward)$/.test(edit.inputType)
+              ? edit.inputType
+              : ''
+          : '';
+      record(before, cssEdit(input), group);
+    };
+    const paste = (event: ClipboardEvent) => {
+      insert(event, event.clipboardData?.getData('text/plain') ?? null);
+    };
+    const keyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.isComposing) return;
+      const key = event.key.toLowerCase();
+      if (key !== 'z' && !(key === 'y' && event.ctrlKey)) return;
+      event.preventDefault();
+      undo(key === 'y' || event.shiftKey);
+    };
+    input.addEventListener('beforeinput', beforeInput);
+    input.addEventListener('input', onInput);
+    input.addEventListener('paste', paste);
+    input.addEventListener('keydown', keyDown);
+    return () => {
+      input.removeEventListener('beforeinput', beforeInput);
+      input.removeEventListener('input', onInput);
+      input.removeEventListener('paste', paste);
+      input.removeEventListener('keydown', keyDown);
+    };
+  }, []);
+  return ref;
+}
 export function StyleEditor() {
   const [base, setBase] = useState<string>();
   const [saved, setSaved] = useState(savedStyles);
@@ -86,11 +239,19 @@ export function StyleEditor() {
   const [draft, setDraft] = useState<string>();
   const [naming, setNaming] = useState<string>();
   const [notice, setNotice] = useState<{ ok: boolean; text: string }>();
+  const documentVersion = useRef(0);
   useEffect(() => {
     let alive = true;
     // Loaded on demand: the editor's source CSS is only needed while this panel is open.
-    void import('./style.css?raw').then((m) => alive && setBase(m.default));
+    void Promise.all([
+      import('./style.css?raw'),
+      import('./shell-polish.css?raw'),
+      import('./settings-polish.css?raw'),
+      import('./chat-polish.css?raw'),
+      import('./multichat-polish.css?raw'),
+    ]).then((styles) => alive && setBase(styles.map((style) => style.default).join('\n\n')));
     const sync = () => {
+      documentVersion.current++;
       setSaved(savedStyles());
       setActive(activeTheme());
       setThemes(savedThemes());
@@ -104,6 +265,7 @@ export function StyleEditor() {
   }, []);
   const current = saved || base || '';
   const value = draft ?? current;
+  const inputRef = useCssInput(value, setDraft, current, documentVersion.current);
   const dirty = draft !== undefined && draft !== current;
   const own = themes.find((t) => t.id === active);
   const activeName = own?.name ?? builtinThemes.find((t) => t.id === active)?.name;
@@ -248,6 +410,7 @@ export function StyleEditor() {
         Restablecer estilos de la interfaz.
       </p>
       <textarea
+        ref={inputRef}
         aria-label="CSS del editor"
         spellCheck={false}
         wrap="off"

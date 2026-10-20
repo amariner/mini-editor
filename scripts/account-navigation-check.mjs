@@ -139,6 +139,7 @@ try {
   assert.equal(await page.locator('.topbar .usage-switcher').count(), 0);
   assert.equal(await page.locator('.composer-footer .usage-switcher').count(), 1);
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
+  await page.getByRole('button', { name: 'Opciones de ChatGPT', exact: true }).click();
   await page.getByRole('radio', { name: 'Usar ChatGPT como cuenta predeterminada' }).click();
   await poll((s) => s.defaultProfile === 'codex');
   await page.getByRole('button', { name: 'Cerrar ajustes', exact: true }).click();

@@ -214,12 +214,14 @@ try {
     .locator('[data-session-id="s0"] .multichat-worktree')
     .getByText('agent-desk/arreglar-login-s0')
     .waitFor();
+  await page
+    .locator('[data-session-id="s0"]')
+    .getByRole('button', { name: 'Opciones de Arreglar login', exact: true })
+    .click();
   assert.ok(
-    await page
-      .locator('[data-session-id="s0"]')
-      .getByRole('button', { name: 'Duplicar Arreglar login' })
-      .count(),
+    await page.getByRole('menuitem', { name: 'Duplicar Arreglar login', exact: true }).isVisible(),
   );
+  await page.keyboard.press('Escape');
   await page.screenshot({ path: 'artifacts/worktree-multichat.png' });
   assert.deepEqual(errors, []);
   console.log(

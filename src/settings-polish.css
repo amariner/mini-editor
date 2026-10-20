@@ -1,0 +1,505 @@
+/* Quiet settings: account identity first, infrequent controls one click away. */
+.modal.account-settings {
+  width: min(720px, calc(100vw - 40px));
+  max-height: min(84vh, 880px);
+  padding: 24px;
+  border-radius: 18px;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 136px 24px;
+}
+.account-settings .modal-title {
+  margin-bottom: 16px;
+}
+.account-settings .modal-title h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.account-settings .modal-title button {
+  width: 32px;
+  height: 32px;
+}
+.account-settings .settings-tabs {
+  gap: 6px;
+  margin: 0 0 22px;
+  padding-bottom: 12px;
+}
+.account-settings .settings-tabs button {
+  border-radius: 7px;
+  padding: 7px 12px;
+  gap: 7px;
+  font-size: 12px;
+}
+.account-settings .settings-tabs button[aria-selected='true'] {
+  box-shadow: none;
+  background: var(--tile);
+}
+.account-settings .accounts-section-heading {
+  margin: 0;
+}
+.account-settings .accounts-section-heading h3 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.account-settings .accounts-section-heading button {
+  background: transparent;
+  font-size: 12px;
+}
+.account-settings .account-list {
+  margin: 12px 0 20px;
+  gap: 8px;
+}
+.account-settings .account-card {
+  padding: 16px;
+  border-radius: 12px;
+  background: transparent;
+}
+.account-settings .account-heading {
+  gap: 16px;
+  align-items: center;
+}
+.account-settings .account-heading > div:first-child {
+  min-width: 0;
+}
+.account-settings .account-heading strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.account-settings .account-heading small {
+  font-size: 11px;
+  margin-top: 3px;
+}
+.account-settings .account-default-mark {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.account-settings .account-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.account-settings .account-heading-actions button {
+  height: 30px;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--text-2);
+}
+.account-settings .account-heading-actions button:hover,
+.account-settings .account-options-trigger[aria-expanded='true'] {
+  background: var(--tile);
+  color: var(--text);
+}
+.account-settings .account-heading-actions .account-login:not(.is-connected) {
+  background: var(--tile);
+  font-size: 11px;
+  padding-inline: 9px;
+}
+.account-settings .account-login.is-connected .action-label {
+  display: none;
+}
+.account-settings .account-status {
+  max-width: 132px;
+  font-size: 10px;
+  line-height: 1.4;
+  padding-right: 7px;
+}
+.account-settings .account-status.signedIn {
+  font-size: 0;
+  padding-right: 6px;
+}
+.account-settings .account-status.signedIn::before {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.account-settings .account-identity {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.account-settings .account-card > .muted {
+  font-size: 11px;
+  margin: 10px 0 0;
+}
+.account-settings .account-error {
+  font-size: 12px;
+  margin: 12px 0 0;
+}
+.account-settings .account-options:not([hidden]) {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.account-settings .account-options[hidden] {
+  display: none;
+}
+.account-settings .account-color-setting {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.account-settings .account-color-setting label {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.account-settings .account-color-setting input[type='color'] {
+  width: 30px;
+  height: 28px;
+  padding: 3px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.account-settings .account-color-setting button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 5px;
+  background: transparent;
+}
+.account-settings .default-account-option {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.account-settings .token-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.account-settings .token-settings label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  grid-template-columns: none;
+  width: auto;
+  gap: 8px;
+  font-size: 12px;
+  height: 32px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.account-settings .token-settings .token-saving select {
+  width: 120px;
+}
+.account-settings .account-secondary-actions {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  gap: 8px;
+  justify-content: space-between;
+}
+.account-settings .account-secondary-actions button {
+  background: transparent;
+  border: 0;
+  font-size: 11px;
+  padding-inline: 0;
+}
+.account-settings .account-secondary-actions button:hover {
+  color: var(--text);
+}
+.account-settings .account-secondary-actions .danger-ghost {
+  color: var(--muted);
+}
+.account-settings .account-secondary-actions .danger-ghost:hover {
+  color: var(--danger);
+}
+.account-settings .account-tools {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 24px;
+}
+.account-settings .account-tools > summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.account-settings .account-tools > summary::-webkit-details-marker {
+  display: none;
+}
+.account-settings .account-tools > summary svg {
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.account-settings .account-tools[open] > summary svg {
+  transform: none;
+}
+.account-settings .account-tools[open] > summary {
+  margin-bottom: 16px;
+}
+.account-settings .tool-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 4px 12px;
+  padding-block: 10px;
+}
+.account-settings .tool-setting strong {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 12px;
+  font-weight: 500;
+}
+.account-settings .tool-setting code {
+  grid-column: 1;
+  grid-row: 2;
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.account-settings .tool-setting button {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  padding: 7px;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+.account-settings .account-tools > code {
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.account-settings .account-tools h3 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 16px 0 6px;
+}
+.account-settings .settings-disclosure > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-2);
+  padding-block: 6px;
+}
+.account-settings .settings-disclosure-content {
+  display: grid;
+  gap: 18px;
+  padding-block: 16px 6px;
+}
+.account-settings .interface-settings {
+  gap: 20px;
+}
+.account-settings .interface-setting {
+  font-size: 12px;
+}
+.account-settings .interface-setting > span small {
+  max-width: 280px;
+  line-height: 1.45;
+  font-size: 11px;
+  margin-top: 3px;
+}
+.account-settings .interface-setting .theme-switch {
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--tile);
+}
+.account-settings .theme-switch button {
+  min-height: 29px;
+  background: transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.account-settings .theme-switch button.on {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 3px #00000012;
+}
+.account-settings .interface-preview {
+  padding: 18px;
+  gap: 14px;
+}
+.account-settings .interface-reset {
+  background: transparent;
+  color: var(--muted);
+  padding: 3px 0;
+  min-height: 24px;
+}
+.account-settings .interface-advanced {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.account-settings .provider-settings {
+  margin: 0;
+}
+.account-settings .provider-settings p {
+  font-size: 11px;
+  line-height: 1.65;
+}
+.account-settings .provider-settings > details > summary {
+  font-size: 12px;
+  font-weight: 500;
+  padding-block: 6px;
+}
+.account-settings .provider-settings form {
+  gap: 8px;
+}
+.account-settings .provider-settings form small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.account-settings .provider-model-list {
+  border-radius: 8px;
+}
+.account-settings .provider-model-row {
+  padding: 12px;
+}
+.account-settings .provider-model-description {
+  font-size: 11px;
+}
+.account-settings .network-settings {
+  gap: 16px;
+  padding-top: 0;
+}
+.account-settings .network-settings h3 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.account-settings .network-settings .muted {
+  font-size: 11px;
+}
+.account-settings .network-settings fieldset {
+  border-radius: 10px;
+  padding: 16px;
+}
+.account-settings .proxy-actions {
+  padding-top: 4px;
+  gap: 6px;
+}
+.account-settings .proxy-actions button {
+  font-size: 11px;
+}
+.account-settings .proxy-actions button[type='submit'] {
+  background: var(--sel);
+  color: var(--sel-text);
+}
+.account-settings summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+@media (max-width: 680px) {
+  .modal.account-settings {
+    width: calc(100vw - 24px);
+    padding: 20px;
+    max-height: 90vh;
+  }
+  .account-settings .account-heading {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .account-settings .account-heading > div:first-child {
+    flex: 1;
+  }
+  .account-settings .account-heading-actions {
+    flex-wrap: wrap;
+  }
+  .account-settings .account-status {
+    max-width: 100px;
+  }
+  .account-settings .account-login:not(.is-connected) .action-label {
+    display: none;
+  }
+  .account-settings .account-heading-actions .account-login:not(.is-connected) {
+    padding-inline: 7px;
+  }
+  .account-settings .interface-setting {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .account-settings .proxy-endpoint {
+    grid-template-columns: 85px minmax(0, 1fr);
+  }
+  .account-settings .proxy-endpoint label:last-child {
+    grid-column: 2;
+  }
+  .account-settings .proxy-auth {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .account-settings .account-card {
+    padding: 13px;
+  }
+}
+.account-settings .account-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: #0005;
+}
+.account-settings .account-confirm {
+  box-shadow: var(--shadow);
+}
+.account-settings .proxy-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.account-settings .proxy-heading button {
+  font-size: 11px;
+}
+.account-settings .proxy-credentials[open] {
+  display: grid;
+  gap: 12px;
+}
+.account-settings .proxy-certificate-settings[open] {
+  display: grid;
+  gap: 12px;
+}
+.account-settings .proxy-help[open] > p {
+  padding-top: 8px;
+}
+.account-settings .settings-header {
+  position: sticky;
+  top: -24px;
+  z-index: 2;
+  flex-shrink: 0;
+  padding-top: 20px;
+  margin-top: -20px;
+  margin-bottom: 10px;
+  background: var(--card);
+}
+.account-settings .settings-header .settings-tabs {
+  margin-bottom: 0;
+}
+@media (max-width: 680px) {
+  .account-settings .settings-header {
+    top: -20px;
+  }
+}

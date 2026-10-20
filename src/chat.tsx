@@ -15,7 +15,7 @@ import { readDroppedFiles } from './image-drop';
 import { conversationEntries, currentActivity, working } from './conversation';
 import { CodexCatalogStatus } from './codex-catalog';
 import { signatureModel, reportedTokens, compactTokens } from './task-signature';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Paperclip,
   X,
@@ -679,6 +679,8 @@ export function MessageView({
 }
 function TurnChanges({ messages }: { messages: Message[] }) {
   const { root, openPath, showChanges } = useChatActions();
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
   const files = fileChanges(messages);
   if (!files.length) return null;
   const added = files.reduce((n, f) => n + f.added, 0);
@@ -686,43 +688,58 @@ function TurnChanges({ messages }: { messages: Message[] }) {
   return (
     <section className="turn-changes" aria-label="Archivos cambiados en esta respuesta">
       <header>
-        <FileDiff size={13} aria-hidden="true" />
-        <strong>
-          {files.length} {files.length === 1 ? 'archivo cambiado' : 'archivos cambiados'}
-        </strong>
+        <button
+          className="turn-changes-toggle"
+          aria-expanded={expanded}
+          aria-controls={expanded ? id : undefined}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <FileDiff size={13} aria-hidden="true" />
+          <strong>
+            {files.length} {files.length === 1 ? 'archivo cambiado' : 'archivos cambiados'}
+          </strong>
+          <ChevronRight size={12} aria-hidden="true" />
+        </button>
         <span className="step-lines">
           <span className="git-added">+{added}</span>
           <span className="git-removed">−{removed}</span>
         </span>
         {showChanges && (
-          <button className="turn-changes-open" onClick={showChanges}>
-            Ver cambios
+          <button
+            className="turn-changes-open"
+            aria-label="Ver cambios de esta respuesta"
+            title="Ver cambios"
+            onClick={showChanges}
+          >
+            <FileDiff size={14} aria-hidden="true" />
           </button>
         )}
       </header>
-      <ul>
-        {files.slice(0, 8).map((f) => (
-          <li key={f.path}>
-            {openPath ? (
-              <button
-                className="turn-file"
-                title={`${f.path} · Abrir`}
-                onClick={() => openPath(f.path)}
-              >
-                {shortPath(f.path, root)}
-              </button>
-            ) : (
-              <span className="turn-file">{shortPath(f.path, root)}</span>
-            )}
-            {f.created && <span className="turn-tag">nuevo</span>}
-            <span className="step-lines">
-              {f.added ? <span className="git-added">+{f.added}</span> : null}
-              {f.removed ? <span className="git-removed">−{f.removed}</span> : null}
-            </span>
-          </li>
-        ))}
-        {files.length > 8 && <li className="turn-more">y {files.length - 8} más</li>}
-      </ul>
+      {expanded && (
+        <ul id={id}>
+          {files.slice(0, 8).map((f) => (
+            <li key={f.path}>
+              {openPath ? (
+                <button
+                  className="turn-file"
+                  title={`${f.path} · Abrir`}
+                  onClick={() => openPath(f.path)}
+                >
+                  {shortPath(f.path, root)}
+                </button>
+              ) : (
+                <span className="turn-file">{shortPath(f.path, root)}</span>
+              )}
+              {f.created && <span className="turn-tag">nuevo</span>}
+              <span className="step-lines">
+                {f.added ? <span className="git-added">+{f.added}</span> : null}
+                {f.removed ? <span className="git-removed">−{f.removed}</span> : null}
+              </span>
+            </li>
+          ))}
+          {files.length > 8 && <li className="turn-more">y {files.length - 8} más</li>}
+        </ul>
+      )}
     </section>
   );
 }
@@ -736,7 +753,9 @@ function ResponseGroup({
   const { root } = useChatActions();
   const items = workItems(entry.work, root);
   const progress = items.filter((w) => w.type === 'text');
-  const details = items.filter((w) => w.type !== 'text');
+  // An interrupted turn may have no final answer; keep its last narration in sight.
+  const showProgress = entry.pending || !entry.answer;
+  const details = showProgress ? items.filter((w) => w.type !== 'text') : items;
   const steps = items.flatMap((w) => (w.type === 'step' ? [w.step] : []));
   const blocked = steps.filter((step) => antigravityDenied(step.message)).length;
   const errors = Math.max(0, entry.errors - blocked);
@@ -757,15 +776,18 @@ function ResponseGroup({
     : '';
   return (
     <div className="response-group">
-      {progress.map((w) => (
-        <div className="row assistant progress-message" key={w.id}>
-          <Markdown text={w.text} />
-        </div>
-      ))}
+      {showProgress &&
+        progress.map((w) => (
+          <div className="row assistant progress-message" key={w.id}>
+            <Markdown text={w.text} />
+          </div>
+        ))}
       {!entry.pending && details.length > 0 && (
         <details className={`response-work ${errors ? 'has-errors' : ''}`}>
           <summary>
-            <span>{summary}</span>
+            <span className="work-summary" title={summary}>
+              {summary}
+            </span>
             {time && <span className="work-time">{time}</span>}
             {blocked > 0 && <span className="work-permissions">Requiere permiso</span>}
             {errors ? (
@@ -880,7 +902,7 @@ export function ActivityDock({
         : `${VERBS[s.kind][1]} ${s.label}`.trim()
       : idle;
   } else if (last?.type === 'thinking') label = last.streaming ? 'Razonando…' : idle;
-  else if (last?.type === 'text') label = last.text;
+  else if (last?.type === 'text') label = 'Redactando respuesta…';
   if (session.activity && session.activity !== 'Pensando…') label = session.activity;
   if (compact) {
     const steps = items.flatMap((item) => (item.type === 'step' ? [item.step] : []));
@@ -1520,7 +1542,38 @@ function Popover({
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const id = useId();
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  useLayoutEffect(() => {
+    if (!open || !ref.current || !panel.current) return;
+    const boundary = ref.current.closest('.conversation') ?? document.documentElement;
+    const place = () => {
+      const anchor = ref.current?.getBoundingClientRect();
+      const popup = panel.current;
+      if (!anchor || !popup) return;
+      const bounds = boundary.getBoundingClientRect();
+      const left = Math.max(8, bounds.left + 8);
+      const right = Math.min(window.innerWidth - 8, bounds.right - 8);
+      popup.style.maxWidth = `${Math.max(120, right - left)}px`;
+      const width = popup.getBoundingClientRect().width;
+      popup.style.left = `${Math.max(left - anchor.left, Math.min(0, right - anchor.left - width))}px`;
+      popup.style.maxHeight = `${Math.max(48, Math.min(360, anchor.top - Math.max(8, bounds.top) - 12))}px`;
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(boundary);
+    window.addEventListener('resize', place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => {
@@ -1528,8 +1581,10 @@ function Popover({
     };
     const k = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         e.stopPropagation();
         setOpen(false);
+        trigger.current?.focus();
       }
     };
     window.addEventListener('mousedown', h);
@@ -1542,16 +1597,63 @@ function Popover({
   return (
     <div className="popover-host" ref={ref}>
       <button
+        ref={trigger}
         className={`chip-btn ${open || active ? 'on' : ''} ${text ? 'labeled' : ''}`}
         title={`${title ?? label} · ${label}`}
         aria-label={title ?? label}
         aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+          e.preventDefault();
+          setOpen(true);
+          requestAnimationFrame(() => {
+            const buttons =
+              panel.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+            if (buttons?.length) buttons[e.key === 'ArrowUp' ? buttons.length - 1 : 0].focus();
+          });
+        }}
       >
         <Icon size={13} />
         {text && <span className="chip-text">{text}</span>}
       </button>
-      {open && <div className="popover">{children(() => setOpen(false))}</div>}
+      {open && (
+        <div
+          className="popover"
+          id={id}
+          ref={panel}
+          role="dialog"
+          aria-label={title ?? label}
+          onKeyDown={(e) => {
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+            if ((e.target as HTMLElement).matches('input, textarea, select')) return;
+            const buttons = Array.from(
+              panel.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [],
+            );
+            if (!buttons.length) return;
+            e.preventDefault();
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            const next =
+              e.key === 'Home'
+                ? 0
+                : e.key === 'End'
+                  ? buttons.length - 1
+                  : (index + (e.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length;
+            buttons[next].focus();
+          }}
+          onBlur={(e) => {
+            if (e.relatedTarget && !ref.current?.contains(e.relatedTarget as Node)) setOpen(false);
+          }}
+        >
+          <div className="popover-heading">
+            {title ?? label}
+            <span>{label !== title ? label : ''}</span>
+          </div>
+          {children(close)}
+        </div>
+      )}
     </div>
   );
 }
@@ -2503,13 +2605,24 @@ function TodoList({
     </ul>
   );
 }
-export function TodoPanel({ todos }: { todos: NonNullable<Session['todos']> }) {
-  const [open, setOpen] = useState(true);
+export function TodoPanel({
+  todos,
+  defaultOpen = false,
+}: {
+  todos: NonNullable<Session['todos']>;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const id = useId();
   const done = todos.filter((t) => t.status === 'completed').length;
   const current = todos.find((t) => t.status === 'in_progress');
   return (
     <div className="todo-panel">
-      <button aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen((v) => !v)}
+      >
         <ListTodo size={13} />
         <span className="todo-title">
           Tareas · {done}/{todos.length}
@@ -2518,11 +2631,17 @@ export function TodoPanel({ todos }: { todos: NonNullable<Session['todos']> }) {
           <i style={{ width: `${todos.length ? (done / todos.length) * 100 : 0}%` }} />
         </span>
         {!open && current && (
-          <span className="todo-current">{current.activeForm || current.content}</span>
+          <span className="todo-current" title={current.activeForm || current.content}>
+            {current.activeForm || current.content}
+          </span>
         )}
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
       </button>
-      {open && <TodoList todos={todos} />}
+      {open && (
+        <div id={id}>
+          <TodoList todos={todos} />
+        </div>
+      )}
     </div>
   );
 }
@@ -2570,16 +2689,24 @@ export function ExecutionPanel({ session }: { session: Session }) {
   const agents = session.subagents ?? [];
   if (!agents.length) return null;
   return (
-    <details className="execution-panel" open>
+    <details className="execution-panel">
       <summary>
-        <Bot size={13} /> {agents.length}{' '}
-        {agents.length === 1 ? 'agente trabajando' : 'agentes trabajando'}
+        <Bot size={13} aria-hidden="true" />
+        <span className="execution-count">
+          {agents.length} {agents.length === 1 ? 'agente' : 'agentes'}
+        </span>
+        <span className="execution-current" title={agents[0].description || 'Trabajando'}>
+          {agents[0].description || 'Trabajando'}
+        </span>
+        <ChevronRight size={12} className="execution-chevron" aria-hidden="true" />
       </summary>
       <ul>
         {agents.map((agent) => (
           <li key={agent.id}>
             <strong>{agent.description || 'Agente'}</strong>
-            {agent.summary && <span>{agent.summary}</span>}
+            {agent.summary && agent.summary.trim() !== agent.description?.trim() && (
+              <span>{agent.summary}</span>
+            )}
           </li>
         ))}
       </ul>

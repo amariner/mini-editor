@@ -63,7 +63,7 @@ try {
   await call({ type: 'addProject' });
   assert.equal((await snap()).selectedSession, undefined);
   assert.deepEqual((await snap()).sessions, []);
-  await page.getByRole('heading', { name: 'Sin cuentas' }).waitFor();
+  await page.getByRole('heading', { name: 'Conecta tu cuenta' }).waitFor();
   assert.equal(
     await page.getByRole('button', { name: 'Nueva conversación', exact: true }).isDisabled(),
     true,

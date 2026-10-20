@@ -191,5 +191,5 @@ try {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
-  await fs.rm(root, { recursive: true, force: true });
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

@@ -5,6 +5,8 @@ import { IsolationBar } from './isolation-bar';
 import type { GitSnapshot } from './git-types';
 import { providerKind, providerNames, isCodex } from './shared';
 import { useInterfacePreferences } from './interface-settings';
+import { useModalFocus } from './modal-focus';
+import { navigateTabs } from './tab-keyboard';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -29,6 +31,8 @@ import {
   PanelRightOpen,
   PanelBottomOpen,
   ArrowDown,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import type { Action, Session, Snapshot, Attachment, RewindResult } from './shared';
 import { permissionModes } from './shared';
@@ -57,6 +61,10 @@ import { ChatActionsContext, type ChatActions } from './markdown';
 import { applyStyles, resetStyles, savedStyles } from './custom-styles';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
+import './shell-polish.css';
+import './settings-polish.css';
+import './chat-polish.css';
+import './multichat-polish.css';
 const statusLabels: Record<string, string> = {
   stopped: 'En espera',
   starting: 'Abriendo…',
@@ -94,13 +102,19 @@ function App() {
     [query, setQuery] = useState(''),
     [searchIndex, setSearchIndex] = useState(0),
     [settings, setSettings] = useState(false),
-    [sidebarCollapsed, setSidebarCollapsed] = useState(false),
+    [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+      try {
+        return localStorage.getItem('agent-desk.sidebar-collapsed') === 'true';
+      } catch {
+        return false;
+      }
+    }),
     [draggedProject, setDraggedProject] = useState<string>(),
     [projectDrop, setProjectDrop] = useState<string>(),
     [navigating, setNavigating] = useState(false),
     [tabs, setTabs] = useState<Record<string, string[]>>({}),
     [closedSelection, setClosedSelection] = useState<string>(),
-    [confirmClose, setConfirmClose] = useState<Session>(),
+    [confirmClose, setConfirmClose] = useState<{ session: Session; remove: boolean }>(),
     [showDiff, setShowDiff] = useState(false),
     [showBrowser, setShowBrowser] = useState(false),
     [browserTab, setBrowserTab] = useState<string>(),
@@ -126,6 +140,12 @@ function App() {
     [stick, setStick] = useState(true),
     [seen, setSeen] = useState<Record<string, number>>({});
   const appearance = useInterfacePreferences(setError);
+  useModalFocus(search || settings || !!confirmClose || !!removeId);
+  useEffect(() => {
+    try {
+      localStorage.setItem('agent-desk.sidebar-collapsed', String(sidebarCollapsed));
+    } catch {}
+  }, [sidebarCollapsed]);
   useEffect(() => {
     if (state && !state.freebuffEnabled && terminalTarget === 'freebuff') {
       setTerminalTarget('default');
@@ -141,7 +161,7 @@ function App() {
     diffRequest = useRef(0),
     diffReads = useRef(0),
     navigationInFlight = useRef(false),
-    recentSessions = useRef<Record<string, string>>({}),
+    recentSessions = useRef<Record<string, string | null>>({}),
     stateRef = useRef<Snapshot | undefined>(undefined);
   const projectDrag = useRef<string | undefined>(undefined);
   const suppressProjectClick = useRef(false);
@@ -203,16 +223,20 @@ function App() {
   useEffect(() => {
     localStorage.setItem('agent-desk.multichat-dismissed.v1', JSON.stringify(hiddenChats));
   }, [hiddenChats]);
-  const closeTab = async (s: Session) => {
-    if (live(stateRef.current?.sessions.find((x) => x.id === s.id))) {
-      setConfirmClose(s);
+  const closeTab = async (s: Session, remove = false, confirmed = false) => {
+    if (!confirmed && (remove || live(stateRef.current?.sessions.find((x) => x.id === s.id)))) {
+      setConfirmClose({ session: s, remove });
       return;
     }
     const wasSelected = stateRef.current?.selectedSession === s.id;
-    if (!(await run({ type: 'deleteSession', sessionId: s.id }))) return;
-    setHiddenChats((ids) => ids.filter((id) => id !== s.id));
+    if (remove) {
+      if (!(await run({ type: 'deleteSession', sessionId: s.id }))) return;
+      setHiddenChats((ids) => ids.filter((id) => id !== s.id));
+    }
     const remaining = (tabs[sessionGroup(s)] ?? []).filter((id) => id !== s.id);
     setTabs((v) => ({ ...v, [sessionGroup(s)]: remaining }));
+    if (wasSelected || recentSessions.current[s.projectId] === s.id)
+      recentSessions.current[s.projectId] = remaining.at(-1) ?? null;
     if (wasSelected) {
       setClosedSelection(s.id);
       await run({ type: 'select', projectId: s.projectId, sessionId: remaining.at(-1) ?? null });
@@ -226,10 +250,13 @@ function App() {
     selectProjectBrowser(project?.id);
   }, [project?.id]);
   const switchProject = async (projectId: string) => {
+    // null records an explicitly closed project; undefined means it has not been visited yet.
     const previousId = recentSessions.current[projectId];
     const available = stateRef.current?.sessions.filter((s) => s.projectId === projectId) ?? [];
     const sessionId =
-      available.find((s) => s.id === previousId)?.id ?? available.at(-1)?.id ?? null;
+      previousId === null
+        ? null
+        : (available.find((s) => s.id === previousId)?.id ?? available.at(-1)?.id ?? null);
     const result = await run({ type: 'select', projectId, sessionId });
     if (stateRef.current?.selectedProject === projectId) {
       setMultichat('off');
@@ -239,6 +266,8 @@ function App() {
   };
 
   const run = async (action: Action) => {
+    if ((action.type === 'select' && action.sessionId) || action.type === 'newSession')
+      setClosedSelection(undefined);
     if (action.type === 'login') {
       setSettings(true);
       return;
@@ -432,14 +461,23 @@ function App() {
   }, [sessionIds]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      // Modal controls own their keystrokes; never create a chat or change permissions behind one.
+      const modal = search || settings || confirmClose || removeId;
+      if (modal && e.key !== 'Escape' && !((e.metaKey || e.ctrlKey) && ['k', ','].includes(e.key)))
+        return;
       const s = stateRef.current?.sessions.find((x) => x.id === stateRef.current?.selectedSession);
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
+        if (confirmClose || removeId) return;
+        setSettings(false);
         setSearch((v) => !v);
         setQuery('');
         setSearchIndex(0);
       } else if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
+        if (confirmClose || removeId) return;
+        setSearch(false);
         setSettings((v) => !v);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
@@ -479,6 +517,12 @@ function App() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [search, settings, confirmClose, removeId, multichat]);
+  useEffect(() => {
+    if (search)
+      document
+        .querySelector<HTMLElement>('.palette-results .on')
+        ?.scrollIntoView({ block: 'nearest' });
+  }, [search, searchIndex, query]);
   const refreshDiff = async () => {
     if (!project) return;
     const request = ++diffRequest.current;
@@ -902,6 +946,12 @@ function App() {
       <main>
         {(!compatibleRuntime(state) || state.runtime?.updateAvailable) && (
           <div className="runtime-notice" role="status">
+            <RefreshCw size={13} aria-hidden="true" />
+            <span title={RESTART_NOTICE}>
+              {compatibleRuntime(state)
+                ? 'Actualización preparada'
+                : 'Actualiza la app para continuar'}
+            </span>
             {state.runtime?.restartSupported && state.runtime.updateAvailable && (
               <button
                 disabled={
@@ -924,8 +974,9 @@ function App() {
                 className="multichat-back"
                 onClick={() => setMultichat('grid')}
                 title="Volver a Multichat (Esc)"
+                aria-label="Volver al grid"
               >
-                <ArrowLeft size={15} /> Volver al grid
+                <ArrowLeft size={15} />
               </button>
             )}
             <button
@@ -962,7 +1013,7 @@ function App() {
               ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id],
             )
           }
-          close={(s) => void closeTab(s)}
+          close={(s) => void closeTab(s, true)}
           drafts={drafts}
           setDrafts={setDrafts}
           images={imageDrafts}
@@ -1054,10 +1105,12 @@ function App() {
           browserPanel
         ) : !project ? (
           <div className="welcome">
+            <DeskMark size={42} />
+            <h1>Tu espacio de trabajo</h1>
             <p>
               {accountProfiles.length
-                ? 'Abre una carpeta y conversa con Claude Code o Codex como en su terminal, pero con interfaz.'
-                : 'Añade tu primera cuenta de Claude o Codex en Ajustes para empezar.'}
+                ? 'Abre un proyecto para empezar.'
+                : 'Conecta una cuenta y abre tu proyecto.'}
             </p>
             {!accountProfiles.length && (
               <button className="primary large" onClick={() => setSettings(true)}>
@@ -1102,6 +1155,8 @@ function App() {
                               role="tab"
                               className={`tab-${tabState(s)}`}
                               aria-selected={s.id === session?.id}
+                              tabIndex={s.id === session?.id ? 0 : -1}
+                              onKeyDown={navigateTabs}
                               aria-controls="conversation-content"
                               aria-disabled={navigating}
                               title={`${s.title} · ${live(s) ? 'Proceso abierto' : 'Proceso parado'}`}
@@ -1150,12 +1205,24 @@ function App() {
                   </div>
                   {!session && (
                     <div className="empty no-session">
-                      <h2>{accountProfiles.length ? 'Sin pestañas abiertas' : 'Sin cuentas'}</h2>
+                      <DeskMark size={36} />
+                      <h2>{accountProfiles.length ? 'Todo listo' : 'Conecta tu cuenta'}</h2>
                       <p>
                         {accountProfiles.length
-                          ? 'Crea una conversación con + o recupera una anterior con ⌘K.'
-                          : 'Añade una cuenta de Claude o Codex para conversar en este proyecto.'}
+                          ? 'Empieza un chat o recupera uno con ⌘K.'
+                          : 'Elige un proveedor en Ajustes para empezar.'}
                       </p>
+                      {!!accountProfiles.length && (
+                        <button
+                          className="primary"
+                          disabled={navigating || !profile}
+                          onClick={() =>
+                            profile && run({ type: 'newSession', projectId: project.id })
+                          }
+                        >
+                          <Plus size={16} /> Nuevo chat
+                        </button>
+                      )}
                       {!accountProfiles.length && (
                         <button className="primary" onClick={() => setSettings(true)}>
                           <Plus size={16} /> Añadir cuenta
@@ -1634,15 +1701,15 @@ function App() {
                       ) : (
                         <PanelRightOpen size={16} />
                       )}
-                      <span>{terminalPosition === 'right' ? 'Abajo' : 'A la derecha'}</span>
                     </button>
                     {terminalPosition === 'bottom' && (
                       <button
                         aria-label={terminalExpanded ? 'Reducir terminal' : 'Ampliar terminal'}
+                        title={terminalExpanded ? 'Reducir terminal' : 'Ampliar terminal'}
                         aria-pressed={terminalExpanded}
                         onClick={() => setTerminalExpanded((v) => !v)}
                       >
-                        {terminalExpanded ? 'Reducir' : 'Ampliar'}
+                        {terminalExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                       </button>
                     )}
                     {antigravityChat && terminalMode && !freebuffPanel && (
@@ -1695,13 +1762,22 @@ function App() {
           <div
             className="palette"
             role="dialog"
+            aria-modal="true"
             aria-label="Buscar proyectos y sesiones"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="palette-search">
               <Search size={17} />
               <input
-                autoFocus
+                data-autofocus
+                aria-label="Buscar proyecto o sesión"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded="true"
+                aria-controls="palette-results"
+                aria-activedescendant={
+                  results[searchIndex] ? `palette-result-${searchIndex}` : undefined
+                }
                 placeholder="Buscar proyecto o sesión…"
                 value={query}
                 onChange={(e) => {
@@ -1711,21 +1787,33 @@ function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown') {
                     e.preventDefault();
-                    setSearchIndex((i) => Math.min(i + 1, results.length - 1));
+                    setSearchIndex((i) => Math.max(0, Math.min(i + 1, results.length - 1)));
                   }
                   if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     setSearchIndex((i) => Math.max(0, i - 1));
                   }
-                  if (e.key === 'Enter' && results[searchIndex]) choose(results[searchIndex]);
+                  if (e.key === 'Enter' && results[searchIndex]) {
+                    e.preventDefault();
+                    choose(results[searchIndex]);
+                  }
                 }}
               />
               <kbd>esc</kbd>
             </div>
-            <div className="palette-results">
+            <div
+              className="palette-results"
+              id="palette-results"
+              role="listbox"
+              aria-label="Proyectos y sesiones"
+            >
               {results.map((r, i) => (
                 <button
                   key={r.key}
+                  id={`palette-result-${i}`}
+                  role="option"
+                  aria-selected={i === searchIndex}
+                  tabIndex={-1}
                   className={i === searchIndex ? 'on' : ''}
                   onClick={() => choose(r)}
                 >
@@ -1753,29 +1841,43 @@ function App() {
       )}
       {confirmClose && (
         <div className="overlay">
-          <section className="modal small" role="dialog" aria-label="Cerrar conversación">
-            <h2>¿Detener y eliminar el chat?</h2>
+          <section
+            className="modal small"
+            role="dialog"
+            aria-modal="true"
+            aria-label={confirmClose.remove ? 'Eliminar conversación' : 'Cerrar conversación'}
+          >
+            <h2>{confirmClose.remove ? '¿Eliminar el chat?' : '¿Detener y cerrar la pestaña?'}</h2>
             <p className="muted">
-              «{confirmClose.title}» tiene un agente abierto. Se detendrá antes de cerrar la
-              pestaña. Se eliminará la conversación y sus adjuntos.
+              {confirmClose.remove
+                ? `Se eliminará «${confirmClose.session.title}» y sus adjuntos. Si tiene un agente abierto, se detendrá primero.`
+                : `Se detendrá el agente de «${confirmClose.session.title}». La conversación se conserva en el proyecto.`}
             </p>
             <div className="modal-actions">
-              <button disabled={busy[confirmClose.id]} onClick={() => setConfirmClose(undefined)}>
+              <button
+                disabled={busy[confirmClose.session.id]}
+                onClick={() => setConfirmClose(undefined)}
+              >
                 Cancelar
               </button>
               <button
                 className="danger"
-                disabled={busy[confirmClose.id]}
+                disabled={busy[confirmClose.session.id]}
                 onClick={async () => {
-                  const s = confirmClose;
-                  await run({ type: 'stop', sessionId: s.id });
+                  const { session: s, remove } = confirmClose;
+                  if (live(stateRef.current?.sessions.find((x) => x.id === s.id)))
+                    await run({ type: 'stop', sessionId: s.id });
                   if (!live(stateRef.current?.sessions.find((x) => x.id === s.id))) {
                     setConfirmClose(undefined);
-                    await closeTab(s);
+                    await closeTab(s, remove, true);
                   }
                 }}
               >
-                Detener y cerrar
+                {confirmClose.remove
+                  ? live(state.sessions.find((s) => s.id === confirmClose.session.id))
+                    ? 'Detener y eliminar'
+                    : 'Eliminar chat'
+                  : 'Detener y cerrar'}
               </button>
             </div>
           </section>
@@ -1783,7 +1885,12 @@ function App() {
       )}
       {removeId && (
         <div className="overlay">
-          <section className="modal small" role="dialog">
+          <section
+            className="modal small"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Quitar proyecto"
+          >
             <h2>Quitar proyecto de la lista</h2>
             <p className="muted">
               Se detendrán todos sus chats y terminales y se borrarán sus conversaciones, adjuntos y

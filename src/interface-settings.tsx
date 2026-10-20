@@ -100,6 +100,30 @@ export function InterfaceSettings({
               key={id}
               role="radio"
               aria-checked={theme === id}
+              tabIndex={theme === id ? 0 : -1}
+              onKeyDown={(event) => {
+                if (
+                  !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(
+                    event.key,
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const index = themes.findIndex((option) => option.id === id);
+                const next =
+                  event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? themes.length - 1
+                      : (index +
+                          (event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1) +
+                          themes.length) %
+                        themes.length;
+                setTheme?.(themes[next].id);
+                event.currentTarget.parentElement
+                  ?.querySelectorAll<HTMLButtonElement>('button')
+                  [next]?.focus();
+              }}
               className={theme === id ? 'on' : ''}
               disabled={!setTheme}
               onClick={() => setTheme?.(id)}
@@ -137,65 +161,70 @@ export function InterfaceSettings({
           ))}
         </select>
       </label>
-      <div className="interface-setting">
-        <label htmlFor="chat-font-color">Color del chat</label>
-        <div className="interface-color">
-          <button
-            className={preferences.chatColor === null ? 'selected' : ''}
-            aria-pressed={preferences.chatColor === null}
-            onClick={() => update({ ...preferences, chatColor: null })}
-          >
-            Auto
-          </button>
-          <input
-            id="chat-font-color"
-            type="color"
-            aria-label="Color de fuente del chat"
-            value={preferences.chatColor ?? '#8f8f8c'}
-            onChange={(e) => update({ ...preferences, chatColor: e.target.value })}
-          />
+      <details className="settings-disclosure interface-colors">
+        <summary>Colores personalizados</summary>
+        <div className="settings-disclosure-content">
+          <div className="interface-setting">
+            <label htmlFor="chat-font-color">Color del chat</label>
+            <div className="interface-color">
+              <button
+                className={preferences.chatColor === null ? 'selected' : ''}
+                aria-pressed={preferences.chatColor === null}
+                onClick={() => update({ ...preferences, chatColor: null })}
+              >
+                Auto
+              </button>
+              <input
+                id="chat-font-color"
+                type="color"
+                aria-label="Color de fuente del chat"
+                value={preferences.chatColor ?? '#8f8f8c'}
+                onChange={(e) => update({ ...preferences, chatColor: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="interface-setting">
+            <label htmlFor="ui-icon-color">Color de los iconos</label>
+            <div className="interface-color">
+              <button
+                className={preferences.iconColor === null ? 'selected' : ''}
+                aria-label="Color automático de iconos"
+                aria-pressed={preferences.iconColor === null}
+                onClick={() => update({ ...preferences, iconColor: null })}
+              >
+                Auto
+              </button>
+              <input
+                id="ui-icon-color"
+                type="color"
+                aria-label="Color de los iconos"
+                value={preferences.iconColor ?? '#8f8f8c'}
+                onChange={(e) => update({ ...preferences, iconColor: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="interface-setting">
+            <label htmlFor="ui-text-color">Textos de la interfaz</label>
+            <div className="interface-color">
+              <button
+                className={preferences.textColor === null ? 'selected' : ''}
+                aria-label="Color automático de textos de la interfaz"
+                aria-pressed={preferences.textColor === null}
+                onClick={() => update({ ...preferences, textColor: null })}
+              >
+                Auto
+              </button>
+              <input
+                id="ui-text-color"
+                type="color"
+                aria-label="Color de textos de la interfaz"
+                value={preferences.textColor ?? '#8f8f8c'}
+                onChange={(e) => update({ ...preferences, textColor: e.target.value })}
+              />
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="interface-setting">
-        <label htmlFor="ui-icon-color">Color de los iconos</label>
-        <div className="interface-color">
-          <button
-            className={preferences.iconColor === null ? 'selected' : ''}
-            aria-label="Color automático de iconos"
-            aria-pressed={preferences.iconColor === null}
-            onClick={() => update({ ...preferences, iconColor: null })}
-          >
-            Auto
-          </button>
-          <input
-            id="ui-icon-color"
-            type="color"
-            aria-label="Color de los iconos"
-            value={preferences.iconColor ?? '#8f8f8c'}
-            onChange={(e) => update({ ...preferences, iconColor: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="interface-setting">
-        <label htmlFor="ui-text-color">Textos de la interfaz</label>
-        <div className="interface-color">
-          <button
-            className={preferences.textColor === null ? 'selected' : ''}
-            aria-label="Color automático de textos de la interfaz"
-            aria-pressed={preferences.textColor === null}
-            onClick={() => update({ ...preferences, textColor: null })}
-          >
-            Auto
-          </button>
-          <input
-            id="ui-text-color"
-            type="color"
-            aria-label="Color de textos de la interfaz"
-            value={preferences.textColor ?? '#8f8f8c'}
-            onChange={(e) => update({ ...preferences, textColor: e.target.value })}
-          />
-        </div>
-      </div>
+      </details>
       <label className="interface-setting">
         <span>
           Avisos del sistema
@@ -230,7 +259,10 @@ export function InterfaceSettings({
       >
         Restablecer
       </button>
-      <StyleEditor />
+      <details className="settings-disclosure interface-advanced">
+        <summary>Temas y CSS</summary>
+        <StyleEditor />
+      </details>
     </div>
   );
 }

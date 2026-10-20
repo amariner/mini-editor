@@ -86,7 +86,8 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Ajustes', exact: true }).innerText(), '');
   const collapse = await page.getByRole('button', { name: 'Plegar proyectos' }).boundingBox();
   const settings = await page.getByRole('button', { name: 'Ajustes', exact: true }).boundingBox();
-  assert.ok(collapse.y < settings.y && settings.y - collapse.y < 50);
+  assert.ok(collapse.x < settings.x && Math.abs(collapse.y - settings.y) < 1);
+  assert.ok(collapse.height >= 28 && settings.height >= 28);
   await page.getByRole('button', { name: 'Plegar proyectos' }).click();
   await page.setViewportSize({ width: 900, height: 620 });
   await page.screenshot({ path: 'artifacts/29-pestanas-compactas.png', animations: 'disabled' });
@@ -100,12 +101,63 @@ try {
     await page.locator('.tab-close').last().click();
     await settle();
   }
-  await page.getByText('Sin pestañas abiertas', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Todo listo', exact: true }).waitFor();
+  // Project navigation must respect an explicitly empty tab set. Closed chats
+  // remain recoverable with their history and draft, without reopening on return.
+  const closedProject = (await snap()).selectedProject;
+  const historyOf = (state) =>
+    state.sessions
+      .filter((session) => session.projectId === closedProject)
+      .map(({ id, messages, reference }) => ({ id, messages, reference }));
+  const closedHistory = historyOf(await snap());
+  const secondFolder = path.join(root, 'Otro proyecto');
+  await fs.mkdir(secondFolder);
+  await app.evaluate(({ dialog }, folder) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+  }, secondFolder);
+  await page.getByRole('button', { name: 'Añadir proyecto', exact: true }).first().click();
+  await settle();
+  assert.notEqual((await snap()).selectedProject, closedProject);
+  await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).click();
+  await settle();
+  assert.equal((await snap()).selectedProject, closedProject);
+  assert.equal(
+    await page.getByRole('tab').count(),
+    0,
+    'Returning to a project must not reopen its explicitly closed tabs',
+  );
+  await page.getByRole('heading', { name: 'Todo listo', exact: true }).waitFor();
+  assert.deepEqual(historyOf(await snap()), closedHistory);
   await page.keyboard.press('Meta+k');
   await page.getByPlaceholder('Buscar proyecto o sesión…').fill('Sesión 1');
-  await page.locator('.palette-results button').filter({ hasText: 'Codex' }).click();
+  await page
+    .locator('.palette-results button')
+    .filter({ hasText: 'Codex' })
+    .filter({ hasText: 'Proyecto temporal' })
+    .click();
   await settle();
   assert.equal(await page.getByRole('tab').count(), 1);
+  assert.equal((await snap()).selectedSession, first);
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Mensaje', exact: true }).inputValue(),
+    'Borrador conservado',
+  );
+  // Tab arrows activate the neighboring conversation without leaving focus in stale content.
+  await call({
+    type: 'newSession',
+    projectId: (await snap()).selectedProject,
+    profile: 'claude-2',
+  });
+  await settle();
+  await page.locator('.session-tabs [role="tab"][aria-selected="true"]').focus();
+  await page.keyboard.press('Home');
+  await settle();
+  assert.equal((await snap()).selectedSession, first);
+  assert.ok(
+    await page
+      .locator('.session-tabs [role="tab"][aria-selected="true"]')
+      .evaluate((element) => element === document.activeElement),
+  );
   // A real Claude PTY remains alive while a different chat is selected.
   await call({
     type: 'newSession',
