@@ -1,3 +1,4 @@
+import { ProjectChats, TeamIndicator } from './team';
 import { Multichat } from './multichat';
 import { GitBar } from './git-bar';
 import { IsolationBar } from './isolation-bar';
@@ -43,6 +44,8 @@ import {
   ConversationMessages,
   ActivityDock,
   TodoPanel,
+  PendingMessages,
+  ExecutionPanel,
 } from './chat';
 import { UsageSwitcher } from './usage-switcher';
 import { EditableName } from './editable-name';
@@ -76,6 +79,16 @@ function App() {
   const [state, setState] = useState<Snapshot>(),
     [error, setError] = useState(''),
     [multichat, setMultichat] = useState<'off' | 'grid' | 'focused'>('off'),
+    [hiddenChats, setHiddenChats] = useState<string[]>(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('agent-desk.multichat-dismissed.v1') ?? '[]');
+        return Array.isArray(saved)
+          ? saved.filter((id): id is string => typeof id === 'string')
+          : [];
+      } catch {
+        return [];
+      }
+    }),
     [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null),
     [search, setSearch] = useState(false),
     [query, setQuery] = useState(''),
@@ -170,6 +183,7 @@ function App() {
     kind = providerKind(profile);
   useEffect(() => {
     if (!selectedSession || selectedSession.id === closedSelection) return;
+    setHiddenChats((ids) => ids.filter((id) => id !== selectedSession.id));
     setTabs((v) => ({
       ...v,
       [sessionGroup(selectedSession)]: openSessionTab(
@@ -186,11 +200,15 @@ function App() {
     : [];
   // Session creation order keeps tabs stationary when navigating; MRU only controls eviction.
   openTabs.sort((a, b) => state!.sessions.indexOf(a) - state!.sessions.indexOf(b));
+  useEffect(() => {
+    localStorage.setItem('agent-desk.multichat-dismissed.v1', JSON.stringify(hiddenChats));
+  }, [hiddenChats]);
   const closeTab = async (s: Session) => {
     if (live(stateRef.current?.sessions.find((x) => x.id === s.id))) {
       setConfirmClose(s);
       return;
     }
+    setHiddenChats((ids) => [...new Set([...ids, s.id])]);
     const remaining = (tabs[sessionGroup(s)] ?? []).filter((id) => id !== s.id);
     setTabs((v) => ({ ...v, [sessionGroup(s)]: remaining }));
     if (stateRef.current?.selectedSession === s.id) {
@@ -222,16 +240,6 @@ function App() {
   const run = async (action: Action) => {
     if (action.type === 'login') {
       setSettings(true);
-      return;
-    }
-    if (
-      action.type === 'newSession' &&
-      (stateRef.current?.sessions.filter((s) => s.projectId === action.projectId && live(s))
-        .length ?? 0) >= 5
-    ) {
-      setError(
-        'Ya hay cinco agentes abiertos en este proyecto. Cierra una pestaña antes de crear otra.',
-      );
       return;
     }
     const navigation =
@@ -859,6 +867,16 @@ function App() {
                   <X size={13} />
                 </button>
               </div>
+              <ProjectChats
+                state={state}
+                projectId={p.id}
+                hiddenChats={hiddenChats}
+                open={(s) => {
+                  setClosedSelection(undefined);
+                  setMultichat('off');
+                  void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+                }}
+              />
             </div>
           ))}
           {!state.projects.length && (
@@ -934,6 +952,9 @@ function App() {
           </div>
         </header>
         <Multichat
+          opened={Object.values(tabs).flat()}
+          dismissed={hiddenChats}
+          close={(s) => void closeTab(s)}
           drafts={drafts}
           setDrafts={setDrafts}
           images={imageDrafts}
@@ -1098,9 +1119,20 @@ function App() {
                         </div>
                       ))}
                     </div>
+                    {session && (
+                      <TeamIndicator
+                        key={session.id}
+                        session={session}
+                        sessions={state.sessions}
+                        open={(s) => {
+                          setClosedSelection(undefined);
+                          void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+                        }}
+                      />
+                    )}
                     <button
                       className="icon-btn ghost new-tab"
-                      title="Nueva conversación (⌘N) · Hasta 5 pestañas por proyecto"
+                      title="Nueva conversación (⌘N)"
                       disabled={navigating || !profile}
                       aria-label="Nueva conversación"
                       onClick={() => profile && run({ type: 'newSession', projectId: project.id })}
@@ -1340,6 +1372,7 @@ function App() {
                           (live(session) || session.todos.some((t) => t.status !== 'completed')) ? (
                             <TodoPanel todos={session.todos} />
                           ) : null}
+                          <ExecutionPanel session={session} />
                           <ActivityDock
                             key={`activity-${session.id}`}
                             session={session}
@@ -1367,6 +1400,25 @@ function App() {
                         />
                         {!terminalMode && (
                           <>
+                            <PendingMessages
+                              session={session}
+                              run={run}
+                              recover={(text, attachments) => {
+                                setDrafts((d) => ({
+                                  ...d,
+                                  [session.id]: [d[session.id], text].filter(Boolean).join('\n'),
+                                }));
+                                setImageDrafts((d) => ({
+                                  ...d,
+                                  [session.id]: [
+                                    ...(d[session.id] ?? []),
+                                    ...attachments.filter(
+                                      (a) => !d[session.id]?.some((x) => x.id === a.id),
+                                    ),
+                                  ],
+                                }));
+                              }}
+                            />
                             <Composer
                               key={`${session.id}:${session.profile}`}
                               disabled={navigating || !!busy[session.id]}

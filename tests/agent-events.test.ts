@@ -142,7 +142,7 @@ test('la persistencia conserva duraciones y herramientas estructuradas', () => {
             id: 'c',
             role: 'tool',
             text: '$ ls',
-            tool: { kind: 'command', command: 'ls', status: 'completed', exitCode: 0 },
+            tool: { kind: 'command', command: 'x'.repeat(25000), status: 'completed', exitCode: 0 },
           },
           {
             id: 'b',
@@ -160,7 +160,7 @@ test('la persistencia conserva duraciones y herramientas estructuradas', () => {
     assert.equal(restored[0].durationMs, 900);
     assert.deepEqual(restored[1].tool, {
       kind: 'command',
-      command: 'ls',
+      command: 'x'.repeat(25000),
       status: 'completed',
       exitCode: 0,
     });

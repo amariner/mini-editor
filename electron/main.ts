@@ -535,6 +535,10 @@ app.whenReady().then(async () => {
 
           return selected;
         }
+        case 'team':
+          return manager.teams.call(a.sessionId, a.input);
+        case 'linkSubchat':
+          return manager.teams.link(a.sessionId, a.childId);
         case 'newSession':
           return manager.newSession(a.projectId, a.profile, a.mode);
         case 'configure':
@@ -596,6 +600,8 @@ app.whenReady().then(async () => {
           return manager.gitOperation(a.projectId, a.operation, a.value);
         case 'discardImages':
           return attachments.discard(a.sessionId, a.attachmentIds);
+        case 'cancelPendingInput':
+          return manager.pendingInputs.cancel(manager.session(a.sessionId), a.messageId);
         case 'send': {
           const images = await attachments.resolve(a.sessionId, a.attachmentIds ?? []);
           attachments.markUsed(a.attachmentIds ?? []);

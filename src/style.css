@@ -6142,7 +6142,7 @@ button.msg-action.reading {
   color: var(--text);
   background: var(--tile);
 }
-.multichat-card-head button:not(.multichat-title) {
+.multichat-card-head button:not(.multichat-title, .team-indicator, .team-member) {
   flex-shrink: 0;
   width: 24px;
   height: 24px;
@@ -6152,7 +6152,7 @@ button.msg-action.reading {
   background: transparent;
   color: var(--muted);
 }
-.multichat-card-head button:not(.multichat-title):hover:enabled {
+.multichat-card-head button:not(.multichat-title, .team-indicator, .team-member):hover:enabled {
   background: var(--tile-hover);
   color: var(--text);
 }
@@ -6862,4 +6862,239 @@ button.msg-action.reading {
   box-sizing: border-box;
   width: min(520px, 90%);
   margin: 26px 0 4px auto;
+}
+
+.execution-panel {
+  margin: 6px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.execution-panel summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.execution-panel summary svg {
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.execution-panel ul {
+  padding-left: 18px;
+  margin: 8px 0 0;
+}
+.execution-panel li + li {
+  margin-top: 8px;
+}
+.execution-panel li span {
+  display: block;
+  margin-top: 3px;
+  opacity: 0.7;
+}
+.multichat-card .todo-panel {
+  flex-shrink: 0;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.project-chats {
+  padding: 2px 8px 8px 20px;
+}
+.project-chat-row {
+  display: flex;
+  align-items: center;
+}
+.project-chat {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 6px;
+  text-align: left;
+  color: var(--text-2);
+  border: 0;
+  background: transparent;
+  border-radius: 5px;
+  font-size: 12px;
+  min-width: 0;
+}
+.project-chat span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.project-chat small {
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-chat.selected,
+.project-chat:hover {
+  background: var(--tile);
+}
+.project-chat svg {
+  flex-shrink: 0;
+}
+.project-chat .working {
+  color: #c99030;
+}
+.project-chat .attention,
+.project-chat .error {
+  color: var(--danger);
+}
+.project-subchats {
+  border-left: 1px solid var(--line);
+  margin-left: 8px;
+  padding-left: 8px;
+}
+.team-fold {
+  background: transparent;
+  border: 0;
+  padding: 3px;
+  color: var(--muted);
+}
+.sidebar.collapsed .project-chats {
+  display: none;
+}
+
+.sidebar.compact:not(.collapsed):has(.project-chats) {
+  width: 260px;
+  min-width: 260px;
+}
+.sidebar .project-chats {
+  padding: 0 8px 3px 18px;
+}
+.sidebar .project-chat {
+  min-height: 22px;
+  height: 22px;
+  padding: 2px 6px;
+  line-height: 18px;
+}
+.sidebar .project-chat-row {
+  min-height: 22px;
+}
+.sidebar .project-subchats {
+  margin-left: 6px;
+  padding-left: 6px;
+}
+.sidebar .project-block {
+  margin-bottom: 3px;
+}
+.team-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.team-indicator:hover,
+.team-indicator[aria-expanded='true'] {
+  background: var(--tile);
+  color: var(--text);
+}
+.team-indicator.compact {
+  font-size: 10px;
+  padding: 3px 4px;
+}
+.team-active {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c99030;
+  flex-shrink: 0;
+}
+.team-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(284px, calc(100vw - 16px));
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 6px 24px #0002;
+  overflow: auto;
+}
+.team-member {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+  color: var(--text-2);
+  border-radius: 4px;
+  text-align: left;
+}
+button.team-member:hover,
+.team-member[aria-current='true'] {
+  background: var(--tile);
+}
+.team-member > span {
+  min-width: 0;
+}
+.team-member strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+.team-member small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+.team-member .working {
+  color: #c99030;
+}
+.team-member .attention,
+.team-member .error {
+  color: var(--danger);
+}
+
+.pending-messages {
+  margin: 4px 8px;
+  max-height: 100px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.pending-messages > div {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pending-messages > div > span {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pending-messages small {
+  margin-right: 6px;
+}
+.pending-messages .failed {
+  color: var(--danger);
+}
+.pending-messages button {
+  background: transparent;
+  border: 0;
+  padding: 3px;
+  color: inherit;
 }

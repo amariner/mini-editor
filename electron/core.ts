@@ -1,3 +1,4 @@
+import { teamInput } from '../src/team-protocol';
 import { proxyUpdateSchema } from './proxy';
 import { browserInput } from '../src/browser-protocol';
 import { z } from 'zod';
@@ -216,6 +217,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     sessionId: id,
     attachmentIds: z.array(z.string().uuid()),
   }),
+  z.object({ type: z.literal('cancelPendingInput'), sessionId: id, messageId: id }).strict(),
   z.object({ type: z.literal('refreshUsage'), profile }),
   z
     .object({
@@ -274,6 +276,8 @@ export const actionSchema = z.discriminatedUnion('type', [
       operation: z.enum(['merge', 'update', 'discard']),
     })
     .strict(),
+  z.object({ type: z.literal('team'), sessionId: id, input: teamInput }).strict(),
+  z.object({ type: z.literal('linkSubchat'), sessionId: id, childId: id }).strict(),
   z.object({ type: z.literal('forkSession'), sessionId: id, isolate: z.boolean() }).strict(),
   z
     .object({

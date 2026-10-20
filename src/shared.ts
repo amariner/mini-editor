@@ -331,6 +331,15 @@ export interface Session {
   projectId: string;
   profile: Profile;
   title: string;
+  pendingInputs?: {
+    id: string;
+    text: string;
+    attachments: Attachment[];
+    status: 'pending' | 'sending' | 'failed';
+    error?: string;
+  }[];
+  parentId?: string;
+  teamMessages?: import('./team-protocol').TeamMessage[];
   reference?: string;
   attempted?: boolean;
   mode?: 'chat' | 'terminal';
@@ -455,6 +464,7 @@ export type Action =
   | { type: 'dropImages'; sessionId: string; images: { name: string; data: string }[] }
   | { type: 'discardImages'; sessionId: string; attachmentIds: string[] }
   | { type: 'refreshUsage'; profile: Profile }
+  | { type: 'cancelPendingInput'; sessionId: string; messageId: string }
   | { type: 'send'; sessionId: string; text: string; attachmentIds?: string[] }
   | {
       type: 'approve';
@@ -478,6 +488,8 @@ export type Action =
   | { type: 'diff'; projectId: string; sessionId?: string }
   | { type: 'setIsolation'; sessionId: string; isolation: 'worktree' | 'shared' }
   | { type: 'worktree'; sessionId: string; operation: 'merge' | 'update' | 'discard' }
+  | { type: 'team'; sessionId: string; input: import('./team-protocol').TeamInput }
+  | { type: 'linkSubchat'; sessionId: string; childId: string }
   | { type: 'forkSession'; sessionId: string; isolate: boolean }
   | { type: 'rewindFiles'; sessionId: string; messageId: string; dryRun?: boolean }
   | {

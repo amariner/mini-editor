@@ -37,7 +37,8 @@ const block: z.ZodType<any> = z.lazy(() =>
 const toolInfo = z.object({
   kind: z.enum(['command', 'edit', 'mcp', 'web']),
   status: z.string().max(40).optional(),
-  command: z.string().max(20000).optional(),
+  // Persisted commands may contain large scripts or patches emitted by providers.
+  command: z.string().optional(),
   output: z.string().max(40000).optional(),
   exitCode: z.number().optional(),
   durationMs: z.number().optional(),
@@ -84,6 +85,38 @@ const schema = z.object({
       projectId: z.string(),
       profile: profileSchema,
       title: z.string(),
+      pendingInputs: z
+        .array(
+          z.object({
+            id: z.string(),
+            text: z.string(),
+            attachments: z.array(
+              z.object({
+                id: z.string(),
+                name: z.string(),
+                mediaType: z.string().optional(),
+                size: z.number().optional(),
+                preview: z.string().optional(),
+              }),
+            ),
+            status: z.enum(['pending', 'sending', 'failed']),
+            error: z.string().optional(),
+          }),
+        )
+        .optional(),
+      parentId: z.string().optional(),
+      teamMessages: z
+        .array(
+          z.object({
+            id: z.string(),
+            from: z.string(),
+            text: z.string(),
+            at: z.number(),
+            status: z.enum(['queued', 'sending', 'delivered', 'failed']),
+            error: z.string().optional(),
+          }),
+        )
+        .optional(),
       reference: z.string().optional(),
       attempted: z.boolean().optional(),
       accountLocked: z.boolean().optional(),
@@ -197,6 +230,22 @@ export class Store {
             status: 'stopped',
             approvals: [],
             subagents: undefined,
+            pendingInputs: s.pendingInputs?.map((p) => ({
+              ...p,
+              status: 'failed' as const,
+              error:
+                'Envío pendiente al cerrar la aplicación. Recupera el texto y vuelve a adjuntar los archivos si los había.',
+            })),
+            teamMessages: s.teamMessages?.map((m) =>
+              m.status === 'queued' || m.status === 'sending'
+                ? {
+                    ...m,
+                    status: 'failed' as const,
+                    error:
+                      'Envío interrumpido al cerrar la aplicación. Vuelve a enviarlo si sigue siendo necesario.',
+                  }
+                : m,
+            ),
             messages: s.messages.map((m) => ({
               ...m,
               tool: m.tool?.status === 'inProgress' ? { ...m.tool, status: 'failed' } : m.tool,
@@ -238,6 +287,9 @@ export class Store {
           worktree,
           forkFrom,
           forkOf,
+          pendingInputs,
+          parentId,
+          teamMessages,
           stats,
           messages,
         }) => ({
@@ -256,6 +308,9 @@ export class Store {
           worktree,
           forkFrom,
           forkOf,
+          pendingInputs,
+          parentId,
+          teamMessages,
           stats,
           messages: messages.map(
             ({

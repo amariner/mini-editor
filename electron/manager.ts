@@ -1,3 +1,5 @@
+import { PendingInputs } from './pending-inputs';
+import { Teams } from './teams';
 import { readGit, changeGit, repositoryRoot } from './git';
 import {
   commitWorktree,
@@ -83,6 +85,7 @@ type Runtime = {
   provider?: ProviderRuntime;
   pendingImages?: import('../src/shared').Attachment[];
   pendingUserText?: string;
+  steeredInputs?: Map<string, { text: string; attachments: import('../src/shared').Attachment[] }>;
   rpc?: Rpc;
   pty?: pty.IPty;
   claude?: ClaudeRuntime;
@@ -112,6 +115,37 @@ export class Manager {
   readonly store: Store;
   readonly runtimes = new Map<string, Runtime>();
   readonly coordinator = new Coordinator(() => this.changed());
+  private startingInputs = new Set<string>();
+  readonly pendingInputs = new PendingInputs({
+    sessions: () => this.state.sessions,
+    ready: (s) =>
+      !this.removingProjects.has(s.projectId) &&
+      !this.startingInputs.has(s.id) &&
+      !this.operations.has(s.id) &&
+      this.acceptsInput(s),
+    send: (id, text, files) => this.sendNow(id, text, files),
+    changed: () => this.changed(),
+  });
+  private acceptsInput(s: Session) {
+    if (s.status === 'ready') return true;
+    if (!['working', 'waiting'].includes(s.status)) return false;
+    const runtime = this.runtimes.get(s.id);
+    return !!runtime?.claude || (!!runtime?.rpc && isCodex(s.profile) && !!s.turnId);
+  }
+  readonly teams = new Teams({
+    sessions: () => this.state.sessions,
+    projects: () => this.state.projects.map(({ id, name }) => ({ id, name })),
+    create: (parent, projectId) => {
+      const selectedProject = this.state.selectedProject,
+        selectedSession = this.state.selectedSession;
+      const child = this.newSession(projectId, parent.profile, 'chat');
+      this.state.selectedProject = selectedProject;
+      this.state.selectedSession = selectedSession;
+      return child;
+    },
+    send: (id, text) => this.send(id, text),
+    changed: () => this.changed(),
+  });
   private operations = new Set<string>();
   private operationWork = new Map<string, Promise<unknown>>();
   private stoppingRuntimes = new Map<string, Promise<void>>();
@@ -129,6 +163,7 @@ export class Manager {
     services: ProviderServices = {},
   ) {
     this.store = new Store(root);
+    this.coordinator.teamHandler = (session, input) => this.teams.call(session.id, input);
     this.terminals = new ProjectTerminals(this.emit, () => this.changed());
     this.accounts = new Accounts(
       this.profilesRoot,
@@ -338,6 +373,10 @@ export class Manager {
     });
   }
   changed() {
+    queueMicrotask(() => {
+      this.pendingInputs.pump();
+      this.teams.pump();
+    });
     this.store.schedule();
     if (!this.eventTimer)
       this.eventTimer = setTimeout(() => {
@@ -582,6 +621,7 @@ export class Manager {
     } finally {
       this.operations.delete(id);
       this.operationWork.delete(id);
+      queueMicrotask(() => this.pendingInputs?.pump());
     }
   }
   async continueAntigravity(id: string) {
@@ -1245,7 +1285,14 @@ export class Manager {
     if (p?.item?.type === 'userMessage' && (!p.threadId || p.threadId === s.reference)) {
       const rt = this.runtime(s.id),
         message = s.messages.find((m) => m.id === p.item.id);
-      if (message && rt.pendingImages?.length) {
+      const inputId = p.item.clientId ?? p.item.id;
+      const steered = rt.steeredInputs?.get(inputId);
+      if (message && steered) {
+        message.text = steered.text;
+        message.attachments = steered.attachments;
+        rt.steeredInputs!.delete(inputId);
+      }
+      if (message && !steered && rt.pendingImages?.length) {
         message.attachments = rt.pendingImages;
         message.text = rt.pendingUserText ?? message.text;
         rt.pendingImages = undefined;
@@ -1473,6 +1520,34 @@ export class Manager {
     });
   }
   async send(id: string, text: string, images: PreparedAttachment[] = []) {
+    const session = this.session(id);
+    this.project(session.projectId);
+    if (
+      session.mode === 'terminal' ||
+      session.status === 'terminal' ||
+      session.status === 'stopping'
+    )
+      throw new Error('El chat no está disponible para enviar mensajes.');
+    if (this.accounts.removing(session.profile)) throw new Error('Se está eliminando esta cuenta.');
+    if (
+      this.operations.has(id) ||
+      (['starting', 'working', 'waiting'].includes(session.status) &&
+        !this.acceptsInput(session)) ||
+      session.pendingInputs?.some((p) => p.status === 'pending' || p.status === 'sending')
+    )
+      return this.pendingInputs.enqueue(session, text, images);
+    const starting = !this.runtimes.has(id);
+    if (starting) this.startingInputs.add(id);
+    try {
+      return await this.sendNow(id, text, images);
+    } finally {
+      if (starting) {
+        this.startingInputs.delete(id);
+        this.pendingInputs.pump();
+      }
+    }
+  }
+  private async sendNow(id: string, text: string, images: PreparedAttachment[] = []) {
     if (this.accounts.removing(this.session(id).profile))
       throw new Error('Se está eliminando esta cuenta.');
     if (!this.runtimes.has(id)) await this.start(id);
@@ -1520,6 +1595,26 @@ export class Manager {
         rt.claude.send(text, images);
         if (s.title.startsWith('Sesión ') && !text.startsWith('/'))
           s.title = text.slice(0, 48) || 'Archivo adjunto';
+        this.changed();
+        return true;
+      }
+      if (isCodex(s.profile) && ['working', 'waiting'].includes(s.status) && s.turnId) {
+        const clientUserMessageId = randomUUID();
+        (rt.steeredInputs ??= new Map()).set(clientUserMessageId, {
+          text,
+          attachments: images.map((i) => i.attachment),
+        });
+        try {
+          await rt.rpc!.call('turn/steer', {
+            threadId: s.reference,
+            expectedTurnId: s.turnId,
+            clientUserMessageId,
+            input: codexAttachmentContent(text, images),
+          });
+        } catch (error) {
+          rt.steeredInputs.delete(clientUserMessageId);
+          throw error;
+        }
         this.changed();
         return true;
       }
@@ -1760,6 +1855,13 @@ export class Manager {
     await rt.rpc!.call('turn/interrupt', { threadId: s.reference, turnId: s.turnId });
   }
   async stop(id: string) {
+    this.pendingInputs.pause(this.session(id));
+    for (const message of this.session(id).teamMessages ?? []) {
+      if (message.status === 'queued') {
+        message.status = 'failed';
+        message.error = 'Envío cancelado al detener el chat.';
+      }
+    }
     return this.exclusive(id, () => this.stopRuntime(id));
   }
   private stopRuntime(id: string) {
@@ -2087,6 +2189,8 @@ export class Manager {
     }
   }
   async shutdown() {
+    this.teams.closed = true;
+    this.pendingInputs.closed = true;
     for (const job of this.modelJobs.values()) job.controller.abort();
     await Promise.allSettled([...this.modelJobs.values()].map((job) => job.work));
     await Promise.allSettled([...this.removingProjects.values()]);

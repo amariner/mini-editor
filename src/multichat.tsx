@@ -1,3 +1,4 @@
+import { TeamIndicator } from './team';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -15,6 +16,8 @@ import {
   Bot,
   Sparkles,
   Copy,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import type { Action, Attachment, Profile, Session, Snapshot } from './shared';
 import { providerKind, providerNames, isConnectedProvider } from './shared';
@@ -26,6 +29,9 @@ import {
   ProviderApproval,
   ActivityDock,
   ConversationMessages,
+  TodoPanel,
+  PendingMessages,
+  ExecutionPanel,
 } from './chat';
 import { conversationEntries } from './conversation';
 import { ChatActionsContext, type ChatActions } from './markdown';
@@ -49,7 +55,6 @@ import {
 } from './multichat-layout';
 
 const orderKey = 'agent-desk.multichat-order.v1';
-const dismissedKey = 'agent-desk.multichat-dismissed.v1';
 const layoutKey = 'agent-desk.multichat-layout.v1';
 const mac = /Mac/i.test(navigator.platform);
 const modKey = mac ? '⌘' : 'Ctrl+';
@@ -399,6 +404,8 @@ function LayoutPicker({
 
 function Card({
   session,
+  teamSessions,
+  openTeamChat,
   index,
   project,
   account,
@@ -428,6 +435,8 @@ function Card({
   move,
 }: {
   session: Session;
+  teamSessions: Session[];
+  openTeamChat: (s: Session) => void;
   index: number;
   project: string;
   account: string;
@@ -497,10 +506,7 @@ function Card({
     !sending &&
     !picking &&
     !terminal &&
-    (claude
-      ? ['ready', 'working', 'waiting', 'stopped', 'error']
-      : ['ready', 'stopped', 'error']
-    ).includes(session.status);
+    ['ready', 'working', 'waiting', 'starting', 'stopped', 'error'].includes(session.status);
   const setDraft = (value: string) => controls.setDrafts((v) => ({ ...v, [session.id]: value }));
   const submit = async () => {
     const text = draft.trim();
@@ -595,6 +601,7 @@ function Card({
               <strong>{session.title}</strong>
             </button>
           )}
+          <TeamIndicator session={session} sessions={teamSessions} open={openTeamChat} compact />
           {index < 9 && (
             <kbd className="multichat-key" aria-hidden="true">
               {modKey}
@@ -637,8 +644,7 @@ function Card({
           <button
             className="multichat-dismiss"
             onClick={dismiss}
-            disabled={pending}
-            title={pending ? 'Se podrá retirar cuando termine' : 'Retirar del grid'}
+            title="Cerrar chat y ocultar del grid"
             aria-label={`Retirar ${session.title} del grid`}
           >
             <X size={13} />
@@ -673,7 +679,11 @@ function Card({
           </button>
         </div>
         {visible && !terminal && (
-          <Supervision session={session} root={root} showChanges={actions.showChanges} />
+          <>
+            <Supervision session={session} root={root} showChanges={actions.showChanges} />
+            {!!session.todos?.length && <TodoPanel todos={session.todos} />}
+            <ExecutionPanel session={session} />
+          </>
         )}
         {visible && !terminal && !session.approvals.length && (
           <ActivityDock session={session} kind={providerKind(session.profile)} compact />
@@ -747,6 +757,22 @@ function Card({
           </div>
         )}
         {!terminal && (
+          <PendingMessages
+            session={session}
+            run={controls.run}
+            recover={(text, attachments) => {
+              setDraft([draft, text].filter(Boolean).join('\n'));
+              controls.setImages((d) => ({
+                ...d,
+                [session.id]: [
+                  ...(d[session.id] ?? []),
+                  ...attachments.filter((a) => !d[session.id]?.some((x) => x.id === a.id)),
+                ],
+              }));
+            }}
+          />
+        )}
+        {!terminal && (
           <form
             className="multichat-composer"
             onSubmit={(e) => {
@@ -804,7 +830,7 @@ function Card({
               <textarea
                 ref={textarea}
                 aria-label={`Mensaje para ${session.title}`}
-                placeholder={pending && claude ? 'Añade indicaciones…' : 'Escribe un mensaje…'}
+                placeholder={pending ? 'Añade indicaciones…' : 'Escribe un mensaje…'}
                 rows={1}
                 value={draft}
                 readOnly={sending}
@@ -866,8 +892,14 @@ export function Multichat({
   disabled,
   openDev,
   actionsFor,
+  dismissed,
+  opened,
+  close,
   ...controls
 }: {
+  opened: string[];
+  dismissed: string[];
+  close: (session: Session) => void;
   state: Snapshot;
   visible: boolean;
   /** Top bar slot for the grid controls; they render above the grid without one. */
@@ -899,13 +931,12 @@ export function Multichat({
   };
   const section = useRef<HTMLElement>(null);
   const [tracked, setTracked] = useState<string[]>(() => savedIds(orderKey));
-  const [dismissed, setDismissed] = useState<string[]>(() => savedIds(dismissedKey));
+  const [showHidden, setShowHidden] = useState(false);
   const [unseen, setUnseen] = useState<string[]>([]);
   const [layout, setLayout] = useState(savedLayout);
   const [fit, setFit] = useState(4);
   const [showKeys, setShowKeys] = useState(false);
   useEffect(() => store(layoutKey, layout), [layout]);
-  useEffect(() => store(dismissedKey, dismissed), [dismissed]);
   useEffect(() => {
     const el = section.current;
     if (!el) return;
@@ -926,21 +957,14 @@ export function Multichat({
     setTracked((previous) => {
       const next = previous.filter((id) => state.sessions.some((s) => s.id === id));
       for (const s of state.sessions)
-        if ((sessionIsLive(s) || s.approvals.length) && !next.includes(s.id)) next.push(s.id);
+        if (
+          (sessionIsLive(s) || s.approvals.length || opened.includes(s.id)) &&
+          !next.includes(s.id)
+        )
+          next.push(s.id);
       return next.length === previous.length && next.every((id, i) => previous[i] === id)
         ? previous
         : next;
-    });
-    setDismissed((ids) => {
-      const next = ids.filter((id) =>
-        state.sessions.some(
-          (s) =>
-            s.id === id &&
-            !['working', 'starting', 'waiting'].includes(s.status) &&
-            !s.approvals.length,
-        ),
-      );
-      return next.length === ids.length ? ids : next;
     });
     // A chat that finishes while you look elsewhere stays marked until you touch its card.
     const finished: string[] = [];
@@ -959,10 +983,10 @@ export function Multichat({
       );
       return next.length === ids.length && next.every((id, i) => ids[i] === id) ? ids : next;
     });
-  }, [state.sessions]);
+  }, [state.sessions, opened.join('\0')]);
   useEffect(() => store(orderKey, tracked), [tracked]);
   const sessions = tracked
-    .filter((id) => !dismissed.includes(id))
+    .filter((id) => showHidden || !dismissed.includes(id))
     .map((id) => state.sessions.find((s) => s.id === id))
     .filter((s): s is Session => !!s);
   const shape = layout.auto ? autoLayout(sessions.length, fit) : layout;
@@ -1076,7 +1100,6 @@ export function Multichat({
     });
     if (!created?.id) return false;
     // A new chat is stopped until its first message; track it so its card is there to write in.
-    setDismissed((ids) => ids.filter((id) => id !== created.id));
     setTracked((ids) => (ids.includes(created.id) ? ids : [...ids, created.id]));
     focusNext.current = created.id;
     return true;
@@ -1112,11 +1135,15 @@ export function Multichat({
           </button>
         )}
         {overflow > 0 && <span>Desplaza para ver {overflow} más</span>}
-        {dismissed.length > 0 && (
-          <button onClick={() => setDismissed([])} title="Devolver al grid los chats retirados">
-            Mostrar {plural(dismissed.length, 'retirado', 'retirados')}
-          </button>
-        )}
+        <button
+          onClick={() => setShowHidden((v) => !v)}
+          aria-pressed={showHidden}
+          aria-label={showHidden ? 'Ocultar chats cerrados' : 'Ver chats cerrados'}
+          title={showHidden ? 'Ocultar chats cerrados' : 'Ver chats cerrados'}
+        >
+          {showHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+          {dismissed.length > 0 && ` ${dismissed.length} ocultos`}
+        </button>
       </div>
       <div className="multichat-tools">
         <NewChatPicker state={state} disabled={disabled} create={createChat} />
@@ -1152,6 +1179,8 @@ export function Multichat({
               <Card
                 key={s.id}
                 session={s}
+                teamSessions={state.sessions}
+                openTeamChat={open}
                 index={i}
                 actions={actionsFor(s)}
                 visible={visible}
@@ -1179,7 +1208,7 @@ export function Multichat({
                   setUnseen((ids) => (ids.includes(s.id) ? ids.filter((id) => id !== s.id) : ids));
                 }}
                 open={() => open(s)}
-                dismiss={() => setDismissed((ids) => [...ids, s.id])}
+                dismiss={() => close(s)}
                 dragging={dragged === s.id}
                 dropTarget={target === s.id}
                 dragStart={(e) => {

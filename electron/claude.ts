@@ -1,3 +1,4 @@
+import { teamInput } from '../src/team-protocol';
 import { claudeAttachmentContent, type PreparedAttachment } from './attachments';
 import { browserInput } from '../src/browser-protocol';
 import { randomUUID } from 'node:crypto';
@@ -193,6 +194,7 @@ export class ClaudeRuntime {
   }
   private ask(tool: string, input: any, opts: any) {
     if (
+      (tool === 'mcp__agent_desk__team' && teamInput.safeParse(input).success) ||
       (tool === 'mcp__agent_desk__coordinate' && coordinationInput.safeParse(input).success) ||
       (tool === 'mcp__agent_desk__browser' && browserInput.safeParse(input).success)
     )

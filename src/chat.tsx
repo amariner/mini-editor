@@ -1676,10 +1676,8 @@ export function Composer({
   const working = session.status === 'working' || session.status === 'waiting';
   const enabled =
     !disabled &&
-    (claude
-      ? ['ready', 'working', 'waiting', 'stopped', 'error'].includes(session.status) &&
-        session.mode !== 'terminal'
-      : ['ready', 'stopped', 'error'].includes(session.status));
+    session.mode !== 'terminal' &&
+    ['ready', 'working', 'waiting', 'starting', 'stopped', 'error'].includes(session.status);
   // Offered only on an empty field: a click fills the draft, never sends or replaces your text.
   const suggestion =
     enabled && !working && !sending && !draft.trim() && !images.length
@@ -2010,7 +2008,7 @@ export function Composer({
             sending || session.status === 'starting'
               ? 'Conectando agente…'
               : working
-                ? 'Escribe para encolar otro mensaje…'
+                ? 'Añade indicaciones…'
                 : 'Escribe una tarea…'
           }
           disabled={!enabled || sending}
@@ -2424,7 +2422,7 @@ export function Composer({
               </>
             )}
           </div>
-          {working ? (
+          {working && !draft.trim() && !images.length ? (
             <button
               className="send stop"
               title="Interrumpir (Esc)"
@@ -2566,3 +2564,84 @@ export const suggestions: { title: string; text: string; icon: any; color: strin
     text: 'Mejora la documentación del proyecto con lo que falte.',
   },
 ];
+
+/** Running tasks reported by the provider, shared by full chat and grid. */
+export function ExecutionPanel({ session }: { session: Session }) {
+  const agents = session.subagents ?? [];
+  if (!agents.length) return null;
+  return (
+    <details className="execution-panel" open>
+      <summary>
+        <Bot size={13} /> {agents.length}{' '}
+        {agents.length === 1 ? 'agente trabajando' : 'agentes trabajando'}
+      </summary>
+      <ul>
+        {agents.map((agent) => (
+          <li key={agent.id}>
+            <strong>{agent.description || 'Agente'}</strong>
+            {agent.summary && <span>{agent.summary}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+export function PendingMessages({
+  session,
+  run,
+  recover,
+}: {
+  session: Session;
+  run: (action: Action) => Promise<any>;
+  recover: (text: string, attachments: Attachment[]) => void;
+}) {
+  if (!session.pendingInputs?.length) return null;
+  return (
+    <div className="pending-messages" aria-label="Mensajes pendientes" aria-live="polite">
+      {session.pendingInputs.map((message) => (
+        <div key={message.id} className={message.status}>
+          <span title={message.error || message.text}>
+            <small>
+              {message.status === 'failed'
+                ? 'No enviado'
+                : message.status === 'sending'
+                  ? 'Enviando'
+                  : 'Pendiente'}
+            </small>
+            {message.text || message.attachments.map((a) => a.name).join(', ')}
+          </span>
+          {message.status === 'failed' && (
+            <button
+              type="button"
+              title={message.error}
+              aria-label="Recuperar mensaje"
+              onClick={async () => {
+                if (
+                  await run({
+                    type: 'cancelPendingInput',
+                    sessionId: session.id,
+                    messageId: message.id,
+                  })
+                )
+                  recover(message.text, message.attachments);
+              }}
+            >
+              <Undo2 size={12} />
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={message.status === 'sending'}
+            aria-label="Cancelar mensaje pendiente"
+            onClick={() =>
+              void run({ type: 'cancelPendingInput', sessionId: session.id, messageId: message.id })
+            }
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
