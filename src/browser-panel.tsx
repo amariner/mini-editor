@@ -63,7 +63,12 @@ export function BrowserPanel({
     editingAddress.current = false;
     setCaptured(false);
     setOptionsOpen(false);
-    if (!state?.url && !blocked) addressInput.current?.focus();
+    if (
+      !state?.url &&
+      !blocked &&
+      [null, document.body].includes(document.activeElement as HTMLElement)
+    )
+      addressInput.current?.focus();
   }, [state?.id]);
   useEffect(() => {
     if (!editingAddress.current) setAddress(state?.url ?? '');

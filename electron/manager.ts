@@ -149,6 +149,7 @@ export class Manager {
   private operations = new Set<string>();
   private operationWork = new Map<string, Promise<unknown>>();
   private stoppingRuntimes = new Map<string, Promise<void>>();
+  private deletingSessions = new Map<string, Promise<boolean>>();
   private removingProjects = new Map<string, Promise<void>>();
   private modelJobs = new Map<string, { controller: AbortController; work: Promise<void> }>();
   private gitJobs = new Set<string>();
@@ -570,12 +571,22 @@ export class Manager {
     return true;
   }
   deleteSession(id: string, cleanup: (sessions: Session[]) => Promise<void> = async () => {}) {
-    return this.exclusive(id, async () => {
-      const s = this.session(id);
+    const pending = this.deletingSessions?.get(id);
+    if (pending) return pending;
+    const s = this.session(id);
+    // Deleting outranks any in-flight work: new operations are refused, the agent is stopped
+    // (killed if it does not confirm), and the chat is removed even if a turn was running.
+    const work = (async () => {
       this.pendingInputs.pause(s);
-      await this.stopRuntime(id);
-      if (this.runtimes.has(id)) throw new Error('No se ha confirmado la parada del chat.');
-      await cleanup([s]);
+      this.modelJobs.get(id)?.controller.abort();
+      await this.stopRuntime(id).catch(() => this.killRuntime(id));
+      await Promise.race([
+        Promise.allSettled([this.operationWork.get(id), this.modelJobs.get(id)?.work]),
+        new Promise((resolve) => setTimeout(resolve, 10000)),
+      ]);
+      if (this.runtimes.has(id)) await this.stopRuntime(id).catch(() => this.killRuntime(id));
+      if (this.runtimes.has(id)) this.killRuntime(id);
+      await cleanup([s]).catch(() => {});
       this.buffers.delete(id);
       this.coordinator.unregister(id);
       this.state.sessions = this.state.sessions.filter((chat) => chat.id !== id);
@@ -586,7 +597,24 @@ export class Manager {
       this.store.flush();
       this.changed();
       return true;
-    });
+    })().finally(() => this.deletingSessions?.delete(id));
+    this.deletingSessions?.set(id, work);
+    return work;
+  }
+  private killRuntime(id: string) {
+    const rt = this.runtimes.get(id);
+    if (!rt) return;
+    const pid = rt.pty?.pid ?? rt.claude?.processId ?? rt.rpc?.process.pid;
+    if (pid)
+      try {
+        process.kill(-pid, 'SIGKILL');
+      } catch {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {}
+      }
+    this.runtimes.delete(id);
+    this.coordinator.unregister(id);
   }
   removeProject(id: string, cleanup: (sessions: Session[]) => Promise<void> = async () => {}) {
     const pending = this.removingProjects.get(id);
@@ -642,6 +670,7 @@ export class Manager {
     const session = this.state.sessions.find((s) => s.id === id);
     if (session && this.removingProjects.has(session.projectId))
       throw new Error('Se está quitando este proyecto.');
+    if (this.deletingSessions?.has(id)) throw new Error('Se está eliminando este chat.');
     if (this.operations.has(id)) throw new Error('Hay una operación pendiente en esta sesión.');
     this.operations.add(id);
     const work = Promise.resolve().then(fn);

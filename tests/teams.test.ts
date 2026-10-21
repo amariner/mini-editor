@@ -235,3 +235,31 @@ test('eliminar un chat lo borra de persistencia y conserva sus subchats independ
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('eliminar un chat no depende de que termine una operación en curso', async () => {
+  const { Manager } = await import('../electron/manager');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'desk-delete-busy-'));
+  const manager = new Manager(directory, () => {});
+  try {
+    manager.state.profiles = [{ id: 'claude-1', name: 'Claude', kind: 'claude' }];
+    manager.state.projects = [{ id: 'p', name: 'Proyecto', path: directory }];
+    const s = manager.newSession('p', 'claude-1', 'chat');
+    let release!: () => void;
+    const busy = manager.exclusive(s.id, () => new Promise<void>((r) => (release = r)));
+    const deleted = manager.deleteSession(s.id);
+    await assert.rejects(
+      manager.exclusive(s.id, async () => {}),
+      /Se está eliminando/,
+    );
+    release();
+    await busy;
+    assert.equal(await deleted, true);
+    assert.equal(
+      manager.state.sessions.some((chat) => chat.id === s.id),
+      false,
+    );
+  } finally {
+    await manager.shutdown();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

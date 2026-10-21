@@ -1,0 +1,524 @@
+/* Final calm layer: selection never changes geometry, state changes ease in, nothing shouts. */
+:root {
+  --motion-slow: 240ms;
+  --motion-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --select-line: color-mix(in srgb, var(--brand, var(--accent)) 38%, transparent);
+  --select-surface: color-mix(in srgb, var(--text) 5%, transparent);
+  --hover-surface: color-mix(in srgb, var(--text) 3.5%, transparent);
+  --quiet-focus: color-mix(in srgb, var(--field-focus) 45%, transparent);
+}
+
+/* Sidebar: rows keep the same box when hovered, focused, pressed or selected. */
+.app .sidebar .project-chat {
+  color: color-mix(in srgb, var(--ui-text-color, var(--text-2)) 72%, var(--bg));
+  border: 0;
+  outline: none;
+  transform: none;
+  transition:
+    background-color var(--motion-slow) var(--motion-out),
+    color var(--motion-slow) var(--motion-out),
+    box-shadow var(--motion-slow) var(--motion-out);
+}
+.app .sidebar .project-chat:hover {
+  background: var(--hover-surface);
+  color: var(--ui-text-color, var(--text-2));
+}
+.app .sidebar .project-chat.selected {
+  background: var(--select-surface);
+  color: var(--ui-text-color, var(--text-2));
+}
+.app .sidebar .project-chat:active {
+  background: var(--select-surface);
+}
+.app .sidebar :is(.project-chat, .project-name, .team-fold):focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--quiet-focus);
+}
+.app .sidebar .project-chat svg {
+  transition: color var(--motion-slow) ease;
+}
+.app .sidebar .project-name {
+  transform: none;
+  transition: color var(--motion-slow) var(--motion-out);
+}
+.app .sidebar .project-block {
+  transition: background-color var(--motion-slow) var(--motion-out);
+}
+.app .sidebar .project-block.selected {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.app .sidebar .project-chats > div,
+.app .sidebar .project-subchats > div {
+  animation: desk-fade-in var(--motion-enter) ease both;
+}
+.app .sidebar .team-fold > svg {
+  transition: transform var(--motion-fast) var(--motion-out);
+}
+
+/* Folding the sidebar swaps layouts, so it changes width at once and only the content fades. */
+.app .sidebar :is(.project-label, .project-chats, .sidebar-hint) {
+  animation: desk-fade-in var(--motion-slow) ease both;
+}
+
+/* Session tabs: a faint underline fades in; text stays close to the background. */
+.app .workspace .session-tab {
+  color: color-mix(in srgb, var(--ui-text-color, var(--muted)) 85%, var(--bg));
+  border-bottom: 1px solid transparent;
+  box-shadow: none;
+  transition:
+    border-color var(--motion-slow) var(--motion-out),
+    color var(--motion-slow) var(--motion-out),
+    background-color var(--motion-slow) var(--motion-out);
+}
+.app .workspace .session-tab:hover {
+  color: var(--ui-text-color, var(--text-2));
+}
+.app .workspace .session-tab.selected {
+  color: var(--ui-text-color, var(--text-2));
+  border-color: var(--select-line);
+  background: transparent;
+  box-shadow: none;
+}
+.app .workspace .session-tab.running:not(.selected) {
+  background: transparent;
+}
+.app .workspace .session-tab .tab-close {
+  transition:
+    opacity var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+.app .workspace .session-tab > button[role='tab']:focus-visible,
+.app .workspace .session-tab .tab-close:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--quiet-focus);
+}
+.app .workspace .session-tab {
+  animation: desk-fade-in var(--motion-enter) ease both;
+}
+
+/* Compact controls answer a click with a soft press, then settle back. Rows and cards stay still. */
+.app
+  :is(
+    .icon-btn,
+    .chip-btn,
+    .new-tab,
+    .tab-close,
+    .top-actions button,
+    .section-label button,
+    .sidebar-bottom button,
+    .browser-toolbar button,
+    .modal-actions button,
+    .msg-action,
+    button.primary
+  ):not(:disabled):active {
+  transform: scale(0.94);
+}
+.app :is(.project-name, .project-chat, .session-tab > button, .palette-results button):active {
+  transform: none;
+}
+.app button:disabled {
+  transition: opacity var(--motion-slow) ease;
+}
+
+/* Composer: focus brightens the frame gently instead of snapping a ring on. */
+.app .composer {
+  transition:
+    border-color var(--motion-slow) var(--motion-out),
+    box-shadow var(--motion-slow) var(--motion-out),
+    background-color var(--motion-slow) var(--motion-out);
+}
+.app .composer.enabled:focus-within {
+  border-color: color-mix(in srgb, var(--field-focus) 55%, var(--line));
+}
+.app .composer textarea[readonly] {
+  cursor: text;
+}
+.app .composer textarea {
+  transition: opacity var(--motion-fast) ease;
+}
+.app .send {
+  transition:
+    background-color var(--motion-slow) var(--motion-out),
+    color var(--motion-slow) var(--motion-out),
+    opacity var(--motion-slow) var(--motion-out),
+    transform var(--motion-press) var(--motion-ease);
+}
+.app .send:not(:disabled):active {
+  transform: scale(0.9);
+}
+.app .send:disabled {
+  opacity: 0.35;
+}
+
+/* Attachments pop in softly; removing one is a quiet hover affordance. */
+.app .attachment-thumb,
+.app .attachment-file,
+.multichat-attachments > span {
+  animation: desk-pop-in var(--motion-slow) var(--motion-out) both;
+}
+.app .attachment-thumb button {
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-press) var(--motion-ease);
+}
+.app .attachment-thumb:is(:hover, :focus-within) button {
+  opacity: 1;
+}
+.app .composer-flash {
+  animation: desk-surface-in var(--motion-enter) var(--motion-out) both;
+}
+
+/* Conversation: sent messages and new answers rise in instead of appearing at once. */
+.app .row.user,
+.app .response-group,
+.app .pending-messages > div {
+  animation: desk-rise-in var(--motion-slow) var(--motion-out) both;
+}
+
+/* Side panels (diff, browser chrome, terminal) fade in rather than snapping open. */
+.app .tools-drawer,
+.app .terminal-panel,
+.app .workspace-separator {
+  animation: desk-fade-in var(--motion-slow) ease both;
+}
+.app .modal-actions button,
+.app .overlay .modal {
+  transition-duration: var(--motion-fast);
+}
+
+@keyframes desk-pop-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes desk-rise-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-slow: 0ms;
+  }
+  .app button:not(:disabled):active,
+  .app .send:not(:disabled):active {
+    transform: none;
+  }
+}
+
+/* Desk input: identical geometry at rest, hovered and focused; focus only warms the edge. */
+.app .desk-input .composer-area .composer,
+.app .desk-input .composer-area .composer.enabled:focus-within {
+  padding: 12px 12px 10px 14px;
+  box-shadow: none;
+}
+.app .desk-input:has(.composer.enabled:focus-within) {
+  --desk-edge: color-mix(in srgb, var(--text) 16%, var(--line));
+}
+.app .desk-input :is(.git-summary, .git-workflow, .composer) {
+  transition:
+    border-color var(--motion-slow) var(--motion-out),
+    background-color var(--motion-slow) var(--motion-out);
+}
+.app .desk-input .composer-area {
+  padding-bottom: 4px;
+}
+
+/* Dividers never stay lit: a hairline that only warms while hovered or dragged. */
+.app .workspace-separator,
+.app .workspace-separator:is(:focus, :focus-visible) {
+  outline: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+.app .workspace-separator::after,
+.app .workspace-separator:is(:hover, :focus-visible)::after,
+.app .resizing .workspace-separator::after {
+  width: 1px;
+  transition: background-color var(--motion-slow) var(--motion-out);
+}
+.app .workspace-separator:hover::after,
+.app .resizing .workspace-separator::after {
+  background: color-mix(in srgb, var(--text) 22%, var(--line));
+}
+.app .workspace-separator:focus-visible:not(:hover)::after {
+  background: color-mix(in srgb, var(--field-focus) 45%, var(--line));
+}
+
+/* Composer tools fold behind "+": they slide out in a row; their menus still open upwards. */
+.app .composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.app .composer-tools .tools-toggle {
+  position: relative;
+}
+.app .composer-tools .tools-toggle > svg {
+  transition: rotate var(--motion-slow) var(--motion-out);
+}
+.app .composer-tools.open .tools-toggle > svg {
+  rotate: 45deg;
+}
+.app .composer-tools.open .tools-toggle {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.app .composer-tools:not(.open) > .composer-chips {
+  display: none;
+}
+/* A switched-on tool (custom model, saving, permissions) leaves a faint dot on "+". */
+.app .composer-tools:not(.open):has(.composer-chips .chip-btn.on) .tools-toggle::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--ui-text-color, var(--muted));
+}
+.app .desk-input .composer .composer-chips {
+  gap: 6px;
+}
+.app .composer-tools.open > .composer-chips > * {
+  animation: desk-slide-in var(--motion-slow) var(--motion-out) both;
+}
+.app .composer-tools.open > .composer-chips > :nth-child(2) {
+  animation-delay: 25ms;
+}
+.app .composer-tools.open > .composer-chips > :nth-child(3) {
+  animation-delay: 50ms;
+}
+.app .composer-tools.open > .composer-chips > :nth-child(4) {
+  animation-delay: 75ms;
+}
+.app .composer-tools.open > .composer-chips > :nth-child(n + 5) {
+  animation-delay: 100ms;
+}
+.app .desk-input .composer .chip-btn.on {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+@keyframes desk-slide-in {
+  from {
+    opacity: 0;
+    translate: -6px 0;
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/* Send: small and neutral; it only gains ink once there is something to send. */
+.app .desk-input .send,
+.app .desk-input .send.stop {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--ui-text-color, var(--text-2));
+}
+.app .desk-input .send:not(:disabled):hover {
+  background: color-mix(in srgb, var(--text) 15%, transparent);
+  color: var(--ui-text-color, var(--text));
+}
+.app .desk-input .send:disabled {
+  opacity: 1;
+  background: transparent;
+  color: var(--ui-text-color, var(--faint));
+}
+
+/* Footer: account and context ring only; the rest waits in a hover card. */
+.app .composer-footer {
+  gap: 10px;
+  padding-top: 4px;
+}
+.app .composer-footer .task-signature {
+  gap: 10px;
+}
+.app .footer-insight {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: default;
+  outline: none;
+  transition: background-color var(--motion-fast) ease;
+}
+.app .footer-insight:is(:hover, :focus-visible) {
+  background: var(--hover-surface);
+}
+.app .footer-insight-card {
+  position: absolute;
+  right: -6px;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 248px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 4%, var(--bg));
+  box-shadow: var(--shadow);
+  color: var(--ui-text-color, var(--text-2));
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  translate: 0 4px;
+  transition:
+    opacity var(--motion-fast) ease,
+    translate var(--motion-fast) var(--motion-out),
+    visibility 0s linear var(--motion-fast);
+}
+.app .footer-insight:is(:hover, :focus-visible) .footer-insight-card {
+  opacity: 1;
+  visibility: visible;
+  translate: none;
+  transition:
+    opacity var(--motion-slow) ease 120ms,
+    translate var(--motion-slow) var(--motion-out) 120ms,
+    visibility 0s;
+}
+.app .insight-row,
+.app .usage-window-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.app .insight-row > span,
+.app .usage-window-head > span {
+  flex-shrink: 0;
+  color: var(--ui-text-color, var(--muted));
+}
+.app .insight-row strong,
+.app .usage-window-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.app .usage-window {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.app .usage-window-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.app .usage-window-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ui-text-color, var(--muted));
+  transition: width 400ms var(--motion-out);
+}
+.app .usage-window-track i.high {
+  background: var(--warn);
+}
+.app .usage-window small {
+  color: var(--ui-text-color, var(--muted));
+  font-size: 10.5px;
+}
+
+/* Breathing room: a little more air between rows, groups and controls. */
+.app .sidebar .project-block {
+  margin-bottom: 14px;
+}
+.app .sidebar .project-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+.app .sidebar .project-chat {
+  min-height: 30px;
+  padding: 6px 10px;
+}
+.app .workspace .session-tabs-bar,
+.app .workspace .session-tabs {
+  gap: 8px;
+}
+.app .topbar .top-actions {
+  gap: 6px;
+}
+.app :is(.topbar .top-actions button.on, .chip-btn[aria-expanded='true']) {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* Folded rail: project icons only, no chats or subchats. */
+.app .sidebar.collapsed :is(.project-chats, .project-subchats) {
+  display: none;
+}
+.app .sidebar.collapsed .project-block,
+.app .sidebar.collapsed .project-block.selected {
+  margin-bottom: 6px;
+  padding-bottom: 0;
+}
+/* The rail is wide enough that its icons and the bottom buttons share one centre line
+   with the expanded sidebar (28px from the edge). */
+.app .sidebar.compact.collapsed {
+  width: calc(var(--project-icon-size, 20px) + 36px);
+  min-width: calc(var(--project-icon-size, 20px) + 36px);
+  padding-inline: 8px;
+}
+
+/* Bottom controls never move: settings sits right above the fold button, same spot
+   whether the sidebar is open or folded. */
+.app .sidebar.compact .sidebar-bottom,
+.app .sidebar.compact:not(.collapsed) .sidebar-bottom {
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  padding-inline: 3px 0;
+}
+.app .sidebar.compact.collapsed .sidebar-bottom {
+  padding-inline: calc((var(--project-icon-size, 20px) + 20px - var(--control-size)) / 2) 0;
+}
+.app .sidebar.compact .sidebar-bottom button,
+.app .sidebar.compact.collapsed .sidebar-bottom button {
+  width: var(--control-size);
+  min-width: var(--control-size);
+  height: var(--control-size);
+  min-height: var(--control-size);
+  padding: 0;
+  justify-content: center;
+}
+.app .sidebar :is(.sidebar-bottom button, .section-label button):focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--quiet-focus);
+}
+/* Same clearance for the macOS window controls with the wider folded rail. */
+.app:has(.sidebar.collapsed) > main > .topbar {
+  padding-left: max(8px, calc(82px - var(--project-icon-size, 20px)));
+}

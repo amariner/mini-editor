@@ -175,7 +175,9 @@ export function TerminalView({
     if (!visible || !live(session)) return;
     const timer = setTimeout(() => {
       fit.current?.fit();
-      terminal.current?.focus();
+      // Status changes must not pull the caret away from a field the user is typing in.
+      const a = document.activeElement;
+      if (!a || a === document.body || a.closest('.terminal-wrap')) terminal.current?.focus();
     }, 50);
     return () => clearTimeout(timer);
   }, [visible, session.id, session.status, placement]);

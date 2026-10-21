@@ -4,6 +4,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+// Composer tools sit behind the "+" toggle.
+async function openComposerTools(page) {
+  const toggle = page.getByRole('button', { name: 'Herramientas del chat', exact: true });
+  if (await toggle.count()) await toggle.click();
+}
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'desk-usage-images-'));
 const project = path.join(root, 'Proyecto visual');
 await fs.mkdir(project);
@@ -51,6 +56,7 @@ try {
   await app.evaluate(({ dialog }, filename) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filename] });
   }, image);
+  await openComposerTools(page);
   await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).click();
   await page.locator('.attachment-thumb img').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Enviar', exact: true }).isEnabled(), true);
@@ -72,6 +78,7 @@ try {
   await call({ type: 'discardImages', sessionId: sid, attachmentIds: selected.map((i) => i.id) });
   await page.getByRole('button', { name: 'Quitar muestra.png', exact: true }).click();
   assert.equal(await page.locator('.attachment-thumb').count(), 0);
+  await openComposerTools(page);
   await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).click();
   await page.locator('.attachment-thumb').waitFor();
   const footer = await page.locator('.composer-footer').boundingBox();

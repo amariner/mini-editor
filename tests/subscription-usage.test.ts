@@ -76,49 +76,40 @@ test('cada cuota caduca por separado y la cuota de apps no sustituye a la semana
   assert.equal(currentUsageWindow(usage, '7 días', now + 1001)?.usedPercent, 81);
   assert.equal(currentUsageWindow(usage, '7 días', now + 180001), undefined);
 });
-test('el selector muestra solo porcentaje restante: Claude 5h y Codex semanal', async () => {
+test('la tarjeta de consumo muestra la franja vigente: Claude 5h y Codex semanal', async () => {
   const React = await import('react');
   const { renderToStaticMarkup } = await import('react-dom/server');
-  const { UsageSwitcher } = await import('../src/usage-switcher');
+  const { UsageSwitcher, UsageWindowDetail } = await import('../src/usage-switcher');
+  const usage = {
+    checkedAt: Date.now(),
+    windows: [
+      { label: '5 h', usedPercent: 37, resetsAt: Date.now() + 3600000 },
+      { label: '7 días', usedPercent: 81, resetsAt: Date.now() + 86400000 },
+    ],
+  };
+  const codex = renderToStaticMarkup(
+    React.createElement(UsageWindowDetail, { profile: 'codex', usage }),
+  );
+  assert.match(codex, /Franja semanal/);
+  assert.match(codex, /19% libre/);
+  assert.match(codex, /width:81%/);
+  const claude = renderToStaticMarkup(
+    React.createElement(UsageWindowDetail, { profile: 'claude-1', usage }),
+  );
+  assert.match(claude, /Franja de 5 h/);
+  assert.match(claude, /63% libre/);
+  assert.doesNotMatch(claude, /19%/);
+  const empty = renderToStaticMarkup(React.createElement(UsageWindowDetail, { profile: 'codex' }));
+  assert.match(empty, /—/);
+  assert.doesNotMatch(empty, /100%|libre/);
   const props = {
     profiles: [{ id: 'codex' as const, name: 'Codex', kind: 'codex' as const }],
     profile: 'codex' as const,
     disabled: false,
     change: () => {},
   };
-  const markup = renderToStaticMarkup(
-    React.createElement(UsageSwitcher, {
-      ...props,
-      usage: {
-        checkedAt: Date.now(),
-        windows: [
-          { label: '5 h', usedPercent: 37, resetsAt: Date.now() + 3600000 },
-          { label: '7 días', usedPercent: 81, resetsAt: Date.now() + 86400000 },
-        ],
-      },
-    }),
-  );
-  assert.match(markup, /Disponible semanal: 19%/);
-  assert.doesNotMatch(markup, /5 h|Consumo|Renovación|usage-fill|usage-reset/);
-  const claude = renderToStaticMarkup(
-    React.createElement(UsageSwitcher, {
-      ...props,
-      profiles: [{ id: 'claude-1', name: 'Personal', kind: 'claude' }],
-      profile: 'claude-1',
-      usage: {
-        checkedAt: Date.now(),
-        windows: [
-          { label: '5 h', usedPercent: 37, resetsAt: Date.now() + 3600000 },
-          { label: '7 días', usedPercent: 81, resetsAt: Date.now() + 86400000 },
-        ],
-      },
-    }),
-  );
-  assert.match(claude, /Disponible de 5 horas: 63%/);
-  assert.doesNotMatch(claude, /Semanal|19%|Renovación/);
-  const empty = renderToStaticMarkup(React.createElement(UsageSwitcher, props));
-  assert.match(empty, /Disponible semanal: no disponible/);
-  assert.doesNotMatch(empty, /100%|0%/);
+  const switcher = renderToStaticMarkup(React.createElement(UsageSwitcher, props));
+  assert.doesNotMatch(switcher, /%/);
   const locked = renderToStaticMarkup(
     React.createElement(UsageSwitcher, { ...props, locked: true }),
   );

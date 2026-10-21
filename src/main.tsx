@@ -52,7 +52,7 @@ import {
   PendingMessages,
   ExecutionPanel,
 } from './chat';
-import { UsageSwitcher } from './usage-switcher';
+import { UsageSwitcher, UsageWindowDetail } from './usage-switcher';
 import { EditableName } from './editable-name';
 import { useWorkspaceSplit } from './workspace-split';
 import { DeskMark, ProjectMark } from './project-mark';
@@ -72,6 +72,7 @@ import './chat-polish.css';
 import './multichat-polish.css';
 import './browser-polish.css';
 import './attention.css';
+import './motion.css';
 const statusLabels: Record<string, string> = {
   stopped: 'En espera',
   starting: 'Abriendo…',
@@ -183,9 +184,15 @@ function App() {
     }, 100);
   };
   stateRef.current = state;
+  // Chats being deleted vanish at once and stay hidden from intermediate broadcasts.
+  const deleting = useRef(new Set<string>());
+  const visibleState = (snap: Snapshot): Snapshot =>
+    deleting.current.size
+      ? { ...snap, sessions: snap.sessions.filter((s) => !deleting.current.has(s.id)) }
+      : snap;
   useEffect(() => {
     const off = window.desk.subscribe((e) => {
-      if (e.type === 'state') setState(e.state);
+      if (e.type === 'state') setState(visibleState(e.state));
       if (e.type === 'browserOpened') {
         setShowBrowser(true);
         setBrowserTab(e.tabId ?? e.sessionId);
@@ -204,7 +211,7 @@ function App() {
     });
     window.desk
       .invoke({ type: 'snapshot' })
-      .then(setState)
+      .then((snap) => setState(visibleState(snap)))
       .catch((e) => setError(e.message));
     return off;
   }, []);
@@ -243,7 +250,19 @@ function App() {
     }
     const wasSelected = stateRef.current?.selectedSession === s.id;
     if (remove) {
-      if (!(await run({ type: 'deleteSession', sessionId: s.id }))) return;
+      deleting.current.add(s.id);
+      if (stateRef.current) {
+        stateRef.current = visibleState(stateRef.current);
+        setState(stateRef.current);
+      }
+      const deleted = await run({ type: 'deleteSession', sessionId: s.id });
+      deleting.current.delete(s.id);
+      if (!deleted) {
+        // Only an unknown chat fails here; refresh so the UI matches the store.
+        const snap = await window.desk.invoke({ type: 'snapshot' }).catch(() => undefined);
+        if (snap) setState((stateRef.current = visibleState(snap)));
+        return;
+      }
       setHiddenChats((ids) => ids.filter((id) => id !== s.id));
     }
     const remaining = (tabs[sessionGroup(s)] ?? []).filter((id) => id !== s.id);
@@ -305,8 +324,8 @@ function App() {
       const r = await window.desk.invoke(action);
       if (action.type === 'restartApp') return r;
       const snap = await window.desk.invoke({ type: 'snapshot' });
-      stateRef.current = snap;
-      setState(snap);
+      stateRef.current = visibleState(snap);
+      setState(stateRef.current);
       if (navigation) {
         setClosedSelection(undefined);
       }
@@ -1645,9 +1664,6 @@ function App() {
                                 <UsageSwitcher
                                   profiles={accountProfiles}
                                   profile={session.profile}
-                                  usage={state.accounts?.[session.profile]?.usage}
-                                  apiUsage={state.accounts?.[session.profile]?.apiUsage}
-                                  stats={session.stats}
                                   locked={sessionAccountLocked(session)}
                                   disabled={
                                     navigating ||
@@ -1665,6 +1681,14 @@ function App() {
                                 />
                               }
                               footerControl={terminalButton}
+                              usageDetail={
+                                <UsageWindowDetail
+                                  profile={session.profile}
+                                  usage={state.accounts?.[session.profile]?.usage}
+                                  apiUsage={state.accounts?.[session.profile]?.apiUsage}
+                                  stats={session.stats}
+                                />
+                              }
                               session={session}
                               accountName={
                                 accountProfiles.find((p) => p.id === session.profile)?.name ??
@@ -2026,6 +2050,12 @@ function App() {
                 disabled={busy[confirmClose.session.id]}
                 onClick={async () => {
                   const { session: s, remove } = confirmClose;
+                  if (remove) {
+                    // Deletion stops the agent itself; never leave the dialog stuck on a failed stop.
+                    setConfirmClose(undefined);
+                    await closeTab(s, true, true);
+                    return;
+                  }
                   if (live(stateRef.current?.sessions.find((x) => x.id === s.id)))
                     await run({ type: 'stop', sessionId: s.id });
                   if (!live(stateRef.current?.sessions.find((x) => x.id === s.id))) {

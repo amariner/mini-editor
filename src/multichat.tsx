@@ -13,7 +13,6 @@ import {
   RefreshCw,
   ChevronDown,
   Plus,
-  Sparkles,
   Copy,
   Eye,
   EyeOff,
@@ -660,8 +659,6 @@ function Card({
   }, [visible]);
   const terminal = session.mode === 'terminal' || session.status === 'terminal';
   const pending = isPending(session);
-  // Offered only on an empty field: a click fills the draft, never sends or replaces your text.
-  const suggestion = !pending && !draft.trim() && !images.length ? session.suggestion : undefined;
   const claude =
     providerKind(session.profile) === 'claude' && !isConnectedProvider(session.profile);
   const enabled =
@@ -1026,25 +1023,6 @@ function Card({
                   </span>
                 ))}
               </div>
-            )}
-            {suggestion && (
-              <button
-                type="button"
-                className="prompt-suggestion"
-                title={`Usar como borrador: ${suggestion}`}
-                aria-label={`Usar sugerencia como borrador: ${suggestion}`}
-                onClick={() => {
-                  setDraft(suggestion);
-                  requestAnimationFrame(() => {
-                    const field = textarea.current;
-                    field?.focus();
-                    field?.setSelectionRange(suggestion.length, suggestion.length);
-                  });
-                }}
-              >
-                <Sparkles size={11} aria-hidden="true" />
-                <span>{suggestion}</span>
-              </button>
             )}
             <div className="multichat-compose-row">
               <textarea

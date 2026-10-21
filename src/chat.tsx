@@ -18,6 +18,7 @@ import { signatureModel, reportedTokens, compactTokens } from './task-signature'
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Paperclip,
+  Plus,
   X,
   Square,
   ChevronDown,
@@ -982,11 +983,8 @@ function digit(e: React.KeyboardEvent) {
 /** Cards take the keyboard only when the user is not typing something else. */
 function canTakeFocus() {
   const a = document.activeElement;
-  return (
-    !a ||
-    a === document.body ||
-    (a instanceof HTMLTextAreaElement && a.getAttribute('aria-label') === 'Mensaje' && !a.value)
-  );
+  // Never pull the caret out of a field the user is in, even an empty composer.
+  return !a || a === document.body;
 }
 function useApprovalFocus() {
   const primary = useRef<HTMLButtonElement>(null);
@@ -1659,27 +1657,16 @@ function Popover({
 }
 // Modes other than asking show their name on the chip, so they are seen without a menu.
 const NOTABLE_MODES = new Set(['plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions']);
-function ContextGauge({
-  percent,
-  tokens,
-  max,
-}: {
-  percent: number;
-  tokens?: number;
-  max?: number;
-}) {
-  const p = Math.max(0, Math.min(100, percent));
+function ContextGauge({ percent }: { percent?: number }) {
+  const p = Math.max(0, Math.min(100, percent ?? 0));
   const r = 5,
     c = 2 * Math.PI * r;
-  const detail =
-    tokens && max
-      ? `${compactTokens(tokens)} de ${compactTokens(max)} tokens`
-      : 'según la última lectura';
   return (
     <span
       className={`task-signature-context ${p >= 95 ? 'full' : p >= 80 ? 'high' : ''}`}
-      title={`Contexto usado: ${Math.round(p)} % · ${detail}${p >= 80 ? ' · Claude compactará pronto' : ''}`}
-      aria-label={`Contexto usado: ${Math.round(p)} %`}
+      aria-label={
+        percent === undefined ? 'Contexto sin datos' : `Contexto usado: ${Math.round(p)} %`
+      }
     >
       <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
         <circle cx="6" cy="6" r={r} className="gauge-track" />
@@ -1692,7 +1679,7 @@ function ContextGauge({
           transform="rotate(-90 6 6)"
         />
       </svg>
-      {Math.round(p)}%
+      {percent === undefined ? '' : `${Math.round(p)}%`}
     </span>
   );
 }
@@ -1713,6 +1700,7 @@ export function Composer({
   setImages,
   onLocalCommand,
   footerControl,
+  usageDetail,
 }: {
   session: Session;
   accountName: string;
@@ -1727,6 +1715,8 @@ export function Composer({
   onSend: (text: string, images: Attachment[]) => Promise<boolean>;
   onLocalCommand: (name: string, arg: string) => boolean;
   footerControl?: React.ReactNode;
+  /** Consumption window shown in the context hover card. */
+  usageDetail?: React.ReactNode;
 }) {
   const area = useRef<HTMLTextAreaElement>(null);
   const [index, setIndex] = useState(0);
@@ -1734,6 +1724,9 @@ export function Composer({
   const [picking, setPicking] = useState(false);
   const [imageError, setImageError] = useState('');
   const [flash, setFlash] = useState<{ ok: boolean; text: string }>();
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const insightId = useId();
+  const tools = useRef<HTMLDivElement>(null);
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState('');
   const [files, setFiles] = useState<{ query: string; items: string[] }>({ query: '', items: [] });
@@ -1775,16 +1768,19 @@ export function Composer({
       <strong>Auto</strong>
     </button>
   );
+  useEffect(() => {
+    if (!toolsOpen) return;
+    const outside = (e: MouseEvent) => {
+      if (!tools.current?.contains(e.target as Node)) setToolsOpen(false);
+    };
+    window.addEventListener('mousedown', outside);
+    return () => window.removeEventListener('mousedown', outside);
+  }, [toolsOpen]);
   const working = session.status === 'working' || session.status === 'waiting';
   const enabled =
     !disabled &&
     session.mode !== 'terminal' &&
     ['ready', 'working', 'waiting', 'starting', 'stopped', 'error'].includes(session.status);
-  // Offered only on an empty field: a click fills the draft, never sends or replaces your text.
-  const suggestion =
-    enabled && !working && !sending && !draft.trim() && !images.length
-      ? session.suggestion
-      : undefined;
   const attach = async (files?: File[]) => {
     if (!enabled || sendingRef.current || pickingRef.current) return;
     pickingRef.current = true;
@@ -2085,23 +2081,6 @@ export function Composer({
             ))}
           </div>
         )}
-        {suggestion && (
-          <button
-            className="prompt-suggestion"
-            title={`Usar como borrador: ${suggestion}`}
-            aria-label={`Usar sugerencia como borrador: ${suggestion}`}
-            onClick={() => {
-              setDraft(suggestion);
-              requestAnimationFrame(() => {
-                area.current?.focus();
-                area.current?.setSelectionRange(suggestion.length, suggestion.length);
-              });
-            }}
-          >
-            <Sparkles size={12} aria-hidden="true" />
-            <span>{suggestion}</span>
-          </button>
-        )}
         <textarea
           ref={area}
           aria-label="Mensaje"
@@ -2113,7 +2092,9 @@ export function Composer({
                 ? 'Añade indicaciones…'
                 : 'Escribe una tarea…'
           }
-          disabled={!enabled || sending}
+          // readOnly instead of disabled: the caret stays in the composer while a message is sent.
+          readOnly={!enabled || sending}
+          aria-disabled={!enabled || sending}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -2190,228 +2171,88 @@ export function Composer({
           }}
         />
         <div className="composer-bar">
-          <div className="composer-chips">
+          <div
+            ref={tools}
+            className={`composer-tools ${toolsOpen ? 'open' : ''}`}
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape' || !toolsOpen) return;
+              e.preventDefault();
+              setToolsOpen(false);
+              tools.current?.querySelector<HTMLButtonElement>('.tools-toggle')?.focus();
+            }}
+          >
             <button
-              className="chip-btn attach-image"
-              aria-label="Adjuntar archivos"
-              title="Adjuntar archivos · PDF, CSV, Office, texto, código e imágenes"
-              disabled={!enabled || sending || picking}
-              onClick={() => void attach()}
+              className="chip-btn tools-toggle"
+              aria-label={toolsOpen ? 'Ocultar herramientas' : 'Herramientas del chat'}
+              title="Adjuntar, modelo, esfuerzo y permisos"
+              aria-expanded={toolsOpen}
+              onClick={() => setToolsOpen((v) => !v)}
             >
-              <Paperclip size={15} />
+              <Plus size={15} />
             </button>
-            {!connected && (
-              <Popover
-                label={
-                  savingLevels.find((l) => l.value === optimization.level)?.name ?? 'Desactivado'
-                }
-                icon={Leaf}
-                active={optimization.level > 0}
-                title="Ahorro de tokens"
+            <div className="composer-chips" inert={!toolsOpen}>
+              <button
+                className="chip-btn attach-image"
+                aria-label="Adjuntar archivos"
+                title="Adjuntar archivos · PDF, CSV, Office, texto, código e imágenes"
+                disabled={!enabled || sending || picking}
+                onClick={() => void attach()}
               >
-                {(close) => (
-                  <>
-                    {savingLevels.map((level) => (
-                      <button
-                        key={level.value}
-                        className={optimization.level === level.value ? 'on' : ''}
-                        onClick={() => {
-                          void optimize({ level: level.value });
-                          close();
-                        }}
-                      >
-                        <strong>{level.name}</strong>
-                      </button>
-                    ))}
-                  </>
-                )}
-              </Popover>
-            )}
-            {connected ? (
-              <Popover
-                label={
-                  session.info?.models.find((m) => m.value === session.providerConfig?.model)
-                    ?.displayName ??
-                  session.providerConfig?.model ??
-                  'Modelo'
-                }
-                icon={Sparkles}
-                title="Modelo"
-              >
-                {(close) => (
-                  <>
-                    <button
-                      disabled={working}
-                      onClick={() => {
-                        void chooseModel('default');
-                        close();
-                      }}
-                    >
-                      Predeterminado
-                    </button>
-                    {(session.info?.models ?? []).map((m) => (
-                      <button
-                        key={m.value}
-                        disabled={working}
-                        onClick={() => {
-                          void chooseModel(m.value);
-                          close();
-                        }}
-                      >
-                        <strong>{m.displayName}</strong>
-                      </button>
-                    ))}
-                    <CodexCatalogStatus session={session} run={run} compact />
-                  </>
-                )}
-              </Popover>
-            ) : claude ? (
-              <>
+                <Paperclip size={15} />
+              </button>
+              {!connected && (
                 <Popover
                   label={
-                    optimization.autoModel
-                      ? `Auto · ${session.optimization?.model ?? modelName}`
-                      : modelName
+                    savingLevels.find((l) => l.value === optimization.level)?.name ?? 'Desactivado'
+                  }
+                  icon={Leaf}
+                  active={optimization.level > 0}
+                  title="Ahorro de tokens"
+                >
+                  {(close) => (
+                    <>
+                      {savingLevels.map((level) => (
+                        <button
+                          key={level.value}
+                          className={optimization.level === level.value ? 'on' : ''}
+                          onClick={() => {
+                            void optimize({ level: level.value });
+                            close();
+                          }}
+                        >
+                          <strong>{level.name}</strong>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </Popover>
+              )}
+              {connected ? (
+                <Popover
+                  label={
+                    session.info?.models.find((m) => m.value === session.providerConfig?.model)
+                      ?.displayName ??
+                    session.providerConfig?.model ??
+                    'Modelo'
                   }
                   icon={Sparkles}
-                  active={optimization.autoModel}
                   title="Modelo"
                 >
                   {(close) => (
                     <>
-                      {autoOption(close)}
-                      {(session.info?.models.length
-                        ? session.info.models
-                        : [{ value: 'default', displayName: 'Por defecto', description: '' }]
-                      ).map((m) => (
-                        <button
-                          key={m.value}
-                          className={
-                            !optimization.autoModel && m.value === config?.model ? 'on' : ''
-                          }
-                          onClick={() => {
-                            void chooseModel(m.value);
-                            close();
-                          }}
-                        >
-                          <strong>{m.displayName}</strong>
-                        </button>
-                      ))}
-                      <CodexCatalogStatus session={session} run={run} compact />
-                    </>
-                  )}
-                </Popover>
-                <Popover
-                  label={mode?.name ?? 'Permisos'}
-                  icon={mode && NOTABLE_MODES.has(mode.id) ? ShieldAlert : ShieldCheck}
-                  text={mode && NOTABLE_MODES.has(mode.id) ? mode.name : undefined}
-                  title="Modo de permisos (⇧⇥ para alternar)"
-                >
-                  {(close) => (
-                    <>
-                      {permissionModes.map((m) => (
-                        <button
-                          key={m.id}
-                          className={m.id === mode?.id ? 'on' : ''}
-                          onClick={() => {
-                            void run({
-                              type: 'configure',
-                              sessionId: session.id,
-                              config: {
-                                permissionMode: m.id,
-                                ...(m.id === 'bypassPermissions' ? { allowBypass: true } : {}),
-                              },
-                            });
-                            close();
-                          }}
-                        >
-                          <strong>{m.name}</strong>
-                        </button>
-                      ))}
-                    </>
-                  )}
-                </Popover>
-                <Popover
-                  label={effortName ?? 'Esfuerzo'}
-                  icon={Gauge}
-                  text={effortName}
-                  title="Esfuerzo de razonamiento"
-                >
-                  {(close) => (
-                    <>
                       <button
-                        className={!config?.effort ? 'on' : ''}
-                        onClick={() => {
-                          void run({
-                            type: 'configure',
-                            sessionId: session.id,
-                            config: { effort: undefined },
-                          });
-                          close();
-                        }}
-                      >
-                        <strong>Por defecto</strong>
-                      </button>
-                      {efforts.map((e) => (
-                        <button
-                          key={e.id}
-                          className={e.id === config?.effort ? 'on' : ''}
-                          onClick={() => {
-                            void run({
-                              type: 'configure',
-                              sessionId: session.id,
-                              config: { effort: e.id },
-                            });
-                            close();
-                          }}
-                        >
-                          <strong>{e.name}</strong>
-                        </button>
-                      ))}
-                    </>
-                  )}
-                </Popover>
-              </>
-            ) : (
-              <>
-                <Popover
-                  label={
-                    optimization.autoModel
-                      ? `Auto · ${session.optimization?.model ?? 'Por defecto'}`
-                      : (session.info?.models.find((m) => m.value === session.codexConfig?.model)
-                          ?.displayName ??
-                        session.codexConfig?.model ??
-                        'Por defecto')
-                  }
-                  active={optimization.autoModel}
-                  icon={Sparkles}
-                  title="Modelo de Codex"
-                >
-                  {(close) => (
-                    <>
-                      {autoOption(close)}
-                      <button
-                        className={
-                          !optimization.autoModel &&
-                          (!session.codexConfig?.model || session.codexConfig.model === 'default')
-                            ? 'on'
-                            : ''
-                        }
+                        disabled={working}
                         onClick={() => {
                           void chooseModel('default');
                           close();
                         }}
                       >
-                        <strong>Por defecto</strong>
+                        Predeterminado
                       </button>
                       {(session.info?.models ?? []).map((m) => (
                         <button
                           key={m.value}
-                          className={
-                            !optimization.autoModel && m.value === session.codexConfig?.model
-                              ? 'on'
-                              : ''
-                          }
+                          disabled={working}
                           onClick={() => {
                             void chooseModel(m.value);
                             close();
@@ -2424,105 +2265,268 @@ export function Composer({
                     </>
                   )}
                 </Popover>
-                {(() => {
-                  const label = codexPermissionLabel(session.codexConfig);
-                  const full = label === 'Acceso total';
-                  return (
-                    <Popover
-                      label={label}
-                      icon={full ? ShieldAlert : ShieldCheck}
-                      text={label}
-                      title="Permisos de Codex"
-                    >
-                      {(close) => (
-                        <>
-                          {codexPermissionModes.map((m) => (
-                            <button
-                              key={m.name}
-                              className={
-                                m.sandbox === session.codexConfig?.sandbox &&
-                                m.approvalPolicy === session.codexConfig?.approvalPolicy
-                                  ? 'on'
-                                  : ''
-                              }
-                              aria-pressed={
-                                m.sandbox === session.codexConfig?.sandbox &&
-                                m.approvalPolicy === session.codexConfig?.approvalPolicy
-                              }
-                              onClick={async () => {
-                                const result = await run({
-                                  type: 'configureCodex',
-                                  sessionId: session.id,
-                                  config: { sandbox: m.sandbox, approvalPolicy: m.approvalPolicy },
-                                });
-                                if (result) close();
-                              }}
-                            >
-                              <strong>{m.name}</strong>
-                              <small>{m.hint}</small>
-                            </button>
-                          ))}
-                          <small className="codex-permission-timing">
-                            Se aplica al siguiente mensaje. Una acción pendiente se autoriza en su
-                            propia solicitud.
-                          </small>
-                        </>
-                      )}
-                    </Popover>
-                  );
-                })()}
-                {(() => {
-                  const levels =
-                    session.info?.models.find((m) =>
-                      !session.codexConfig?.model || session.codexConfig.model === 'default'
-                        ? m.isDefault
-                        : m.value === session.codexConfig.model,
-                    )?.supportedEffortLevels ?? [];
-                  return levels.length ? (
-                    <Popover
-                      label={session.codexConfig?.effort ?? 'Esfuerzo'}
-                      icon={Gauge}
-                      text={session.codexConfig?.effort}
-                      title="Esfuerzo de razonamiento"
-                    >
-                      {(close) => (
-                        <>
+              ) : claude ? (
+                <>
+                  <Popover
+                    label={
+                      optimization.autoModel
+                        ? `Auto · ${session.optimization?.model ?? modelName}`
+                        : modelName
+                    }
+                    icon={Sparkles}
+                    active={optimization.autoModel}
+                    title="Modelo"
+                  >
+                    {(close) => (
+                      <>
+                        {autoOption(close)}
+                        {(session.info?.models.length
+                          ? session.info.models
+                          : [{ value: 'default', displayName: 'Por defecto', description: '' }]
+                        ).map((m) => (
                           <button
-                            className={!session.codexConfig?.effort ? 'on' : ''}
+                            key={m.value}
+                            className={
+                              !optimization.autoModel && m.value === config?.model ? 'on' : ''
+                            }
+                            onClick={() => {
+                              void chooseModel(m.value);
+                              close();
+                            }}
+                          >
+                            <strong>{m.displayName}</strong>
+                          </button>
+                        ))}
+                        <CodexCatalogStatus session={session} run={run} compact />
+                      </>
+                    )}
+                  </Popover>
+                  <Popover
+                    label={mode?.name ?? 'Permisos'}
+                    icon={mode && NOTABLE_MODES.has(mode.id) ? ShieldAlert : ShieldCheck}
+                    text={mode && NOTABLE_MODES.has(mode.id) ? mode.name : undefined}
+                    title="Modo de permisos (⇧⇥ para alternar)"
+                  >
+                    {(close) => (
+                      <>
+                        {permissionModes.map((m) => (
+                          <button
+                            key={m.id}
+                            className={m.id === mode?.id ? 'on' : ''}
                             onClick={() => {
                               void run({
-                                type: 'configureCodex',
+                                type: 'configure',
                                 sessionId: session.id,
-                                config: { effort: undefined },
+                                config: {
+                                  permissionMode: m.id,
+                                  ...(m.id === 'bypassPermissions' ? { allowBypass: true } : {}),
+                                },
                               });
                               close();
                             }}
                           >
-                            <strong>Por defecto</strong>
+                            <strong>{m.name}</strong>
                           </button>
-                          {levels.map((e) => (
+                        ))}
+                      </>
+                    )}
+                  </Popover>
+                  <Popover
+                    label={effortName ?? 'Esfuerzo'}
+                    icon={Gauge}
+                    text={effortName}
+                    title="Esfuerzo de razonamiento"
+                  >
+                    {(close) => (
+                      <>
+                        <button
+                          className={!config?.effort ? 'on' : ''}
+                          onClick={() => {
+                            void run({
+                              type: 'configure',
+                              sessionId: session.id,
+                              config: { effort: undefined },
+                            });
+                            close();
+                          }}
+                        >
+                          <strong>Por defecto</strong>
+                        </button>
+                        {efforts.map((e) => (
+                          <button
+                            key={e.id}
+                            className={e.id === config?.effort ? 'on' : ''}
+                            onClick={() => {
+                              void run({
+                                type: 'configure',
+                                sessionId: session.id,
+                                config: { effort: e.id },
+                              });
+                              close();
+                            }}
+                          >
+                            <strong>{e.name}</strong>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </Popover>
+                </>
+              ) : (
+                <>
+                  <Popover
+                    label={
+                      optimization.autoModel
+                        ? `Auto · ${session.optimization?.model ?? 'Por defecto'}`
+                        : (session.info?.models.find((m) => m.value === session.codexConfig?.model)
+                            ?.displayName ??
+                          session.codexConfig?.model ??
+                          'Por defecto')
+                    }
+                    active={optimization.autoModel}
+                    icon={Sparkles}
+                    title="Modelo de Codex"
+                  >
+                    {(close) => (
+                      <>
+                        {autoOption(close)}
+                        <button
+                          className={
+                            !optimization.autoModel &&
+                            (!session.codexConfig?.model || session.codexConfig.model === 'default')
+                              ? 'on'
+                              : ''
+                          }
+                          onClick={() => {
+                            void chooseModel('default');
+                            close();
+                          }}
+                        >
+                          <strong>Por defecto</strong>
+                        </button>
+                        {(session.info?.models ?? []).map((m) => (
+                          <button
+                            key={m.value}
+                            className={
+                              !optimization.autoModel && m.value === session.codexConfig?.model
+                                ? 'on'
+                                : ''
+                            }
+                            onClick={() => {
+                              void chooseModel(m.value);
+                              close();
+                            }}
+                          >
+                            <strong>{m.displayName}</strong>
+                          </button>
+                        ))}
+                        <CodexCatalogStatus session={session} run={run} compact />
+                      </>
+                    )}
+                  </Popover>
+                  {(() => {
+                    const label = codexPermissionLabel(session.codexConfig);
+                    const full = label === 'Acceso total';
+                    return (
+                      <Popover
+                        label={label}
+                        icon={full ? ShieldAlert : ShieldCheck}
+                        text={label}
+                        title="Permisos de Codex"
+                      >
+                        {(close) => (
+                          <>
+                            {codexPermissionModes.map((m) => (
+                              <button
+                                key={m.name}
+                                className={
+                                  m.sandbox === session.codexConfig?.sandbox &&
+                                  m.approvalPolicy === session.codexConfig?.approvalPolicy
+                                    ? 'on'
+                                    : ''
+                                }
+                                aria-pressed={
+                                  m.sandbox === session.codexConfig?.sandbox &&
+                                  m.approvalPolicy === session.codexConfig?.approvalPolicy
+                                }
+                                onClick={async () => {
+                                  const result = await run({
+                                    type: 'configureCodex',
+                                    sessionId: session.id,
+                                    config: {
+                                      sandbox: m.sandbox,
+                                      approvalPolicy: m.approvalPolicy,
+                                    },
+                                  });
+                                  if (result) close();
+                                }}
+                              >
+                                <strong>{m.name}</strong>
+                                <small>{m.hint}</small>
+                              </button>
+                            ))}
+                            <small className="codex-permission-timing">
+                              Se aplica al siguiente mensaje. Una acción pendiente se autoriza en su
+                              propia solicitud.
+                            </small>
+                          </>
+                        )}
+                      </Popover>
+                    );
+                  })()}
+                  {(() => {
+                    const levels =
+                      session.info?.models.find((m) =>
+                        !session.codexConfig?.model || session.codexConfig.model === 'default'
+                          ? m.isDefault
+                          : m.value === session.codexConfig.model,
+                      )?.supportedEffortLevels ?? [];
+                    return levels.length ? (
+                      <Popover
+                        label={session.codexConfig?.effort ?? 'Esfuerzo'}
+                        icon={Gauge}
+                        text={session.codexConfig?.effort}
+                        title="Esfuerzo de razonamiento"
+                      >
+                        {(close) => (
+                          <>
                             <button
-                              key={e}
-                              className={e === session.codexConfig?.effort ? 'on' : ''}
+                              className={!session.codexConfig?.effort ? 'on' : ''}
                               onClick={() => {
                                 void run({
                                   type: 'configureCodex',
                                   sessionId: session.id,
-                                  config: { effort: e },
+                                  config: { effort: undefined },
                                 });
                                 close();
                               }}
                             >
-                              <strong>{e}</strong>
+                              <strong>Por defecto</strong>
                             </button>
-                          ))}
-                        </>
-                      )}
-                    </Popover>
-                  ) : null;
-                })()}
-              </>
-            )}
+                            {levels.map((e) => (
+                              <button
+                                key={e}
+                                className={e === session.codexConfig?.effort ? 'on' : ''}
+                                onClick={() => {
+                                  void run({
+                                    type: 'configureCodex',
+                                    sessionId: session.id,
+                                    config: { effort: e },
+                                  });
+                                  close();
+                                }}
+                              >
+                                <strong>{e}</strong>
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </Popover>
+                    ) : null;
+                  })()}
+                </>
+              )}
+            </div>
           </div>
           {working && !draft.trim() && !images.length ? (
             <button
@@ -2531,7 +2535,7 @@ export function Composer({
               aria-label="Interrumpir"
               onClick={() => run({ type: 'interrupt', sessionId: session.id })}
             >
-              <Square size={11} fill="currentColor" />
+              <Square size={9} fill="currentColor" />
             </button>
           ) : (
             <button
@@ -2541,41 +2545,50 @@ export function Composer({
               disabled={!enabled || sending || picking || (!draft.trim() && !images.length)}
               onClick={send}
             >
-              <CornerDownLeft size={15} />
+              <CornerDownLeft size={13} />
             </button>
           )}
         </div>
       </div>
       <div className="composer-footer">
-        <div className="task-signature" aria-label="Cuenta, modelo y tokens">
+        <div className="task-signature" aria-label="Cuenta y contexto">
           {accountControl ?? (
             <span className="task-signature-account" title={`Cuenta: ${accountName}`}>
               {accountName}
             </span>
           )}
-          <span aria-hidden="true">·</span>
-          <span
-            className="task-signature-model"
-            title={
-              signature === 'Auto'
-                ? 'El modelo se elige al enviar la tarea'
-                : `Modelo seleccionado: ${signature}${optimization.autoModel ? ' · Auto' : ''}`
-            }
-          >
-            {signature}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="task-signature-tokens" title={tokenDetail} aria-label={tokenDetail}>
-            ↑{tokens ? compactTokens(tokens.input) : '—'} ↓
-            {tokens ? compactTokens(tokens.output) : '—'}
-          </span>
-          {context !== undefined && Number.isFinite(context) && (
+          {/* Everything else waits behind the context ring: one hover, one quiet card. */}
+          <span className="footer-insight" tabIndex={0} aria-describedby={insightId}>
             <ContextGauge
-              percent={context}
-              tokens={session.stats?.contextTokens}
-              max={session.stats?.contextMax}
+              percent={context !== undefined && Number.isFinite(context) ? context : undefined}
             />
-          )}
+            <span className="footer-insight-card" role="tooltip" id={insightId}>
+              <span className="insight-row">
+                <span>Modelo</span>
+                <strong className="task-signature-model">{signature}</strong>
+              </span>
+              <span className="insight-row" title={tokenDetail}>
+                <span>Tokens</span>
+                <strong className="task-signature-tokens">
+                  ↑{tokens ? compactTokens(tokens.input) : '—'} ↓
+                  {tokens ? compactTokens(tokens.output) : '—'}
+                </strong>
+              </span>
+              <span className="insight-row">
+                <span>Contexto</span>
+                <strong>
+                  {context !== undefined && Number.isFinite(context)
+                    ? `${Math.round(context)}%${
+                        session.stats?.contextTokens && session.stats?.contextMax
+                          ? ` · ${compactTokens(session.stats.contextTokens)} de ${compactTokens(session.stats.contextMax)}`
+                          : ''
+                      }`
+                    : '—'}
+                </strong>
+              </span>
+              {usageDetail}
+            </span>
+          </span>
         </div>
         {footerControl}
       </div>

@@ -28,13 +28,13 @@ const system = (subtype: string, fields: Record<string, unknown>) => ({
   ...fields,
 });
 
-test('Claude: las opciones activan resúmenes de subagentes y sugerencias de prompt', () => {
+test('Claude: las opciones activan resúmenes de subagentes sin sugerencias de prompt', () => {
   const o = claudeOptions(
     { reference: 'uuid', attempted: false, config: mergeConfig() },
     { cwd: '/p', binary: '/bin/claude', profileDir: '/d' },
   ) as any;
   assert.equal(o.agentProgressSummaries, true);
-  assert.equal(o.promptSuggestions, true);
+  assert.equal(o.promptSuggestions, false);
 });
 
 test('Claude: task_started/progress/notification mantienen la línea de subagentes', () => {

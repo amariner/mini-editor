@@ -55,8 +55,8 @@ export function useWorkspaceSplit({
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.preventDefault();
+        // No focus on drag: a mouse resize must not leave the divider highlighted.
         e.currentTarget.setPointerCapture(e.pointerId);
-        e.currentTarget.focus();
         setDragging(true);
       }}
       onPointerMove={(e) => {

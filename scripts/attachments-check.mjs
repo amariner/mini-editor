@@ -4,6 +4,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+// Composer tools sit behind the "+" toggle.
+async function openComposerTools(page) {
+  const toggle = page.getByRole('button', { name: 'Herramientas del chat', exact: true });
+  if (await toggle.count()) await toggle.click();
+}
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'desk-documents-ui-'));
 const project = path.join(root, 'project'),
   data = path.join(root, 'data');
@@ -45,6 +50,7 @@ try {
       return { canceled: false, filePaths: [file] };
     };
   }, pdf);
+  await openComposerTools(page);
   await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).click();
   await page.locator('.attachment-file').filter({ hasText: 'informe.pdf' }).waitFor();
   await page.locator('.attachment-thumb button').waitFor({ state: 'visible' });
