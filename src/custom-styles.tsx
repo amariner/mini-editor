@@ -73,6 +73,13 @@ export function resetStyles() {
     applyStyles('');
   }
 }
+// Other native windows share storage, but each owns its adopted stylesheet.
+window.addEventListener('storage', (event) => {
+  if (event.storageArea !== localStorage) return;
+  if (event.key === null || event.key === KEY) applyStyles(savedStyles());
+  if (event.key === null || [KEY, THEMES_KEY, ACTIVE_KEY].includes(event.key))
+    window.dispatchEvent(new Event(STYLES_EVENT));
+});
 function ruleCount(css: string) {
   const probe = new CSSStyleSheet();
   probe.replaceSync(css);
@@ -244,6 +251,7 @@ export function StyleEditor() {
     let alive = true;
     // Loaded on demand: the editor's source CSS is only needed while this panel is open.
     void Promise.all([
+      import('@xterm/xterm/css/xterm.css?raw'),
       import('./style.css?raw'),
       import('./shell-polish.css?raw'),
       import('./settings-polish.css?raw'),
@@ -251,6 +259,8 @@ export function StyleEditor() {
       import('./multichat-polish.css?raw'),
       import('./browser-polish.css?raw'),
       import('./attention.css?raw'),
+      import('./motion.css?raw'),
+      import('./floating-chat.css?raw'),
     ]).then((styles) => alive && setBase(styles.map((style) => style.default).join('\n\n')));
     const sync = () => {
       documentVersion.current++;

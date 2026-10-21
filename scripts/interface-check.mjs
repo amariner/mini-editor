@@ -5,19 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-const expectedBase = (
-  await Promise.all(
-    [
-      'style',
-      'shell-polish',
-      'settings-polish',
-      'chat-polish',
-      'multichat-polish',
-      'browser-polish',
-      'attention',
-    ].map((name) => fs.readFile(`src/${name}.css`, 'utf8')),
-  )
-).join('\n\n');
+// Compare with the actual runtime imports so new components cannot silently go missing.
+const mainSource = await fs.readFile('src/main.tsx', 'utf8');
+const sources = [...mainSource.matchAll(/^import '([^']+\.css)';$/gm)].map(([, file]) =>
+  file.startsWith('.') ? path.join('src', file) : path.join('node_modules', file),
+);
+const expectedBase = (await Promise.all(sources.map((file) => fs.readFile(file, 'utf8')))).join(
+  '\n\n',
+);
 const testBuild = process.env.SOURCE_BUILD
   ? await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-interface-'))
   : undefined;
@@ -187,7 +182,7 @@ try {
   assert.equal(await page.evaluate(() => localStorage.getItem('agent-desk.styles.v1')), null);
   assert.ok((await editor.inputValue()).includes('--brand: #9eaaf3;'));
   // A partial paste only overrides what it mentions.
-  await editor.fill('.desk-input .send { border-radius: 50%; }');
+  await editor.fill('.app .desk-input .send { border-radius: 50%; }');
   await page.getByRole('button', { name: 'Guardar', exact: true }).click();
   assert.equal(await sendRadius(), '50%');
   assert.equal(await brand(), original);

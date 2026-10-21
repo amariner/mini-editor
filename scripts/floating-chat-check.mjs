@@ -151,14 +151,24 @@ try {
     call(one, { type: 'floatingChat', sessionId: second.id, operation: 'close' }),
     /otra conversación/,
   );
-  // Pin and transparency remain accessible from a right click on the header.
-  await one.locator('.floating-chat-header').click({ button: 'right' });
-  await one.getByLabel('Transparencia en reposo').fill('55');
+  // The options button exposes opacity without requiring a context click.
+  const optionsButton = one.getByRole('button', {
+    name: 'Opciones de ventana flotante',
+    exact: true,
+  });
+  await optionsButton.click();
+  await optionsButton.click();
+  assert.equal(
+    await one.getByRole('dialog', { name: 'Opciones de ventana flotante', exact: true }).count(),
+    0,
+  );
+  await optionsButton.click();
+  await one.getByLabel('Opacidad en reposo').fill('15');
   await one.waitForFunction(() =>
     getComputedStyle(document.querySelector('.app'))
-      .getPropertyValue('--floating-opacity')
+      .getPropertyValue('--floating-effective-opacity')
       .trim()
-      .startsWith('55'),
+      .startsWith('15'),
   );
   // The tint eases in; read it once the transition has settled.
   await one.waitForTimeout(400);
@@ -176,13 +186,53 @@ try {
   assert.equal(alpha.body, 'rgba(0, 0, 0, 0)');
   assert.equal(alpha.text, '1');
   // The options panel is open, so the window previews the resting tint instead of turning solid.
-  assert.match(alpha.background, /0\.55/);
+  assert.match(alpha.background, /0\.15/);
   // The writing area keeps its own near-solid backing.
   assert.match(alpha.input, /0\.86/);
   assert.ok(
     alpha.layers.every(([, color]) => color === 'rgba(0, 0, 0, 0)'),
     JSON.stringify(alpha.layers),
   );
+  // CSS saved in the editor immediately reaches an already-open floating window.
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'agent-desk.styles.v1',
+      ':root { --floating-opacity: 60%; --floating-solid: 60%; --floating-composer-opacity: 35%; --floating-header-height: 62px; }',
+    ),
+  );
+  await one.waitForFunction(
+    () =>
+      getComputedStyle(document.querySelector('.app'))
+        .getPropertyValue('--floating-effective-opacity')
+        .trim() === '60%',
+  );
+  await one.waitForTimeout(400);
+  assert.match(
+    await one.locator('.app').evaluate((el) => getComputedStyle(el).backgroundColor),
+    /0\.6\)/,
+  );
+  assert.match(
+    await one.locator('.desk-input').evaluate((el) => getComputedStyle(el).backgroundColor),
+    /0\.35\)/,
+  );
+  const popupBounds = await one.locator('.floating-chat-options').boundingBox();
+  const headerBounds = await one.locator('.floating-chat-header').boundingBox();
+  assert.ok(popupBounds.y >= headerBounds.y + headerBounds.height);
+  await one.keyboard.press('Escape');
+  await one.getByRole('textbox', { name: 'Mensaje', exact: true }).focus();
+  await one.waitForTimeout(400);
+  assert.match(
+    await one.locator('.app').evaluate((el) => getComputedStyle(el).backgroundColor),
+    /0\.6\)/,
+  );
+  await page.evaluate(() => localStorage.removeItem('agent-desk.styles.v1'));
+  await one.waitForFunction(() =>
+    getComputedStyle(document.querySelector('.app'))
+      .getPropertyValue('--floating-effective-opacity')
+      .trim()
+      .startsWith('15'),
+  );
+  await optionsButton.click();
   await one.getByRole('button', { name: 'Siempre encima', exact: false }).click();
   const native = await app.evaluate(({ BrowserWindow }, id) => {
     const window = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(id));
@@ -241,8 +291,9 @@ try {
     .waitFor();
   await one.screenshot({ path: 'artifacts/floating-chat-dark.png' });
   // Pin and transparency remain accessible from a right click on the header.
-  await one.locator('.floating-chat-header').click({ button: 'right' });
-  await one.screenshot({ path: 'artifacts/floating-chat-options.png' });
+  await one.locator('.floating-chat-controls').click({ button: 'right' });
+  await one.getByRole('dialog', { name: 'Opciones de ventana flotante', exact: true }).waitFor();
+  await one.screenshot({ path: 'artifacts/floating-chat-options.png', animations: 'disabled' });
   await one.keyboard.press('Escape');
   await one.emulateMedia({ colorScheme: 'light' });
   await one.screenshot({ path: 'artifacts/floating-chat-light.png' });
@@ -262,7 +313,7 @@ try {
   const closedReopened = reopened.waitForEvent('close');
   assert.equal(
     (await snapshot(page)).floatingChats.find((f) => f.sessionId === first.id).opacity,
-    0.55,
+    0.15,
   );
   await reopened.getByRole('button', { name: 'Cerrar ventana flotante', exact: true }).click();
   await closedReopened;
@@ -312,6 +363,11 @@ try {
   await page.waitForFunction(
     async () => !(await window.desk.invoke({ type: 'snapshot' })).floatingChats.length,
   );
+  const savedPreferences = JSON.parse(
+    await fs.readFile(path.join(root, 'data', 'floating-chats.json'), 'utf8'),
+  );
+  assert.equal(savedPreferences[second.id], undefined);
+  assert.ok(savedPreferences[first.id]);
   assert.equal(two.isClosed(), true);
   assert.equal(reopened.isClosed(), true);
   assert.deepEqual(errors, []);

@@ -3,6 +3,9 @@ import { preview } from 'vite';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+const protocol = Number(
+  (await fs.readFile('src/runtime.ts', 'utf8')).match(/IPC_VERSION = (\d+)/)[1],
+);
 let browser;
 try {
   browser = await chromium.launch({
@@ -12,7 +15,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.addInitScript(() => {
+  await page.addInitScript((protocol) => {
     const session = (id, title, parentId, projectId = 'p') => ({
       id,
       title,
@@ -41,7 +44,7 @@ try {
       selectedProject: 'p',
       tools: {},
       coordination: [],
-      runtime: { protocol: 40 },
+      runtime: { protocol },
     };
     state.profiles.push({ id: 'codex', kind: 'codex', name: 'Codex' });
     state.sessions[0].profile = 'codex';
@@ -61,6 +64,10 @@ try {
           state.selectedSession = a.sessionId;
         }
         if (a.type === 'deleteSession') {
+          if (window.fixture.failDelete) {
+            window.fixture.failDelete = false;
+            throw new Error('No se pudo eliminar el adjunto de prueba');
+          }
           state.sessions = state.sessions.filter((s) => s.id !== a.sessionId);
           if (state.selectedSession === a.sessionId) state.selectedSession = undefined;
         }
@@ -83,7 +90,7 @@ try {
         return true;
       },
     };
-  });
+  }, protocol);
   await page.goto(server.resolvedUrls.local[0]);
   await page.locator('.project-subchats').waitFor();
   await page
@@ -189,8 +196,26 @@ try {
     .getByRole('menuitem', { name: 'Mostrar Alinear reservas en el grid', exact: true })
     .click();
   await child.waitFor();
-  await child.getByRole('button', { name: 'Opciones de Alinear reservas', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Eliminar Alinear reservas', exact: true }).click();
+  // Delete directly from the project tree, including a child linked from another project.
+  const sidebarChild = page.locator('.project-chat-row').filter({
+    has: page.getByRole('button', { name: 'Eliminar chat Alinear reservas', exact: true }),
+  });
+  await sidebarChild.hover();
+  const removeChild = sidebarChild.getByRole('button', {
+    name: 'Eliminar chat Alinear reservas',
+    exact: true,
+  });
+  await removeChild.click();
+  const deletion = page.getByRole('dialog', { name: 'Eliminar conversación', exact: true });
+  await deletion.waitFor();
+  await page.screenshot({ path: 'artifacts/project-chat-delete.png', animations: 'disabled' });
+  await deletion.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  assert.equal(
+    await page.evaluate(() => window.fixture.state.sessions.some((s) => s.id === 'c2')),
+    true,
+  );
+  await sidebarChild.hover();
+  await removeChild.click();
   await page
     .getByRole('dialog', { name: 'Eliminar conversación', exact: true })
     .getByRole('button', { name: 'Detener y eliminar', exact: true })
@@ -204,10 +229,50 @@ try {
     await page.locator('.project-chat').filter({ hasText: 'Alinear reservas' }).count(),
     0,
   );
-  await page.getByRole('button', { name: 'Ver chats ocultos', exact: true }).click();
+  assert.equal(
+    await page.getByRole('button', { name: 'Ver chats ocultos', exact: true }).count(),
+    0,
+  );
   assert.equal(await child.count(), 0);
   await page.locator('[data-project-id="p2"] .project-name').click();
   assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), null);
+  const rootRow = page.locator('.project-chat-row').filter({
+    has: page.getByRole('button', { name: 'Eliminar chat Chat independiente', exact: true }),
+  });
+  await page.evaluate(() => {
+    window.fixture.failDelete = true;
+    localStorage.setItem('agent-desk.chat-draft.v1:outside', JSON.stringify('Borrador conservado'));
+  });
+  await rootRow
+    .getByRole('button', { name: 'Eliminar chat Chat independiente', exact: true })
+    .focus();
+  assert.equal(
+    await rootRow
+      .locator('.project-chat-delete')
+      .evaluate((el) => getComputedStyle(el).pointerEvents),
+    'auto',
+  );
+  await page.keyboard.press('Enter');
+  await deletion.getByRole('button', { name: /^(Eliminar chat|Detener y eliminar)$/ }).click();
+  await rootRow.waitFor();
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('agent-desk.chat-draft.v1:outside')),
+    JSON.stringify('Borrador conservado'),
+  );
+  await rootRow.hover();
+  await rootRow
+    .getByRole('button', { name: 'Eliminar chat Chat independiente', exact: true })
+    .click();
+  await deletion.getByRole('button', { name: /^(Eliminar chat|Detener y eliminar)$/ }).click();
+  await rootRow.waitFor({ state: 'hidden' });
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('agent-desk.chat-draft.v1:outside')),
+    null,
+  );
+  assert.equal(
+    await page.evaluate(() => window.fixture.state.sessions.some((s) => s.id === 'outside')),
+    false,
+  );
   assert.deepEqual(errors, []);
   console.log(
     'Equipo UI: filas compactas, indicador superior dinámico, sin bloque vacío, navegación y popover en grid correctos.',

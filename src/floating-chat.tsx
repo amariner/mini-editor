@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Maximize2, Pin, PinOff, PictureInPicture2, X } from 'lucide-react';
+import { Maximize2, Pin, PinOff, PictureInPicture2, Settings2, X } from 'lucide-react';
 import type { Action, Session } from './shared';
-import type { FloatingChatState } from './floating-chat-protocol';
+import { MIN_FLOATING_OPACITY, type FloatingChatState } from './floating-chat-protocol';
 
 export function FloatChatButton({
   session,
@@ -53,7 +53,11 @@ export function FloatingChatHeader({
   useEffect(() => {
     if (!options) return;
     const close = (e: PointerEvent) => {
-      if (!popup.current?.contains(e.target as Node)) setOptions(false);
+      if (
+        !popup.current?.contains(e.target as Node) &&
+        !trigger.current?.contains(e.target as Node)
+      )
+        setOptions(false);
     };
     const escape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -63,6 +67,7 @@ export function FloatingChatHeader({
     };
     document.addEventListener('pointerdown', close);
     document.addEventListener('keydown', escape);
+    popup.current?.querySelector<HTMLInputElement>('input')?.focus();
     return () => {
       document.removeEventListener('pointerdown', close);
       document.removeEventListener('keydown', escape);
@@ -71,7 +76,7 @@ export function FloatingChatHeader({
   const action = (operation: 'dock' | 'close' | 'configure', update = {}) =>
     void run({ type: 'floatingChat', sessionId: session.id, operation, ...update });
   return (
-    // Window controls stay visible; pin and transparency live on right click.
+    // Options are available by keyboard, a visible button, and right click.
     <header
       className="floating-chat-header"
       onContextMenu={(e) => {
@@ -94,6 +99,17 @@ export function FloatingChatHeader({
         <button
           type="button"
           ref={trigger}
+          aria-label="Opciones de ventana flotante"
+          title="Opciones · opacidad y siempre encima"
+          aria-expanded={options}
+          aria-controls="floating-chat-options"
+          aria-haspopup="dialog"
+          onClick={() => setOptions((open) => !open)}
+        >
+          <Settings2 size={14} />
+        </button>
+        <button
+          type="button"
           aria-label="Volver al editor"
           title="Abrir en el editor · Clic derecho en la cabecera: opciones"
           onClick={() => action('dock')}
@@ -132,13 +148,13 @@ export function FloatingChatHeader({
             <span>{(preferences?.alwaysOnTop ?? true) ? 'Activado' : 'Desactivado'}</span>
           </button>
           <label htmlFor="floating-opacity">
-            Transparencia en reposo
+            Opacidad en reposo
             <output htmlFor="floating-opacity">{Math.round(opacity * 100)}%</output>
           </label>
           <input
             id="floating-opacity"
             type="range"
-            min="50"
+            min={MIN_FLOATING_OPACITY * 100}
             max="100"
             step="5"
             value={Math.round(opacity * 100)}
@@ -158,8 +174,8 @@ export function FloatingChatHeader({
             <span>El chat sigue en el editor</span>
           </button>
           <p>
-            Se aplica cuando no la estás usando: al pasar el ratón o escribir vuelve a ser opaca. El
-            fondo se desenfoca para que el texto siempre se lea.
+            Menos porcentaje hace el fondo más transparente, sin atenuar el texto. Al pasar el ratón
+            o escribir recupera opacidad.
           </p>
         </div>
       )}

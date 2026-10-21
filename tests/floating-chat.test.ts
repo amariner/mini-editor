@@ -7,9 +7,11 @@ test('floating chat IPC validates window settings and rejects unexpected input',
   const action = { type: 'floatingChat', sessionId: 'chat-1', operation: 'configure' };
   assert.ok(actionSchema.safeParse({ ...action, opacity: 0.5, alwaysOnTop: false }).success);
   assert.ok(actionSchema.safeParse({ ...action, opacity: 1 }).success);
+  assert.ok(actionSchema.safeParse({ ...action, opacity: 0.1 }).success);
+  assert.ok(actionSchema.safeParse({ ...action, opacity: 0.25 }).success);
   for (const extra of [
     { opacity: 0 },
-    { opacity: 0.25 },
+    { opacity: 0.05 },
     { opacity: 1.1 },
     { opacity: NaN },
     { alwaysOnTop: 'yes' },

@@ -1,11 +1,12 @@
 import { z } from 'zod';
 
+export const MIN_FLOATING_OPACITY = 0.1;
 export const floatingChatAction = z
   .object({
     type: z.literal('floatingChat'),
     sessionId: z.string().min(1).max(150),
     operation: z.enum(['open', 'focus', 'dock', 'close', 'configure']),
-    opacity: z.number().min(0.5).max(1).optional(),
+    opacity: z.number().min(MIN_FLOATING_OPACITY).max(1).optional(),
     alwaysOnTop: z.boolean().optional(),
   })
   .strict();

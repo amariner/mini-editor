@@ -1,5 +1,5 @@
 import React, { useId, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Trash2, Users } from 'lucide-react';
 import type { Session, Snapshot } from './shared';
 import { cardStatus } from './supervision';
 
@@ -8,11 +8,13 @@ export function ProjectChats({
   projectId,
   hiddenChats,
   open,
+  remove,
 }: {
   state: Snapshot;
   projectId: string;
   hiddenChats: string[];
   open: (s: Session) => void;
+  remove: (s: Session) => void;
 }) {
   const [folded, setFolded] = useState<string[]>([]);
   const visibleSessions = state.sessions.filter((s) => !hiddenChats.includes(s.id));
@@ -32,6 +34,17 @@ export function ProjectChats({
         <small>{state.projects.find((p) => p.id === s.projectId)?.name}</small>
       )}
       <Circle size={7} className={cardStatus(s)[0]} fill="currentColor" />
+    </button>
+  );
+  const deleteButton = (s: Session) => (
+    <button
+      type="button"
+      className="project-chat-delete"
+      aria-label={`Eliminar chat ${s.title}`}
+      title={`Eliminar definitivamente «${s.title}»`}
+      onClick={() => remove(s)}
+    >
+      <Trash2 size={12} />
     </button>
   );
   return (
@@ -57,11 +70,15 @@ export function ProjectChats({
                 </button>
               )}
               {row(s)}
+              {deleteButton(s)}
             </div>
             {!!children.length && !collapsed && (
               <div className="project-subchats">
                 {children.map((c) => (
-                  <div key={c.id}>{row(c, true)}</div>
+                  <div key={c.id} className="project-chat-row">
+                    {row(c, true)}
+                    {deleteButton(c)}
+                  </div>
                 ))}
               </div>
             )}

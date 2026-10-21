@@ -24,6 +24,67 @@ async function fixture(run: (m: Manager, root: string) => Promise<void>) {
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
+test('deleting a subchat removes its history and attachments from disk while preserving its parent and siblings', () =>
+  fixture(async (m, root) => {
+    const parent = m.newSession('p');
+    const child = m.newSession('p');
+    const sibling = m.newSession('p');
+    child.parentId = sibling.parentId = parent.id;
+    const dir = path.join(root, 'attachments');
+    const attachments = new Attachments(dir, () => 'preview');
+    const data = Buffer.from('Contenido de prueba').toString('base64');
+    const [used] = await attachments.addData(child.id, [{ name: 'used.txt', data }]);
+    const [draft] = await attachments.addData(child.id, [{ name: 'draft.txt', data }]);
+    const [keep] = await attachments.addData(sibling.id, [{ name: 'keep.txt', data }]);
+    attachments.markUsed([used.id, keep.id]);
+    child.messages = [{ id: 'u', role: 'user', text: 'History to delete', attachments: [used] }];
+    sibling.messages = [{ id: 'k', role: 'user', text: 'Keep history', attachments: [keep] }];
+    child.status = 'working';
+    let stopped = false;
+    m.runtimes.set(child.id, {
+      buffer: '',
+      sequence: 0,
+      claude: {
+        async stop() {
+          stopped = true;
+          m.runtimes.delete(child.id);
+        },
+      } as any,
+    });
+    await m.deleteSession(child.id, (sessions) => attachments.removeSessions(sessions));
+    assert.ok(stopped);
+    assert.equal(fs.existsSync(path.join(dir, used.id)), false);
+    assert.equal(fs.existsSync(path.join(dir, draft.id)), false);
+    assert.equal(fs.existsSync(path.join(dir, keep.id, keep.name)), true);
+    const restored = new Store(root).state;
+    assert.deepEqual(
+      restored.sessions.map((s) => s.id),
+      [parent.id, sibling.id],
+    );
+    assert.equal(restored.sessions.find((s) => s.id === sibling.id)?.parentId, parent.id);
+    assert.equal(fs.readFileSync(path.join(root, 'source.txt'), 'utf8'), 'keep source');
+  }));
+
+test('failed attachment cleanup keeps the chat persisted and allows retrying permanent deletion', () =>
+  fixture(async (m, root) => {
+    const chat = m.newSession('p');
+    chat.messages = [{ id: 'u', role: 'user', text: 'Preserve until cleanup succeeds' }];
+    m.store.flush();
+    await assert.rejects(
+      m.deleteSession(chat.id, async () => {
+        throw new Error('Cannot remove attachment');
+      }),
+      /Cannot remove attachment/,
+    );
+    assert.equal(m.session(chat.id).messages.length, 1);
+    assert.ok(new Store(root).state.sessions.some((s) => s.id === chat.id));
+    assert.equal(await m.deleteSession(chat.id), true);
+    assert.equal(
+      new Store(root).state.sessions.some((s) => s.id === chat.id),
+      false,
+    );
+  }));
+
 test('removing a project stops every live chat, frees buffers and persists deletion while preserving other projects and source', () =>
   fixture(async (m, root) => {
     const a = m.newSession('p', 'claude-1'),

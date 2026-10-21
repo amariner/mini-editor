@@ -586,7 +586,8 @@ export class Manager {
       ]);
       if (this.runtimes.has(id)) await this.stopRuntime(id).catch(() => this.killRuntime(id));
       if (this.runtimes.has(id)) this.killRuntime(id);
-      await cleanup([s]).catch(() => {});
+      // Do not report a permanent deletion while attachment files remain on disk.
+      await cleanup([s]);
       this.buffers.delete(id);
       this.coordinator.unregister(id);
       this.state.sessions = this.state.sessions.filter((chat) => chat.id !== id);

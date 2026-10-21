@@ -275,11 +275,17 @@ function App() {
       const deleted = await run({ type: 'deleteSession', sessionId: s.id });
       deleting.current.delete(s.id);
       if (!deleted) {
-        // Only an unknown chat fails here; refresh so the UI matches the store.
+        // A failed cleanup keeps the chat; restore it from the persisted state.
         const snap = await window.desk.invoke({ type: 'snapshot' }).catch(() => undefined);
         if (snap) setState((stateRef.current = visibleState(snap)));
         return;
       }
+      const withoutDeleted = <T,>(values: Record<string, T>) => {
+        const { [s.id]: removed, ...remaining } = values;
+        return remaining;
+      };
+      setDrafts(withoutDeleted);
+      setImageDrafts(withoutDeleted);
       setHiddenChats((ids) => ids.filter((id) => id !== s.id));
     }
     const remaining = (tabs[sessionGroup(s)] ?? []).filter((id) => id !== s.id);
@@ -552,7 +558,7 @@ function App() {
   const sessionIds = state?.sessions.map((s) => s.id).join(',');
   useEffect(() => {
     if (!state) return;
-    const ids = new Set(state.sessions.map((s) => s.id));
+    const ids = new Set([...state.sessions.map((s) => s.id), ...deleting.current]);
     const projects = new Set(state.projects.map((p) => p.id));
     const prune = <T,>(values: Record<string, T>) => {
       const entries = Object.entries(values).filter(([id]) => ids.has(id));
@@ -976,7 +982,7 @@ function App() {
           ...(floatingSessionId
             ? {
                 ...floatingAccountStyle,
-                '--floating-opacity': `${(floatingPreferences?.opacity ?? 1) * 100}%`,
+                '--floating-window-opacity': `${(floatingPreferences?.opacity ?? 1) * 100}%`,
               }
             : {}),
         } as React.CSSProperties
@@ -1113,6 +1119,7 @@ function App() {
                 state={state}
                 projectId={p.id}
                 hiddenChats={[]}
+                remove={(s) => void closeTab(s, true)}
                 open={(s) => {
                   setClosedSelection(undefined);
                   setMultichat('off');
@@ -2104,7 +2111,7 @@ function App() {
             <h2>{confirmClose.remove ? '¿Eliminar el chat?' : '¿Detener y cerrar la pestaña?'}</h2>
             <p className="muted">
               {confirmClose.remove
-                ? `Se eliminará «${confirmClose.session.title}» y sus adjuntos. Si tiene un agente abierto, se detendrá primero.`
+                ? `Se eliminará definitivamente «${confirmClose.session.title}», su historial y sus adjuntos. Esta acción no se puede deshacer. Si tiene un agente abierto, se detendrá primero. Los demás chats se conservan.`
                 : `Se detendrá el agente de «${confirmClose.session.title}». La conversación se conserva en el proyecto.`}
             </p>
             <div className="modal-actions">

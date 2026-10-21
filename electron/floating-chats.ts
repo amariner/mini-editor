@@ -2,13 +2,15 @@ import { BrowserWindow, screen, type WebContents } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { floatingChatHash, type FloatingChatState } from '../src/floating-chat-protocol';
+import {
+  floatingChatHash,
+  MIN_FLOATING_OPACITY,
+  type FloatingChatState,
+} from '../src/floating-chat-protocol';
 import type { DeskEvent, Session } from '../src/shared';
 
 type Preferences = Omit<FloatingChatState, 'sessionId'> & { bounds?: Electron.Rectangle };
 type Entry = { window: BrowserWindow; preferences: Preferences; ready: boolean };
-// Below this the tint no longer separates the chat from what is behind it.
-const MIN_OPACITY = 0.5;
 
 /** Native, independent windows; closing one never touches the agent's lifecycle. */
 export class FloatingChats {
@@ -67,6 +69,14 @@ export class FloatingChats {
       const session = sessions.find((s) => s.id === id);
       if (!session) entry.window.close();
       else entry.window.setTitle(`${session.title} · Agent Desk`);
+    }
+    const ids = new Set(sessions.map((s) => s.id));
+    const removed = Object.keys(this.preferences).filter((id) => !ids.has(id));
+    if (removed.length) {
+      for (const id of removed) delete this.preferences[id];
+      try {
+        fs.writeFileSync(this.file, JSON.stringify(this.preferences));
+      } catch {}
     }
   }
 
@@ -148,7 +158,7 @@ export class FloatingChats {
     );
     const preferences: Preferences = {
       opacity: Number.isFinite(saved?.opacity)
-        ? Math.max(MIN_OPACITY, Math.min(1, saved.opacity))
+        ? Math.max(MIN_FLOATING_OPACITY, Math.min(1, saved.opacity))
         : 1,
       alwaysOnTop: typeof saved?.alwaysOnTop === 'boolean' ? saved.alwaysOnTop : true,
     };
@@ -248,7 +258,7 @@ export class FloatingChats {
     const entry = this.entries.get(id);
     if (!entry) throw new Error('Esta ventana flotante ya está cerrada.');
     if (update.opacity !== undefined)
-      entry.preferences.opacity = Math.max(MIN_OPACITY, Math.min(1, update.opacity));
+      entry.preferences.opacity = Math.max(MIN_FLOATING_OPACITY, Math.min(1, update.opacity));
     if (update.alwaysOnTop !== undefined) {
       entry.preferences.alwaysOnTop = update.alwaysOnTop;
       entry.window.setAlwaysOnTop(update.alwaysOnTop, 'floating');
