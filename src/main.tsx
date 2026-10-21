@@ -33,6 +33,7 @@ import {
   ArrowDown,
   Maximize2,
   Minimize2,
+  Inbox,
 } from 'lucide-react';
 import type { Action, Session, Snapshot, Attachment, RewindResult } from './shared';
 import { permissionModes } from './shared';
@@ -56,6 +57,10 @@ import { EditableName } from './editable-name';
 import { useWorkspaceSplit } from './workspace-split';
 import { DeskMark, ProjectMark } from './project-mark';
 import { BrowserPanel } from './browser-panel';
+import { captureBrowserContext } from './browser-context';
+import type { BrowserState } from './browser-protocol';
+import { attentionItems } from './attention';
+import { AttentionPanel } from './attention-panel';
 import { AccountsSettings } from './accounts-settings';
 import { ChatActionsContext, type ChatActions } from './markdown';
 import { applyStyles, resetStyles, savedStyles } from './custom-styles';
@@ -65,6 +70,8 @@ import './shell-polish.css';
 import './settings-polish.css';
 import './chat-polish.css';
 import './multichat-polish.css';
+import './browser-polish.css';
+import './attention.css';
 const statusLabels: Record<string, string> = {
   stopped: 'En espera',
   starting: 'Abriendo…',
@@ -102,6 +109,8 @@ function App() {
     [query, setQuery] = useState(''),
     [searchIndex, setSearchIndex] = useState(0),
     [settings, setSettings] = useState(false),
+    [attentionOpen, setAttentionOpen] = useState(false),
+    [unreadCompleted, setUnreadCompleted] = useState<Set<string>>(() => new Set()),
     [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       try {
         return localStorage.getItem('agent-desk.sidebar-collapsed') === 'true';
@@ -140,7 +149,7 @@ function App() {
     [stick, setStick] = useState(true),
     [seen, setSeen] = useState<Record<string, number>>({});
   const appearance = useInterfacePreferences(setError);
-  useModalFocus(search || settings || !!confirmClose || !!removeId);
+  useModalFocus(search || settings || attentionOpen || !!confirmClose || !!removeId);
   useEffect(() => {
     try {
       localStorage.setItem('agent-desk.sidebar-collapsed', String(sidebarCollapsed));
@@ -184,9 +193,13 @@ function App() {
       if (e.type === 'shortcut') {
         if (e.action === 'resetStyles') resetStyles();
         else if (e.action === 'search') {
+          setAttentionOpen(false);
           setSearch(true);
           setQuery('');
-        } else setSettings(true);
+        } else {
+          setAttentionOpen(false);
+          setSettings(true);
+        }
       }
     });
     window.desk
@@ -376,15 +389,76 @@ function App() {
           : undefined,
     };
   }, [project?.id, project?.path, session?.id, session?.worktree?.cwd]);
-  // Tabs remember how much of each conversation was on screen, to flag new replies.
+  // History starts read; new completions remain in the queue until their chat is visible.
+  const readBaseline = useRef(false);
+  const attentionStatuses = useRef<Record<string, string>>({});
   useEffect(() => {
-    if (!session) return;
-    setSeen((v) =>
-      v[session.id] === session.messages.length
-        ? v
-        : { ...v, [session.id]: session.messages.length },
-    );
-  }, [session?.id, session?.messages.length]);
+    if (!state) return;
+    const initial = !readBaseline.current;
+    readBaseline.current = true;
+    const reading = () =>
+      document.hasFocus() &&
+      !document.hidden &&
+      stick &&
+      multichat !== 'grid' &&
+      !attentionOpen &&
+      !search &&
+      !settings &&
+      !confirmClose &&
+      !removeId
+        ? session?.id
+        : undefined;
+    const completed = state.sessions
+      .filter(
+        (s) =>
+          attentionStatuses.current[s.id] === 'working' &&
+          s.status === 'ready' &&
+          s.id !== reading(),
+      )
+      .map((s) => s.id);
+    attentionStatuses.current = Object.fromEntries(state.sessions.map((s) => [s.id, s.status]));
+    const markRead = () => {
+      const active = reading();
+      // A completion belongs to this snapshot, not to every later focus event.
+      const newlyCompleted = completed.splice(0);
+      setSeen((previous) => {
+        const next: Record<string, number> = {};
+        for (const s of state.sessions)
+          next[s.id] = s.id === active || initial ? s.messages.length : (previous[s.id] ?? 0);
+        return Object.keys(previous).length === state.sessions.length &&
+          state.sessions.every((s) => previous[s.id] === next[s.id])
+          ? previous
+          : next;
+      });
+      setUnreadCompleted((previous) => {
+        const next = new Set(
+          [...previous, ...newlyCompleted].filter(
+            (id) => id !== active && state.sessions.some((s) => s.id === id),
+          ),
+        );
+        return next.size === previous.size && [...next].every((id) => previous.has(id))
+          ? previous
+          : next;
+      });
+    };
+    markRead();
+    window.addEventListener('focus', markRead);
+    document.addEventListener('visibilitychange', markRead);
+    return () => {
+      window.removeEventListener('focus', markRead);
+      document.removeEventListener('visibilitychange', markRead);
+    };
+  }, [
+    state?.sessions,
+    session?.id,
+    multichat,
+    stick,
+    attentionOpen,
+    search,
+    settings,
+    confirmClose,
+    removeId,
+  ]);
   // System notification when a background turn finishes or needs an answer.
   const lastStatus = useRef<Record<string, { status: string; approvals: number }>>({});
   useEffect(() => {
@@ -463,13 +537,21 @@ function App() {
     const key = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       // Modal controls own their keystrokes; never create a chat or change permissions behind one.
-      const modal = search || settings || confirmClose || removeId;
-      if (modal && e.key !== 'Escape' && !((e.metaKey || e.ctrlKey) && ['k', ','].includes(e.key)))
+      const modal = search || settings || attentionOpen || confirmClose || removeId;
+      const attentionShortcut =
+        (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a';
+      if (
+        modal &&
+        e.key !== 'Escape' &&
+        !((e.metaKey || e.ctrlKey) && ['k', ','].includes(e.key)) &&
+        !(attentionOpen && attentionShortcut)
+      )
         return;
       const s = stateRef.current?.sessions.find((x) => x.id === stateRef.current?.selectedSession);
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         if (confirmClose || removeId) return;
+        setAttentionOpen(false);
         setSettings(false);
         setSearch((v) => !v);
         setQuery('');
@@ -477,8 +559,12 @@ function App() {
       } else if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
         if (confirmClose || removeId) return;
+        setAttentionOpen(false);
         setSearch(false);
         setSettings((v) => !v);
+      } else if (attentionShortcut) {
+        e.preventDefault();
+        setAttentionOpen((open) => !open);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
         if (s) void run({ type: 'newSession', projectId: s.projectId });
@@ -500,9 +586,11 @@ function App() {
           void run({ type: 'configure', sessionId: s.id, config: { permissionMode: next } });
         }
       } else if (e.key === 'Escape') {
-        if (search || settings || confirmClose || removeId) {
+        if (search || settings || attentionOpen || confirmClose || removeId) {
+          e.preventDefault();
           setSearch(false);
           setSettings(false);
+          setAttentionOpen(false);
           setConfirmClose(undefined);
           setRemoveId(undefined);
         } else if (multichat === 'focused') {
@@ -516,7 +604,7 @@ function App() {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [search, settings, confirmClose, removeId, multichat]);
+  }, [search, settings, attentionOpen, confirmClose, removeId, multichat]);
   useEffect(() => {
     if (search)
       document
@@ -617,6 +705,7 @@ function App() {
     stick,
   ]);
   if (!state) return <div className="loading">Abriendo Agent Desk…{error}</div>;
+  const attention = attentionItems(state.sessions, seen, unreadCompleted);
   const results = [
     ...state.projects.map((p) => ({
       key: p.id,
@@ -752,6 +841,42 @@ function App() {
     });
     return result === true;
   };
+  const addBrowserContext = async (tab: BrowserState) => {
+    const target = session;
+    if (!target || target.mode === 'terminal' || target.projectId !== tab.projectId)
+      throw new Error('Abre un chat del mismo proyecto para añadir esta página.');
+    const evidence = await captureBrowserContext(tab, (action) => window.desk.invoke(action));
+    const stillExists = () => stateRef.current?.sessions.some((s) => s.id === target.id);
+    if (!stillExists()) throw new Error('El chat se ha cerrado antes de completar la captura.');
+    const attachments: Attachment[] = await window.desk.invoke({
+      type: 'dropImages',
+      sessionId: target.id,
+      images: [evidence.image],
+    });
+    if (!attachments.length) throw new Error('No se pudo añadir la captura al borrador.');
+    if (!stillExists()) {
+      await window.desk
+        .invoke({
+          type: 'discardImages',
+          sessionId: target.id,
+          attachmentIds: attachments.map((a) => a.id),
+        })
+        .catch(() => {});
+      throw new Error('El chat se ha cerrado antes de completar la captura.');
+    }
+    setDrafts((drafts) => ({
+      ...drafts,
+      [target.id]: [drafts[target.id]?.trimEnd(), evidence.text].filter(Boolean).join('\n\n'),
+    }));
+    setImageDrafts((images) => ({
+      ...images,
+      [target.id]: [...(images[target.id] ?? []), ...attachments],
+    }));
+    if (stateRef.current?.selectedSession === target.id)
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLTextAreaElement>('.workspace .composer textarea')?.focus(),
+      );
+  };
   const terminalButton = (
     <button
       className={`terminal-toggle ${showTerminalPanel ? 'on' : ''}`}
@@ -777,12 +902,18 @@ function App() {
         terminalSplit.dragging ||
         search ||
         settings ||
+        attentionOpen ||
         !!confirmClose ||
         !!removeId ||
         !!error
       }
       close={() => setShowBrowser(false)}
       onError={setError}
+      onCaptureContext={
+        session && session.mode !== 'terminal' && compatibleRuntime(state)
+          ? addBrowserContext
+          : undefined
+      }
     />
   );
   return (
@@ -969,6 +1100,19 @@ function App() {
         <header className="topbar">
           <div className="topbar-slot" ref={setTopbarSlot} />
           <div className="top-actions">
+            {(attention.length > 0 || attentionOpen) && (
+              <button
+                className={`attention-trigger ${attentionOpen ? 'on' : ''}`}
+                aria-label="Centro de atención"
+                title={`${attention.length} chats por revisar · ⌘⇧A`}
+                aria-haspopup="dialog"
+                aria-expanded={attentionOpen}
+                onClick={() => setAttentionOpen((open) => !open)}
+              >
+                <Inbox size={17} />
+                {!!attention.length && <span className="attention-badge">{attention.length}</span>}
+              </button>
+            )}
             {multichat === 'focused' && (
               <button
                 className="multichat-back"
@@ -1749,6 +1893,23 @@ function App() {
           </div>
         )}
       </main>
+      {attentionOpen && (
+        <AttentionPanel
+          items={attention}
+          projects={state.projects}
+          onClose={() => setAttentionOpen(false)}
+          onSelect={async (target) => {
+            await run({ type: 'select', projectId: target.projectId, sessionId: target.id });
+            if (stateRef.current?.selectedSession !== target.id) return;
+            setMultichat('off');
+            selectProjectBrowser(target.projectId);
+            setAttentionOpen(false);
+            requestAnimationFrame(() =>
+              document.querySelector<HTMLTextAreaElement>('.workspace .composer textarea')?.focus(),
+            );
+          }}
+        />
+      )}
       {error && (
         <div className="toast" role="alert">
           <span>{error}</span>

@@ -1,0 +1,323 @@
+/* Native pages live above the renderer. Animate the chrome, never transform the
+   pane/viewport: CSS transforms cannot move or clip a WebContentsView. */
+.app .browser-pane {
+  --browser-radius: 8px;
+  min-width: 0;
+}
+.app .browser-pane .browser-toolbar {
+  gap: 5px;
+  padding: 0 7px;
+  border-bottom-color: color-mix(in srgb, var(--line) 65%, transparent);
+  animation: browser-chrome-in 160ms ease-out both;
+}
+.app .browser-pane .browser-toolbar button {
+  flex: 0 0 27px;
+  width: 27px;
+  min-width: 27px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 7px;
+}
+.app .browser-navigation {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.app .browser-pane .browser-address {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  background: color-mix(in srgb, var(--tile) 70%, transparent);
+  border-radius: var(--browser-radius);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+.app .browser-pane .browser-address:focus-within {
+  border-color: var(--field-focus);
+  background: var(--card);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.app .browser-pane .browser-address input {
+  width: 0;
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  border-radius: inherit;
+  box-shadow: none;
+  outline: 0;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+.app .browser-pane .browser-address button {
+  flex-basis: 25px;
+  width: 25px;
+  min-width: 25px;
+  min-height: 24px;
+  height: 24px;
+  margin-right: 1px;
+  opacity: 0.65;
+}
+.app .browser-pane .browser-address:focus-within button,
+.app .browser-pane .browser-address button:hover {
+  opacity: 1;
+}
+.app .browser-options-trigger.on {
+  background: var(--tile);
+  color: var(--text);
+}
+.app .browser-options {
+  display: grid;
+  grid-template-rows: 0fr;
+  flex-shrink: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease,
+    visibility 160ms;
+}
+.app .browser-options.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.app .browser-options-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.app .browser-options-content {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+.app .browser-options-content button,
+.app .browser-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ui-text-color, var(--text-2));
+  font-size: 11px;
+}
+.app .browser-options-content button:hover {
+  background: var(--tile);
+}
+.app .browser-zoom {
+  gap: 4px;
+  padding-right: 2px;
+  background: var(--tile);
+}
+.app .browser-zoom select {
+  width: 57px;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+}
+.app .browser-pane .browser-tabs-bar {
+  height: 34px;
+  gap: 4px;
+  padding: 3px 7px;
+  border-bottom: 0;
+}
+.app .browser-pane .browser-tabs {
+  gap: 3px;
+  align-items: center;
+  scrollbar-width: none;
+}
+.app .browser-pane .browser-tabs::-webkit-scrollbar {
+  display: none;
+}
+.app .browser-pane .browser-tab {
+  flex: 0 1 180px;
+  min-width: 78px;
+  max-width: 195px;
+  height: 27px;
+  padding-left: 3px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+.app .browser-pane .browser-tab.selected {
+  border-color: color-mix(in srgb, var(--line) 70%, transparent);
+  background: var(--tile);
+}
+.app .browser-pane .browser-tab > button {
+  min-height: 23px;
+  padding-block: 2px;
+  background: transparent;
+  font-size: 11px;
+}
+.app .browser-pane .browser-tab button[role='tab'] {
+  justify-content: flex-start;
+  gap: 7px;
+  padding-inline: 5px;
+}
+.app .browser-pane .browser-tab button[role='tab'] svg {
+  flex-shrink: 0;
+}
+.app .browser-pane .browser-tab-close {
+  width: 22px;
+  flex: 0 0 22px;
+  margin-right: 1px;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease;
+}
+.app .browser-pane .browser-tab:is(:hover, :focus-within, .selected) .browser-tab-close {
+  opacity: 1;
+}
+.app .browser-pane .browser-tab-close:hover {
+  background: var(--tile-hover);
+}
+.app .browser-pane .browser-new-tab {
+  width: 27px;
+  height: 27px;
+  min-height: 27px;
+  padding: 0;
+  flex: 0 0 27px;
+  border-radius: 7px;
+}
+.app .browser-loading-track {
+  height: 2px;
+  flex: 0 0 2px;
+  margin: 0 7px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.app .browser-loading-track.is-loading {
+  opacity: 1;
+}
+.app .browser-loading-track span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--muted);
+}
+.app .browser-loading-track.is-loading span {
+  animation: browser-loading 1.2s ease-in-out infinite;
+}
+.app .browser-pane .browser-viewport {
+  margin: 4px 6px 6px;
+  border-radius: var(--browser-radius);
+  background: color-mix(in srgb, var(--tile) 30%, var(--card));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+}
+.app .browser-pane .browser-empty {
+  gap: 8px;
+  padding: 24px;
+  opacity: 1;
+}
+.app .browser-empty-symbol {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 5px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+}
+.app .browser-pane .browser-empty strong {
+  color: var(--ui-text-color, var(--text-2));
+  font-size: 13px;
+  font-weight: 500;
+}
+.app .browser-pane .browser-empty p {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.app .browser-pane .browser-empty button {
+  margin-top: 8px;
+  min-height: 30px;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+.app .browser-pane .browser-error {
+  margin: 4px 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--danger-soft);
+  overflow-wrap: anywhere;
+}
+.app .browser-pane .browser-login-hint {
+  margin: 4px 7px;
+  border-radius: 7px;
+  padding: 7px 9px;
+}
+@keyframes browser-chrome-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes browser-loading {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+@container (max-width: 360px) {
+  .app .browser-pane .browser-toolbar {
+    gap: 3px;
+    padding-inline: 5px;
+  }
+  .app .browser-pane .browser-navigation {
+    gap: 0;
+  }
+  .app .browser-pane .browser-toolbar button {
+    width: 25px;
+    min-width: 25px;
+    flex-basis: 25px;
+  }
+  .app .browser-pane .browser-address input {
+    padding-inline: 6px;
+  }
+  .app .browser-options-content {
+    gap: 3px;
+    padding-inline: 5px;
+  }
+  .app .browser-options-content button {
+    padding-inline: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app .browser-pane *,
+  .app .browser-pane *::before,
+  .app .browser-pane *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .app .browser-loading-track span {
+    width: 100%;
+  }
+}

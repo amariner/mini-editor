@@ -123,6 +123,7 @@ try {
       globalThis.externalCalls.push({ default: url });
     };
   });
+  await page.getByRole('button', { name: 'Opciones del navegador', exact: true }).click();
   await page.getByRole('button', { name: 'Abrir en Chrome', exact: true }).click();
   const launches = await app.evaluate(() => globalThis.externalCalls);
   assert.deepEqual(launches[0], {

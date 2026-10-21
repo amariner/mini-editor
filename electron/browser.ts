@@ -259,6 +259,7 @@ export class DeskBrowser {
     wc.setZoomFactor(entry.state.zoom);
     this.pages.set(id, entry);
     view.setVisible(false);
+    view.setBorderRadius(8);
     const host = this.host();
     if (host && !host.isDestroyed()) host.contentView.addChildView(view, 0);
     view.setBounds({ x: 0, y: 0, width: 1000, height: 720 });
@@ -409,7 +410,7 @@ export class DeskBrowser {
     const y = Math.max(0, Math.min(Math.round(bounds.y), size.height));
     const width = Math.max(0, Math.min(Math.round(bounds.width), size.width - x));
     const height = Math.max(0, Math.min(Math.round(bounds.height), size.height - y));
-    host.contentView.addChildView(entry.view);
+    if (host.contentView.children.at(-1) !== entry.view) host.contentView.addChildView(entry.view);
     entry.view.setBounds({ x, y, width, height });
     entry.view.setVisible(width > 0 && height > 0);
     this.visible = id;

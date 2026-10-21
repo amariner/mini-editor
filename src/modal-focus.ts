@@ -73,7 +73,14 @@ export function useModalFocus(active: boolean) {
       observer.disconnect();
       document.removeEventListener('keydown', key, true);
       background.forEach((element, index) => (element.inert = wasInert[index]));
-      if (opener?.isConnected) opener.focus({ preventScroll: true });
+      const canRestore = (element: HTMLElement | null) =>
+        !!element && element.isConnected && visible(element) && !element.matches(':disabled');
+      // A resolved queue or removed account can also remove the control that opened it.
+      const fallback = [
+        ...document.querySelectorAll<HTMLElement>('.workspace .composer textarea:not(:disabled)'),
+        ...document.querySelectorAll<HTMLElement>('.app > main > .topbar button:not(:disabled)'),
+      ].find((element) => canRestore(element));
+      (canRestore(opener) ? opener : fallback)?.focus({ preventScroll: true });
     };
   }, [active]);
 }

@@ -28,6 +28,22 @@
   padding-left: 16px;
   margin-block: 8px 6px;
 }
+.response-work[open] > .activity-messages,
+.execution-panel[open] > ul,
+.turn-changes > ul,
+.todo-panel > .todos {
+  animation: desk-fade-in var(--motion-fast) ease;
+}
+.response-work > summary,
+.execution-panel > summary {
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+.execution-panel .execution-chevron,
+.turn-changes-toggle > svg:last-child {
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
 .response-group .response-actions {
   gap: 6px;
   min-height: 28px;
@@ -181,6 +197,11 @@
   padding: 8px 10px;
   border-radius: 7px;
 }
+.team-popover {
+  border-radius: 12px;
+  padding: 6px;
+  overscroll-behavior: contain;
+}
 .composer .popover {
   padding: 6px;
   border: 1px solid var(--line);
@@ -212,6 +233,17 @@
 }
 .composer .popover > button > strong {
   font-weight: 500;
+}
+.composer-area .slash-menu {
+  bottom: calc(100% + 6px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+}
+.composer-area .slash-menu > button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 7px;
 }
 .desk-input .composer-area .composer {
   padding: 12px 12px 10px 14px;

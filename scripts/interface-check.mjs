@@ -7,9 +7,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 const expectedBase = (
   await Promise.all(
-    ['style', 'shell-polish', 'settings-polish', 'chat-polish', 'multichat-polish'].map((name) =>
-      fs.readFile(`src/${name}.css`, 'utf8'),
-    ),
+    [
+      'style',
+      'shell-polish',
+      'settings-polish',
+      'chat-polish',
+      'multichat-polish',
+      'browser-polish',
+      'attention',
+    ].map((name) => fs.readFile(`src/${name}.css`, 'utf8')),
   )
 ).join('\n\n');
 const testBuild = process.env.SOURCE_BUILD
@@ -120,10 +126,7 @@ try {
   );
   await editor.scrollIntoViewIfNeeded();
   const css = await editor.inputValue();
-  assert.ok(
-    css === expectedBase,
-    'debe incluir exactamente las cinco fuentes CSS, en el orden de aplicación',
-  );
+  assert.ok(css === expectedBase, 'debe incluir todas las fuentes CSS, en el orden de aplicación');
   assert.equal(await page.locator('.style-state').innerText(), 'Estilos originales');
   // A fixture clipboard exercises the paste event without reading or changing the system clipboard.
   await editor.focus();

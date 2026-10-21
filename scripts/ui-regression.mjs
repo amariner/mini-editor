@@ -8,6 +8,7 @@ const scripts = selected.length
   ? selected
   : [
       'ui-polish',
+      'attention',
       'settings-polish',
       'multichat',
       'compact-chat',
@@ -16,6 +17,7 @@ const scripts = selected.length
       'workspace',
       'tabs',
       'browser',
+      'browser-ux',
       'browser-tabs',
       'browser-auth',
       'attachments',

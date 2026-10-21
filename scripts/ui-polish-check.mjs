@@ -188,6 +188,28 @@ try {
     assert.ok(await settings.evaluate((element) => element === document.activeElement));
     assert.equal(await page.locator('.app > main').evaluate((element) => element.inert), false);
 
+    // The last pending agent can resolve while its queue is open, removing its trigger on close.
+    await page.evaluate(() => {
+      window.fixture.state.sessions[1].status = 'waiting';
+      window.fixture.publish();
+    });
+    const attentionTrigger = page.getByRole('button', { name: 'Centro de atención', exact: true });
+    await attentionTrigger.click();
+    const attention = page.getByRole('dialog', { name: 'Centro de atención', exact: true });
+    await attention.waitFor();
+    await page.evaluate(() => {
+      window.fixture.state.sessions[1].status = 'ready';
+      window.fixture.publish();
+    });
+    await attention.getByText('No hay nada pendiente', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await attention.waitFor({ state: 'detached' });
+    assert.equal(await attentionTrigger.count(), 0);
+    assert.ok(
+      await composer.evaluate((element) => element === document.activeElement),
+      'Closing a resolved queue must restore a usable control when its trigger disappears',
+    );
+
     const search = page.getByRole('button', { name: 'Buscar proyectos y sesiones', exact: true });
     await search.click();
     await page

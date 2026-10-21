@@ -1,6 +1,10 @@
 /* Shared chrome: comfortable targets, restrained surfaces, one spacing rhythm. */
 :root {
   --muted: #696966;
+  --motion-press: 100ms;
+  --motion-fast: 140ms;
+  --motion-enter: 180ms;
+  --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -14,6 +18,41 @@
 }
 .app {
   --control-size: 30px;
+}
+/* Animate feedback, never the grid or native browser's coordinates. */
+.app button,
+.multichat-card-menu button {
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    opacity var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
+    transform var(--motion-press) var(--motion-ease);
+}
+.app :is(input, textarea, select) {
+  transition:
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
+}
+/* Text rows stay still while pressed; feedback comes from their surface. */
+.app
+  :is(
+    .project-name,
+    .project-chat,
+    .session-tab > button,
+    .popover button,
+    .palette-results button,
+    .activity-current,
+    .multichat-title
+  ):active,
+.multichat-card-menu button:active {
+  transform: none;
+}
+.app :is(button, input, textarea, select):focus-visible,
+.multichat-card-menu button:focus-visible {
+  outline-color: var(--field-focus);
 }
 .app > main {
   padding: 0 12px 12px 4px;
@@ -130,6 +169,24 @@
   min-height: 28px;
   border-radius: 6px;
 }
+.app .drawer-head > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.app .diff-panel .drawer-head {
+  min-height: 42px;
+  padding: 6px 10px 6px 14px;
+}
+.app .diff-panel .drawer-head button {
+  width: var(--control-size);
+  height: var(--control-size);
+  padding: 0;
+  border-radius: 8px;
+}
+.app .workspace-separator::after {
+  transition: background-color var(--motion-fast) ease;
+}
 .app .browser-toolbar {
   gap: 3px;
   padding-inline: 6px;
@@ -180,6 +237,31 @@
   box-shadow: var(--shadow);
   overflow: hidden;
 }
+.app .overlay {
+  --overlay-gap: clamp(20px, 10vh, 96px);
+  padding: var(--overlay-gap) 16px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: desk-backdrop-in var(--motion-fast) ease;
+}
+.app .overlay > :is(.modal, .palette) {
+  max-height: calc(100dvh - var(--overlay-gap) - 20px);
+  flex-shrink: 0;
+  animation: desk-surface-in var(--motion-enter) var(--motion-ease);
+}
+.app .modal.small {
+  overflow-y: auto;
+}
+.app .modal-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.app .modal-actions button {
+  min-height: 34px;
+  border-radius: 8px;
+  padding-inline: 14px;
+}
 .app .palette-search {
   min-height: 58px;
   padding-inline: 18px;
@@ -213,8 +295,46 @@
   padding: 24px;
 }
 .app .modal.small h2 {
+  margin: 0;
   font-size: 17px;
   letter-spacing: -0.02em;
+}
+.app :is(.palette-results, .drawer-body, .modal, .popover, .slash-menu),
+.multichat-card-menu {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.app :is(.popover, .slash-menu, .multichat-layout-menu),
+.multichat-card-menu,
+.team-popover:popover-open {
+  animation: desk-surface-in var(--motion-fast) var(--motion-ease);
+}
+.app :is(.diff-panel, .terminal-pane, .toast) {
+  animation: desk-fade-in var(--motion-enter) ease;
+}
+@keyframes desk-surface-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+@keyframes desk-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes desk-backdrop-in {
+  from {
+    background-color: transparent;
+  }
 }
 .app .modal.small p {
   line-height: 1.65;
@@ -238,9 +358,16 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-press: 0ms;
+    --motion-fast: 0ms;
+    --motion-enter: 0ms;
+  }
   .app *,
   .app *::before,
-  .app *::after {
+  .app *::after,
+  .multichat-card-menu,
+  .multichat-card-menu * {
     scroll-behavior: auto !important;
     transition-duration: 0s !important;
     animation-duration: 0s !important;

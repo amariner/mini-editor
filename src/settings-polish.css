@@ -26,6 +26,7 @@
   padding-bottom: 12px;
 }
 .account-settings .settings-tabs button {
+  min-height: 34px;
   border-radius: 7px;
   padding: 7px 12px;
   gap: 7px;
@@ -147,6 +148,7 @@
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+  animation: desk-fade-in var(--motion-fast) ease;
 }
 .account-settings .account-options[hidden] {
   display: none;
@@ -243,6 +245,8 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--muted);
+  min-height: 32px;
+  border-radius: 6px;
 }
 .account-settings .account-tools > summary::-webkit-details-marker {
   display: none;
@@ -305,11 +309,13 @@
   font-size: 12px;
   color: var(--text-2);
   padding-block: 6px;
+  min-height: 32px;
 }
 .account-settings .settings-disclosure-content {
   display: grid;
   gap: 18px;
   padding-block: 16px 6px;
+  animation: desk-fade-in var(--motion-fast) ease;
 }
 .account-settings .interface-settings {
   gap: 20px;
@@ -461,9 +467,11 @@
   inset: 0;
   z-index: 20;
   background: #0005;
+  animation: desk-backdrop-in var(--motion-fast) ease;
 }
 .account-settings .account-confirm {
   box-shadow: var(--shadow);
+  animation: desk-surface-in var(--motion-enter) var(--motion-ease);
 }
 .account-settings .proxy-heading {
   display: flex;

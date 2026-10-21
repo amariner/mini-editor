@@ -95,7 +95,19 @@ try {
   // Changing the account before the first send keeps the chat's draft image.
   assert.equal(await page.locator('.attachment-thumb').count(), 1);
   await page.getByRole('button', { name: 'Enviar', exact: true }).click();
-  await page.getByRole('button', { name: 'Gestionar cuenta en Ajustes', exact: true }).waitFor();
+  try {
+    await page.getByRole('button', { name: 'Gestionar cuenta en Ajustes', exact: true }).waitFor();
+  } catch (error) {
+    const current = (await snap()).sessions.find((session) => session.id === sid);
+    console.error('Codex empty-profile send diagnostics:', {
+      status: current?.status,
+      error: current?.error,
+      modelsError: current?.modelsError,
+      hasAccount: !!current?.account,
+      toast: await page.locator('.toast').allTextContents(),
+    });
+    throw error;
+  }
   await page.getByRole('button', { name: 'Cerrar error', exact: true }).click();
   assert.equal(await page.locator('.attachment-thumb').count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Enviar', exact: true }).isEnabled(), true);

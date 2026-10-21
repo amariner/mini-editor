@@ -67,7 +67,12 @@ try {
   assert.equal(await page.locator('.token-policy-hint').count(), 0);
   await page.getByRole('button', { name: 'Modelo', exact: true }).click();
   assert.equal(await page.locator('.composer .popover small').count(), 0);
-  await page.getByRole('button', { name: 'Por defecto', exact: true }).click();
+  // A refreshed provider catalog may already replace the initial "Por defecto" fallback.
+  await page
+    .locator('.composer .popover button')
+    .filter({ hasNotText: /^Auto$/ })
+    .first()
+    .click();
   await poll(async () => !(await snap()).profiles[0].optimization.autoModel);
   const a = await call({
     type: 'browser',
@@ -100,6 +105,7 @@ try {
     }),
     /no pertenece/,
   );
+  await page.getByRole('button', { name: 'Opciones del navegador', exact: true }).click();
   await page.getByRole('combobox', { name: 'Zoom del navegador' }).selectOption('0.75');
   await poll(async () => (await snap()).browsers.find((t) => t.id === a.id).zoom === 0.75);
   const realZoom = await app.evaluate(
@@ -114,6 +120,7 @@ try {
   await page.getByRole('button', { name: 'Ocultar navegador', exact: true }).click();
   assert.equal((await snap()).browsers.length, 2);
   await page.getByRole('button', { name: 'Navegador', exact: true }).click();
+  await page.getByRole('button', { name: 'Opciones del navegador', exact: true }).click();
   await page.getByRole('button', { name: 'Suspender pestaña', exact: true }).click();
   await poll(async () => (await snap()).browsers.find((t) => t.id === a.id).suspended);
   assert.equal(

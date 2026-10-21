@@ -249,6 +249,8 @@ export function StyleEditor() {
       import('./settings-polish.css?raw'),
       import('./chat-polish.css?raw'),
       import('./multichat-polish.css?raw'),
+      import('./browser-polish.css?raw'),
+      import('./attention.css?raw'),
     ]).then((styles) => alive && setBase(styles.map((style) => style.default).join('\n\n')));
     const sync = () => {
       documentVersion.current++;

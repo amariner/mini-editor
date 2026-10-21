@@ -13,6 +13,9 @@
   border-color: color-mix(in srgb, var(--text) 11%, var(--card));
   border-radius: 14px;
   box-shadow: 0 2px 8px #00000005;
+  transition:
+    border-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
 }
 .multichat-card-head {
   flex-shrink: 0;
@@ -111,6 +114,9 @@
 .multichat-plan-toggle > .expanded {
   transform: rotate(180deg);
 }
+.multichat-plan-toggle > svg:last-child {
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
 .multichat-plan {
   gap: 7px;
 }
@@ -137,6 +143,8 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   margin-block: 2px 6px;
+  overscroll-behavior: contain;
+  animation: desk-fade-in var(--motion-fast) ease;
 }
 .multichat-plan-details .todo-panel {
   margin: 0;
@@ -237,6 +245,9 @@
   border-radius: 11px;
   background: color-mix(in srgb, var(--text) 5%, var(--card));
   box-shadow: none;
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
 }
 .multichat-compose-row:focus-within {
   border-color: color-mix(in srgb, var(--text) 23%, var(--card));
