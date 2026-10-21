@@ -56,13 +56,33 @@ export async function hostOnline(url: string): Promise<boolean | undefined> {
   return connect(endpoint.host);
 }
 
+/** Share concurrent TCP checks of the same endpoint across tabs and conversations. */
+export function sharedHostProbe(probe = hostOnline) {
+  const pending = new Map<string, Promise<boolean | undefined>>();
+  return (url: string): Promise<boolean | undefined> => {
+    const endpoint = localEndpoint(url);
+    if (!endpoint) return Promise.resolve(undefined);
+    const key = `${endpoint.host}:${endpoint.port}`;
+    const existing = pending.get(key);
+    if (existing) return existing;
+    const work = probe(url).finally(() => {
+      if (pending.get(key) === work) pending.delete(key);
+    });
+    pending.set(key, work);
+    return work;
+  };
+}
+
 /** Ports discovered in a chat's tool output, independent of open browser tabs. */
 export class DevServerRegistry {
   private entries = new Map<
     string,
     { projectId: string; sessionId: string; url: string; port: number; online: boolean }
   >();
-  constructor(private probe = hostOnline) {}
+  constructor(private probe = sharedHostProbe()) {}
+  get size() {
+    return this.entries.size;
+  }
   async observe(projectId: string, sessionId: string, output: string) {
     const added: string[] = [];
     for (const url of localURLs(output)) {
@@ -96,6 +116,9 @@ export class DevServerRegistry {
   }
   removeProject(projectId: string) {
     for (const [key, e] of this.entries) if (e.projectId === projectId) this.entries.delete(key);
+  }
+  removeSessions(sessionIds: Set<string>) {
+    for (const [key, e] of this.entries) if (sessionIds.has(e.sessionId)) this.entries.delete(key);
   }
   clear() {
     this.entries.clear();

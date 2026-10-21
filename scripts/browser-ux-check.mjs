@@ -86,7 +86,18 @@ try {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
   }, folder);
   await call({ type: 'addProject' });
-  await page.getByRole('button', { name: 'Navegador', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Navegador', exact: true }).count(), 0);
+  const initial = await snap();
+  await call({
+    type: 'browserNew',
+    projectId: initial.selectedProject,
+    sessionId: initial.selectedSession,
+    url: origin + '/',
+  });
+  await page.locator('.browser-toolbar').waitFor();
+  // A blank tab can still be created inside an available browser; it does not
+  // make a browser appear on an otherwise empty workspace.
+  await page.getByRole('button', { name: 'Nueva pestaña del navegador', exact: true }).click();
   const address = page.getByRole('textbox', { name: 'Dirección web', exact: true });
   await page.getByText('Tu proyecto, en vivo', { exact: true }).waitFor();
   assert.equal(
@@ -97,6 +108,8 @@ try {
   assert.equal(await page.locator('.browser-toolbar button').count(), 6);
   assert.equal(await page.getByRole('combobox', { name: 'Zoom del navegador' }).count(), 0);
   await capture('browser-refined-empty');
+  await page.getByRole('button', { name: 'Cerrar pestaña Nueva página', exact: true }).click();
+  await until(async () => (await snap()).browsers.length === 1);
   await address.fill(origin + '/');
   await address.press('Enter');
   await until(async () =>

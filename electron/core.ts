@@ -264,7 +264,12 @@ export const actionSchema = z.discriminatedUnion('type', [
     rows: z.number().int().min(2).max(1000),
   }),
   z.object({ type: z.literal('terminalBuffer'), sessionId: id }),
-  z.object({ type: z.literal('diff'), projectId: id, sessionId: id.optional() }),
+  z.object({
+    type: z.literal('diff'),
+    projectId: id,
+    sessionId: id.optional(),
+    summaryOnly: z.boolean().optional(),
+  }),
   z
     .object({
       type: z.literal('setIsolation'),

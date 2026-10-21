@@ -1,0 +1,45 @@
+/* Empty workspaces use the whole window; the first action stays at its centre. */
+.app.onboarding {
+  position: relative;
+}
+.app.onboarding > main {
+  padding: 0;
+}
+.app.onboarding > main > .topbar {
+  position: absolute;
+  inset: 0 0 auto;
+  padding-left: 104px;
+  z-index: 1;
+}
+.app.onboarding .welcome {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 76px 52px;
+  background: transparent;
+}
+.app.onboarding .welcome p {
+  max-width: 340px;
+  line-height: 1.6;
+}
+.app.onboarding .welcome .primary {
+  min-height: 40px;
+}
+.app.onboarding .sidebar.onboarding-sidebar {
+  position: absolute;
+  inset: auto auto 0 0;
+  width: 56px;
+  min-width: 56px;
+  padding: 0 10px 10px;
+  z-index: 2;
+}
+.app.onboarding .sidebar.onboarding-sidebar .sidebar-controls {
+  margin: 0;
+  padding-inline: 3px 0;
+}
+@media (max-width: 520px) {
+  .app.onboarding .welcome {
+    padding-inline: 28px;
+  }
+}

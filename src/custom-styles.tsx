@@ -261,6 +261,7 @@ export function StyleEditor() {
       import('./attention.css?raw'),
       import('./motion.css?raw'),
       import('./floating-chat.css?raw'),
+      import('./onboarding.css?raw'),
     ]).then((styles) => alive && setBase(styles.map((style) => style.default).join('\n\n')));
     const sync = () => {
       documentVersion.current++;

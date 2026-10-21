@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   opensAsText,
+  clearProjectFiles,
   projectFiles,
   resolveProjectPath,
   scorePath,
@@ -91,4 +92,25 @@ test('IPC valida las acciones nuevas', () => {
     actionSchema.safeParse({ type: 'listFiles', projectId: 'p', query: 'x'.repeat(301) }).success,
     false,
   );
+});
+
+test('el índice de archivos libera proyectos retirados y acota su caché', async () => {
+  const roots = Array.from({ length: 9 }, () => temp());
+  try {
+    const first = projectFiles(roots[0]);
+    await first;
+    assert.equal(projectFiles(roots[0]), first);
+    for (const root of roots.slice(1)) await projectFiles(root);
+    const refreshed = projectFiles(roots[0]);
+    assert.notEqual(refreshed, first);
+    await refreshed;
+    fs.writeFileSync(path.join(roots[0], 'nuevo.txt'), 'hola');
+    clearProjectFiles(roots[0]);
+    assert.ok((await projectFiles(roots[0])).includes('nuevo.txt'));
+  } finally {
+    for (const root of roots) {
+      clearProjectFiles(root);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
 });

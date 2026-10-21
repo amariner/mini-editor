@@ -118,11 +118,36 @@ try {
     [
       '--input-type=module',
       '-e',
-      'await import(process.argv[1]); console.log("SDK OK")',
+      [
+        'import { createRequire } from "node:module";',
+        'await import(process.argv[1]);',
+        'const requireApp = createRequire(process.argv[2]);',
+        // Loading the bindings does not read credentials or open a terminal.
+        'requireApp("@github/keytar"); requireApp("@lydell/node-pty");',
+        'console.log("SDK y módulos nativos OK");',
+      ].join('\n'),
       new URL('file://' + path.join(payload, 'node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs'))
         .href,
+      path.join(payload, 'package.json'),
     ],
     { cwd: temporary, env: isolatedEnv, timeout: 15000, stdio: 'pipe' },
+  );
+  // Also exercise the SDK's default executable path after deduplication. It must
+  // remain usable when the app is moved away from its original build directory.
+  const sdkBinary = path.join(
+    payload,
+    `node_modules/@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`,
+  );
+  const resolvedSdkBinary = await fs.realpath(sdkBinary);
+  assert.ok(resolvedSdkBinary.startsWith(payload + path.sep));
+  assert.match(
+    execFileSync(sdkBinary, ['--version'], {
+      cwd: temporary,
+      env: isolatedEnv,
+      encoding: 'utf8',
+      timeout: 30000,
+    }),
+    /Claude Code/,
   );
   for (const name of ['claude', 'opencode', 'gemini']) {
     const version = execFileSync(path.join(bin, name), ['--version'], {

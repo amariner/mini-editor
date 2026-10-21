@@ -2,7 +2,7 @@ import { BrowserWindow, WebContentsView, nativeImage, session as electronSession
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { hostOnline, localURLs, DevServerRegistry } from './browser-hosts';
+import { localEndpoint, localURLs, sharedHostProbe, DevServerRegistry } from './browser-hosts';
 import { randomUUID } from 'node:crypto';
 import {
   browserInput,
@@ -21,7 +21,8 @@ type Entry = {
   openerId?: string;
 };
 export class DeskBrowser {
-  private servers = new DevServerRegistry();
+  private probeHost = sharedHostProbe();
+  private servers = new DevServerRegistry(this.probeHost);
   serverSnapshot() {
     return this.servers.snapshot();
   }
@@ -78,11 +79,20 @@ export class DeskBrowser {
         /* Old or missing browser state never prevents application startup. */
       }
     }
-    this.monitor = setInterval(() => {
-      void this.checkHosts();
-    }, 15000);
-    this.monitor.unref();
+    this.updateMonitor();
     void this.checkHosts();
+  }
+  private updateMonitor() {
+    const needed =
+      !this.closed &&
+      (this.servers.size > 0 || [...this.pages.values()].some((p) => localEndpoint(p.state.url)));
+    if (!needed) {
+      clearInterval(this.monitor);
+      this.monitor = undefined;
+    } else if (!this.monitor) {
+      this.monitor = setInterval(() => void this.checkHosts(), 15000);
+      this.monitor.unref();
+    }
   }
   private save() {
     if (!this.root || this.closed) return;
@@ -105,11 +115,13 @@ export class DeskBrowser {
     if (this.checking || this.closed) return;
     this.checking = true;
     try {
-      if (await this.servers.refresh()) this.changed();
-      await Promise.all(
-        [...this.pages.values()].map(async (entry) => {
+      await Promise.all([
+        this.servers.refresh().then((changed) => {
+          if (changed) this.changed();
+        }),
+        ...[...this.pages.values()].map(async (entry) => {
           const url = entry.state.url;
-          const online = await hostOnline(url);
+          const online = await this.probeHost(url);
           if (this.closed || entry.state.url !== url || !this.pages.has(entry.state.id)) return;
           const status = online === undefined ? undefined : online ? 'online' : 'offline';
           if (entry.state.hostStatus !== status) {
@@ -117,26 +129,47 @@ export class DeskBrowser {
             this.changed();
           }
         }),
-      );
+      ]);
     } finally {
       this.checking = false;
+      this.updateMonitor();
     }
   }
   async observe(projectId: string, sessionId: string, output: string) {
     if (this.closed || this.removedProjects.has(projectId)) return;
     const text = ((this.output.get(sessionId) ?? '') + output).slice(-6000);
+    this.output.delete(sessionId);
     this.output.set(sessionId, text);
+    if (this.output.size > 256) this.output.delete(this.output.keys().next().value!);
     if (await this.servers.observe(projectId, sessionId, text)) this.changed();
-    if (this.closed || this.removedProjects.has(projectId)) return;
+    this.updateMonitor();
+    if (this.closed || this.removedProjects.has(projectId) || !this.output.has(sessionId)) return;
+    const online = new Set(
+      this.servers
+        .snapshot()
+        .filter((server) => server.sessionId === sessionId)
+        .map((server) => server.port),
+    );
     for (const url of localURLs(text)) {
-      const key = projectId + ':' + url;
+      if (!online.has(localEndpoint(url)!.port)) continue;
+      const key = sessionId + ':' + url;
       if (this.observed.has(key)) continue;
       this.observed.add(key);
       if (this.observed.size > 2000) this.observed.delete(this.observed.values().next().value!);
-      if (await hostOnline(url)) {
-        if (!this.closed && !this.removedProjects.has(projectId))
-          await this.forSession(sessionId, projectId, { action: 'navigate', url }, false).catch(() => {});
-      } else this.observed.delete(key);
+      // Discovery advertises a preview; only opening it or an explicit browser tool call
+      // may create a Chromium renderer and request the page.
+      const existing = this.snapshot().find(
+        (p) =>
+          p.projectId === projectId &&
+          p.sessionId === sessionId &&
+          p.url &&
+          new URL(p.url).origin === new URL(url).origin,
+      );
+      if (!existing && this.pages.size < 60) {
+        const tab = this.create(projectId, sessionId, url, false);
+        tab.hostStatus = 'online';
+        this.defaults.set(sessionId, tab.id);
+      }
     }
   }
   create(projectId?: string, sessionId = '', url = '', activate = true) {
@@ -164,6 +197,8 @@ export class DeskBrowser {
       },
     });
     this.save();
+    this.updateMonitor();
+    void this.checkHosts();
     this.changed();
     if (activate) this.opened(id, sessionId);
     return this.pages.get(id)!.state;
@@ -441,7 +476,21 @@ export class DeskBrowser {
     this.pages.delete(id);
     for (const [owner, tab] of this.defaults) if (tab === id) this.defaults.delete(owner);
     this.save();
+    this.updateMonitor();
     this.changed();
+  }
+  async removeSessions(sessionIds: string[]) {
+    const ids = new Set(sessionIds);
+    this.servers.removeSessions(ids);
+    const tabs = this.snapshot().filter((tab) => ids.has(tab.sessionId));
+    for (const tab of tabs) this.close(tab.id);
+    for (const id of ids) {
+      this.output.delete(id);
+      this.defaults.delete(id);
+      for (const key of this.observed) if (key.startsWith(id + ':')) this.observed.delete(key);
+    }
+    this.updateMonitor();
+    await Promise.allSettled(tabs.map((tab) => this.queues.get(tab.id)));
   }
   async removeProject(projectId: string, sessionIds: string[]) {
     this.removedProjects.add(projectId);
@@ -456,7 +505,13 @@ export class DeskBrowser {
       this.output.delete(id);
       this.defaults.delete(id);
     }
-    for (const key of this.observed) if (key.startsWith(projectId + ':')) this.observed.delete(key);
+    for (const key of this.observed)
+      if (
+        sessionIds.some((id) => key.startsWith(id + ':')) ||
+        key.startsWith(`shell:${projectId}:`)
+      )
+        this.observed.delete(key);
+    this.updateMonitor();
     const ses = electronSession.fromPartition(browserPartition(projectId));
     await ses.closeAllConnections();
     await ses.clearCache();
@@ -535,6 +590,8 @@ export class DeskBrowser {
       p.state.url = browserURL(args.url);
       p.state.externalUrl = externalBrowserURL(p.state.url);
       this.save();
+      this.updateMonitor();
+      void this.checkHosts();
       await wc.loadURL(p.state.url);
       wc.setZoomFactor(p.state.zoom);
       void this.checkHosts();

@@ -140,6 +140,25 @@ test('persistencia restaura referencias y conversación, nunca procesos, autenti
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+test('persistencia evita reescribir el estado si solo cambian datos transitorios', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-store-'));
+  try {
+    const store = new Store(dir);
+    store.flush();
+    const file = path.join(dir, 'state.json');
+    const stamp = new Date('2000-01-01T00:00:00Z');
+    fs.utimesSync(file, stamp, stamp);
+    store.state.notice = 'Solo cambia la interfaz';
+    store.flush();
+    assert.equal(fs.statSync(file).mtimeMs, stamp.getTime());
+    store.state.projects.push({ id: 'p', name: 'Proyecto', path: '/tmp/project' });
+    store.flush();
+    assert.notEqual(fs.statSync(file).mtimeMs, stamp.getTime());
+    assert.equal(new Store(dir).state.projects[0].id, 'p');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 test('transporte RPC correlaciona respuestas fragmentadas, errores y solicitudes bidireccionales (fixture de protocolo)', async () => {
   const script = `process.stdin.setEncoding('utf8');let b='';process.stdin.on('data',d=>{b+=d;let n;while((n=b.indexOf('\\n'))>=0){const m=JSON.parse(b.slice(0,n));b=b.slice(n+1);if(m.method==='ok'){const r=JSON.stringify({id:m.id,result:{value:42}})+'\\n';process.stdout.write(r.slice(0,5));setTimeout(()=>process.stdout.write(r.slice(5)),5)}else if(m.method==='fail')process.stdout.write(JSON.stringify({id:m.id,error:{code:-32601,message:'unsupported'}})+'\\n');else if(m.method==='request')process.stdout.write(JSON.stringify({id:99,method:'approval',params:{}})+'\\n');else if(m.id===99)process.stdout.write(JSON.stringify({method:'resolved',params:m.result})+'\\n')}});`;
   const rpc = new Rpc(process.execPath, ['-e', script], os.tmpdir(), process.env);

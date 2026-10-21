@@ -57,6 +57,11 @@ test('Git diferencia una carpeta normal, rama sin commits, preparación, commit 
     assert.equal(state.counts.unstaged, 1);
     assert.equal(state.files[0].path, name);
     assert.deepEqual(state.lines, { added: 2, removed: 0 });
+    const summary = await readGit(root, true);
+    assert.equal(summary.staged, '');
+    assert.equal(summary.unstaged, '');
+    assert.ok(state.staged.length > 0 && state.unstaged.length > 0);
+    assert.deepEqual(summary, { ...state, staged: '', unstaged: '' });
     await changeGit(root, 'unstage');
     assert.equal((await readGit(root)).counts.staged, 0);
   }));

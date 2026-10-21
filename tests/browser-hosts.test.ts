@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import { localURLs, localEndpoint, hostOnline } from '../electron/browser-hosts';
+import { localURLs, localEndpoint, hostOnline, sharedHostProbe } from '../electron/browser-hosts';
 test('detecta solo URLs de servidores locales explícitos, con ANSI e IPv6', () => {
   assert.deepEqual(
     localURLs(
@@ -76,4 +76,37 @@ test('a pending dev-port probe cannot restore a removed project', async () => {
   finish(true);
   await pending;
   assert.deepEqual(registry.snapshot(), []);
+});
+
+test('concurrent tabs share one endpoint probe without retaining stale results', async () => {
+  let probes = 0;
+  let finish!: (online: boolean) => void;
+  const probe = sharedHostProbe(() => {
+    probes++;
+    return new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+  });
+  const first = probe('http://localhost:3000/');
+  const second = probe('http://localhost:3000/other');
+  assert.equal(probes, 1);
+  assert.equal(first, second);
+  finish(true);
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  const next = probe('http://localhost:3000/');
+  assert.equal(probes, 2);
+  finish(false);
+  assert.equal(await next, false);
+  assert.equal(await probe('https://example.com/'), undefined);
+  assert.equal(probes, 2);
+});
+
+test('deleting a chat releases its ports without affecting another chat', async () => {
+  const { DevServerRegistry } = await import('../electron/browser-hosts');
+  const registry = new DevServerRegistry(async () => true);
+  await registry.observe('p', 'a', 'http://localhost:3000/');
+  await registry.observe('p', 'b', 'http://localhost:4000/');
+  registry.removeSessions(new Set(['a']));
+  assert.equal(registry.size, 1);
+  assert.equal(registry.snapshot()[0].sessionId, 'b');
 });

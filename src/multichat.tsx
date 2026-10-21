@@ -1,6 +1,6 @@
 import { FloatChatButton } from './floating-chat';
 import { TeamIndicator } from './team';
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Maximize2,
@@ -27,7 +27,6 @@ import {
 } from 'lucide-react';
 import type { Action, Attachment, Profile, Session, Snapshot } from './shared';
 import { providerKind, providerNames, isConnectedProvider } from './shared';
-import { sessionIsLive } from './session-tabs';
 import { compatibleRuntime } from './runtime';
 import {
   ClaudeApproval,
@@ -1111,11 +1110,9 @@ export function Multichat({
   actionsFor,
   dismissed,
   toggleHidden,
-  opened,
   close,
   ...controls
 }: {
-  opened: string[];
   dismissed: string[];
   toggleHidden: (id: string) => void;
   close: (session: Session) => void;
@@ -1131,21 +1128,37 @@ export function Multichat({
   const [git, setGit] = useState<Record<string, { value?: GitSnapshot; error?: string }>>({});
   const [gitBusy, setGitBusy] = useState<Record<string, boolean>>({});
   const gitPending = useRef(new Set<string>());
+  const projectIds = useRef(new Set<string>());
+  projectIds.current = new Set(state.projects.map((project) => project.id));
+  const existingProjects = state.projects.map((project) => project.id).join('\0');
+  useEffect(() => {
+    const prune = <T,>(values: Record<string, T>) => {
+      const entries = Object.entries(values).filter(([id]) => projectIds.current.has(id));
+      return entries.length === Object.keys(values).length ? values : Object.fromEntries(entries);
+    };
+    setGit(prune);
+    setGitBusy(prune);
+  }, [existingProjects]);
   const refreshGit = async (projectId: string) => {
-    if (gitPending.current.has(projectId)) return;
+    if (!projectIds.current.has(projectId) || gitPending.current.has(projectId)) return;
     gitPending.current.add(projectId);
     setGitBusy((v) => ({ ...v, [projectId]: true }));
     try {
-      const value: GitSnapshot = await window.desk.invoke({ type: 'diff', projectId });
-      setGit((v) => ({ ...v, [projectId]: { value } }));
+      const value: GitSnapshot = await window.desk.invoke({
+        type: 'diff',
+        projectId,
+        ...(compatibleRuntime(state) ? { summaryOnly: true } : {}),
+      });
+      if (projectIds.current.has(projectId)) setGit((v) => ({ ...v, [projectId]: { value } }));
     } catch (e) {
-      setGit((v) => ({
-        ...v,
-        [projectId]: { error: e instanceof Error ? e.message : 'No se pudo consultar Git' },
-      }));
+      if (projectIds.current.has(projectId))
+        setGit((v) => ({
+          ...v,
+          [projectId]: { error: e instanceof Error ? e.message : 'No se pudo consultar Git' },
+        }));
     } finally {
       gitPending.current.delete(projectId);
-      setGitBusy((v) => ({ ...v, [projectId]: false }));
+      if (projectIds.current.has(projectId)) setGitBusy((v) => ({ ...v, [projectId]: false }));
     }
   };
   const section = useRef<HTMLElement>(null);
@@ -1174,19 +1187,22 @@ export function Multichat({
   const touched = useRef<string | undefined>(undefined);
   const watching = useRef({ visible, selected: state.selectedSession });
   watching.current = { visible, selected: state.selectedSession };
+  const sessionById = useMemo(
+    () => new Map(state.sessions.map((session) => [session.id, session])),
+    [state.sessions],
+  );
   useEffect(() => {
     setTracked((previous) => {
-      const next = previous.filter((id) => state.sessions.some((s) => s.id === id));
-      for (const s of state.sessions)
-        if (
-          (sessionIsLive(s) || s.approvals.length || opened.includes(s.id)) &&
-          !next.includes(s.id)
-        )
-          next.push(s.id);
+      const next = previous.filter((id) => sessionById.has(id));
+      const included = new Set(next);
+      // Restored, stopped chats belong to the grid too, even before a tab is opened.
+      for (const s of state.sessions) if (!included.has(s.id)) next.push(s.id);
       return next.length === previous.length && next.every((id, i) => previous[i] === id)
         ? previous
         : next;
     });
+    for (const id of wasPending.current.keys())
+      if (!sessionById.has(id)) wasPending.current.delete(id);
     // A chat that finishes while you look elsewhere stays marked until you touch its card.
     const finished: string[] = [];
     for (const s of state.sessions) {
@@ -1199,19 +1215,17 @@ export function Multichat({
       wasPending.current.set(s.id, pending);
     }
     setUnseen((ids) => {
-      const next = [...new Set([...ids, ...finished])].filter((id) =>
-        state.sessions.some((s) => s.id === id && !isPending(s)),
+      const next = [...new Set([...ids, ...finished])].filter(
+        (id) => sessionById.has(id) && !isPending(sessionById.get(id)!),
       );
       return next.length === ids.length && next.every((id, i) => ids[i] === id) ? ids : next;
     });
-  }, [state.sessions, opened.join('\0')]);
+  }, [state.sessions, sessionById]);
   useEffect(() => store(orderKey, tracked), [tracked]);
-  const hiddenCount = tracked.filter(
-    (id) => dismissed.includes(id) && state.sessions.some((s) => s.id === id),
-  ).length;
+  const hiddenCount = tracked.filter((id) => dismissed.includes(id) && sessionById.has(id)).length;
   const sessions = tracked
     .filter((id) => showHidden || !dismissed.includes(id))
-    .map((id) => state.sessions.find((s) => s.id === id))
+    .map((id) => sessionById.get(id))
     .filter((s): s is Session => !!s);
   useEffect(() => {
     const viewport = gridViewport.current;
@@ -1220,12 +1234,13 @@ export function Multichat({
     const observer = new ResizeObserver(([entry]) => setFit(fitColumns(entry.contentRect.width)));
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [sessions.length > 0]);
+  }, [visible, sessions.length > 0]);
   const shape = layout.auto ? autoLayout(sessions.length, fit) : layout;
   const projectKey = JSON.stringify([...new Set(sessions.map((s) => s.projectId))].sort());
   useEffect(() => {
     if (!visible) return;
     const ids: string[] = JSON.parse(projectKey);
+    if (!ids.length) return;
     const update = () => {
       if (!document.hidden) for (const id of ids) void refreshGit(id);
     };
@@ -1336,6 +1351,9 @@ export function Multichat({
     focusNext.current = created.id;
     return true;
   };
+  // Keep only ordering/attention bookkeeping while hidden. Drafts and attachments
+  // live in the shared store, so switching views does not retain hidden transcripts.
+  if (!visible) return null;
   const bar = (
     <div className="multichat-toolbar">
       <div className="multichat-summary">

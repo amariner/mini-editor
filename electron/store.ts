@@ -1,6 +1,7 @@
 import { isCodex, isConnectedProvider, providerKind, legacyProfiles } from '../src/shared';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Snapshot } from '../src/shared';
 import { sessionAccountLocked } from '../src/session-tabs';
@@ -193,6 +194,7 @@ const schema = z.object({
 export class Store {
   state: Snapshot;
   private timer?: NodeJS.Timeout;
+  private savedDigest?: string;
   constructor(readonly root: string) {
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
     this.state = {
@@ -355,8 +357,12 @@ export class Store {
         }),
       ),
     };
+    const serialized = JSON.stringify(safe);
+    const digest = createHash('sha256').update(serialized).digest('hex');
+    if (digest === this.savedDigest) return;
     const file = path.join(this.root, 'state.json');
-    fs.writeFileSync(file + '.tmp', JSON.stringify(safe), { mode: 0o600 });
+    fs.writeFileSync(file + '.tmp', serialized, { mode: 0o600 });
     fs.renameSync(file + '.tmp', file);
+    this.savedDigest = digest;
   }
 }

@@ -1101,7 +1101,7 @@ try {
             text: 'He revisado el PR: hay dos tests sin actualizar.',
           },
         ],
-        fields: { status: 'ready', suggestion: 'Actualiza esos dos tests y vuelve a ejecutarlos' },
+        fields: { status: 'ready' },
       }),
       base('v3', 2, {
         title: 'Corregir estilos',
@@ -1181,13 +1181,12 @@ try {
   assert.match(await styles.locator('.multichat-changes').innerText(), /^1\s*\+1\s*−1$/);
   const plain = grid.locator('[data-session-id="v4"]');
   assert.equal(await plain.locator('.multichat-supervision').count(), 0);
-  // The suggestion only fills the draft: nothing is sent.
+  // The draft is shared when the grid card unmounts for the expanded chat.
   const review = grid.locator('[data-session-id="v2"]');
-  const suggestion = 'Actualiza esos dos tests y vuelve a ejecutarlos';
+  const draft = 'Actualiza esos dos tests y vuelve a ejecutarlos';
   const sends = () =>
     page.evaluate(() => window.fixture.actions.filter((a) => a.type === 'send').length);
   const sentBefore = await sends();
-  assert.equal(await migrate.locator('.prompt-suggestion').count(), 0);
   await page.emulateMedia({ colorScheme: 'light' });
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'artifacts/multichat-supervision-light.png' });
@@ -1196,28 +1195,21 @@ try {
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'artifacts/multichat-supervision-dark.png' });
   await migrate.screenshot({ path: 'artifacts/multichat-supervision-card-dark.png' });
-  await review
-    .getByRole('button', { name: `Usar sugerencia como borrador: ${suggestion}` })
-    .click();
   const reviewField = review.getByRole('textbox', { name: 'Mensaje para Revisar PR', exact: true });
-  assert.equal(await reviewField.inputValue(), suggestion);
+  await reviewField.fill(draft);
   await page.waitForFunction(
     () => document.activeElement?.getAttribute('aria-label') === 'Mensaje para Revisar PR',
   );
-  assert.equal(await review.locator('.prompt-suggestion').count(), 0);
   assert.equal(await sends(), sentBefore);
-  await reviewField.fill('');
-  await review.locator('.prompt-suggestion').waitFor();
-  // Same chip in the expanded chat.
   await review.getByRole('button', { name: 'Ampliar Revisar PR', exact: true }).click();
   await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
-  await page.locator('.composer .prompt-suggestion').click();
-  assert.equal(await page.locator('.composer textarea').inputValue(), suggestion);
-  assert.equal(await page.locator('.composer .prompt-suggestion').count(), 0);
+  assert.equal(await page.locator('.composer textarea').inputValue(), draft);
+  await page.locator('.composer textarea').fill(draft + ' y resume el resultado.');
   assert.equal(await sends(), sentBefore);
-  await page.locator('.composer textarea').fill('');
   await page.getByRole('button', { name: 'Volver al grid' }).click();
   await grid.waitFor({ state: 'visible' });
+  assert.equal(await reviewField.inputValue(), draft + ' y resume el resultado.');
+  await reviewField.fill('');
   // The chip opens the changes of that chat.
   await changes.click();
   await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
@@ -1284,10 +1276,11 @@ try {
     window.fixture.state.sessions = [];
     window.fixture.publish();
   });
-  await grid.getByRole('heading', { name: 'No hay chats en marcha' }).waitFor();
+  await grid.waitFor({ state: 'detached' });
+  assert.equal(await page.getByRole('button', { name: 'Multichat', exact: true }).count(), 0);
   assert.deepEqual(errors, []);
   console.log(
-    'Multichat: 16 chats, cross-project expansion, Esc, retention, responsive layout, mini-chat sends, attachments, drafts, failures, permissions, interrupt, drag and keyboard reordering, saved order, detailed activity, tool log, account nickname, Git header, per-chat dev ports, Chrome action, account colors, shared rich text, response links, project sidebar navigation, saved and automatic layout, attention and unseen jumps, numbered shortcuts, saved hidden chats, title renaming, plan progress, turn changes, subagent summaries, prompt suggestions, new chat from the grid, expanded/collapsed sidebar project dragging, accessible card menus, resize/stream follow and empty state passed.',
+    'Multichat: 16 chats, cross-project expansion, Esc, retention, responsive layout, mini-chat sends, attachments, shared drafts across card unmounts, failures, permissions, interrupt, drag and keyboard reordering, saved order, detailed activity, tool log, account nickname, Git header, per-chat dev ports, Chrome action, account colors, shared rich text, response links, project sidebar navigation, saved and automatic layout, attention and unseen jumps, numbered shortcuts, saved hidden chats, title renaming, plan progress, turn changes, subagent summaries, new chat from the grid, expanded/collapsed sidebar project dragging, accessible card menus, resize/stream follow and last-chat removal passed.',
   );
 } finally {
   await browser?.close();

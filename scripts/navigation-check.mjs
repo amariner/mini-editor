@@ -73,7 +73,7 @@ try {
   assert.equal(await search.count(), 0);
   await page.getByRole('button', { name: 'Landing', exact: true }).dblclick();
   await input.fill('Landing web');
-  await page.getByRole('button', { name: 'Navegador', exact: true }).click();
+  await page.getByRole('button', { name: 'Plegar proyectos', exact: true }).click();
   await until(
     async () => (await snap()).projects.find((p) => p.id === original.id).name === 'Landing web',
   );

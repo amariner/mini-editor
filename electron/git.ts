@@ -54,7 +54,7 @@ export function parseGitFiles(raw: string): GitSnapshot['files'] {
   }
   return files;
 }
-export async function readGit(cwd: string): Promise<GitSnapshot> {
+export async function readGit(cwd: string, summaryOnly = false): Promise<GitSnapshot> {
   const root = await repositoryRoot(cwd);
   if (!root) return empty();
   const [raw, status, symbolic, head, refs, upstream, remotes] = await Promise.all([
@@ -107,8 +107,8 @@ export async function readGit(cwd: string): Promise<GitSnapshot> {
       });
   try {
     const [unstaged, staged, a, b] = await Promise.all([
-      git(root, ['diff', '--no-ext-diff', '--no-textconv', '--']),
-      git(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--']),
+      summaryOnly ? '' : git(root, ['diff', '--no-ext-diff', '--no-textconv', '--']),
+      summaryOnly ? '' : git(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--']),
       git(root, ['diff', '--numstat', '--no-ext-diff', '--no-textconv', '--']),
       git(root, ['diff', '--cached', '--numstat', '--no-ext-diff', '--no-textconv', '--']),
     ]);

@@ -1,12 +1,16 @@
 // Real Electron and official CLIs; empty profiles, no login completed and no model calls.
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'desk-new-profiles-')));
 const folder = path.join(root, 'project');
 await fs.mkdir(folder);
+const server = http.createServer((_req, res) => res.end('<title>Perfil de prueba</title>'));
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+const previewURL = `http://127.0.0.1:${server.address().port}/`;
 let app, page;
 const errors = [];
 const call = (a) => page.evaluate((a) => window.desk.invoke(a), a);
@@ -63,13 +67,14 @@ try {
   await call({ type: 'addProject' });
   assert.equal((await snap()).selectedSession, undefined);
   assert.deepEqual((await snap()).sessions, []);
-  await page.getByRole('heading', { name: 'Conecta tu cuenta' }).waitFor();
+  await page.getByRole('heading', { name: 'Empieza con tu cuenta' }).waitFor();
   assert.equal(
-    await page.getByRole('button', { name: 'Nueva conversación', exact: true }).isDisabled(),
-    true,
+    await page.getByRole('button', { name: 'Nueva conversación', exact: true }).count(),
+    0,
   );
+  assert.equal(await page.getByRole('button', { name: 'Ajustes', exact: true }).count(), 0);
   await call({ type: 'select', projectId: (await snap()).selectedProject });
-  await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
+  await page.getByRole('button', { name: 'Añadir cuenta', exact: true }).click();
   const add = async (kind, name) => {
     await page
       .getByRole('dialog', { name: 'Ajustes', exact: true })
@@ -130,7 +135,15 @@ try {
   await call({ type: 'stop', sessionId: state.sessions.find((s) => s.profile === claude.id).id });
   const icons = await page.locator('.composer-chips .chip-btn:not(.labeled)').allTextContents();
   assert.ok(icons.every((x) => !x.trim()));
-  await page.getByRole('button', { name: 'Navegador', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Navegador', exact: true }).count(), 0);
+  state = await snap();
+  await call({
+    type: 'browserNew',
+    projectId,
+    sessionId: state.selectedSession,
+    url: previewURL,
+  });
+  await page.locator('.browser-toolbar').waitFor();
   const tabs = await page.locator('.session-tabs-bar').boundingBox();
   const nav = await page.locator('.browser-toolbar').boundingBox();
   assert.ok(
@@ -152,5 +165,8 @@ try {
     'PASS: first run and restart without accounts or profile directories, project without accounts, explicit first account, add Claude/Codex via Settings, official empty profile status, two real isolated agent processes, scoped logout, persistence, rejected unregistered profile, icon-only controls, aligned toolbars. Zero model calls.',
   );
 } finally {
-  await app?.close();
+  await app?.close().catch(() => {});
+  server.closeAllConnections();
+  await new Promise((resolve) => server.close(resolve));
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

@@ -177,7 +177,12 @@ export function TerminalView({
       fit.current?.fit();
       // Status changes must not pull the caret away from a field the user is typing in.
       const a = document.activeElement;
-      if (!a || a === document.body || a.closest('.terminal-wrap')) terminal.current?.focus();
+      if (
+        !a ||
+        a === document.body ||
+        a.closest('.terminal-wrap, .terminal-toggle[aria-pressed="true"]')
+      )
+        terminal.current?.focus();
     }, 50);
     return () => clearTimeout(timer);
   }, [visible, session.id, session.status, placement]);

@@ -29,7 +29,8 @@ import {
   type TokenOptimization,
 } from './shared';
 import { compatibleRuntime } from './runtime';
-import { TerminalView, live } from './terminal';
+import { TerminalView } from './lazy-terminal';
+import { sessionIsLive as live } from './session-tabs';
 import { InterfaceSettings, useInterfacePreferences } from './interface-settings';
 
 export function AccountsSettings({

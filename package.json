@@ -10,7 +10,7 @@
     "package:mac": "node scripts/package-mac.mjs",
     "test:package": "node scripts/package-check.mjs",
     "start": "electron .",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test tests/*.test.ts tests/*.test.mjs",
     "test:integration": "npm run build && node scripts/integration.mjs",
     "test:chat": "npm run build && node scripts/chat-check.mjs",
     "postinstall": "electron-rebuild -f -w node-pty",

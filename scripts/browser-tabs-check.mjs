@@ -59,6 +59,7 @@ try {
   await launch();
   await call({ type: 'addAccount', kind: 'claude', name: 'Personal' });
   const first = await project('Uno');
+  await page.getByRole('button', { name: 'Herramientas del chat', exact: true }).click();
   await page.getByRole('button', { name: 'Ahorro de tokens', exact: true }).click();
   await page.getByRole('button', { name: 'Intenso', exact: true }).click();
   await page.getByRole('button', { name: 'Modelo', exact: true }).click();
@@ -153,6 +154,9 @@ try {
   });
   await poll(async () => (await snap()).browsers.length === 4);
   // A URL printed in another project's terminal is detected without replacing existing tabs.
+  const renderersBeforeDiscovery = await app.evaluate(
+    ({ webContents }) => webContents.getAllWebContents().length,
+  );
   await call({ type: 'openProjectTerminal', projectId: second.projectId });
   await call({
     type: 'terminalWrite',
@@ -164,10 +168,19 @@ try {
       (t) => t.sessionId === `shell:${second.projectId}` && t.url === urls[0],
     ),
   );
+  assert.equal(
+    (await snap()).browsers.find((t) => t.sessionId === `shell:${second.projectId}`).suspended,
+    true,
+  );
+  assert.equal(
+    await app.evaluate(({ webContents }) => webContents.getAllWebContents().length),
+    renderersBeforeDiscovery,
+    'Discovering a local server must not create a hidden browser renderer',
+  );
   await call({ type: 'select', ...first });
   assert.ok((await snap()).browsers.length >= 5);
   await page.getByRole('button', { name: 'Plegar proyectos' }).click();
-  assert.equal((await page.locator('.sidebar').boundingBox()).width, 40);
+  assert.equal((await page.locator('.sidebar').boundingBox()).width, 56);
   await fs.mkdir('artifacts', { recursive: true });
   const screenshot = await app.evaluate(async ({ BrowserWindow }) =>
     (await BrowserWindow.getAllWindows()[0].capturePage()).toPNG().toString('base64'),

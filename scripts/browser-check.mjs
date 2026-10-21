@@ -52,11 +52,12 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Buscar proyectos y sesiones' }).count(), 1);
   assert.equal(await page.locator('.composer-hint, .conv-foot, .crumb > strong').count(), 0);
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundImage), 'none');
-  await page.getByRole('button', { name: 'Navegador', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Dirección web' }).fill(url);
-  await page.getByRole('button', { name: 'Ir a la dirección' }).click();
+  assert.equal(await page.getByRole('button', { name: 'Navegador', exact: true }).count(), 0);
+  assert.equal((await snap()).browsers.length, 0);
   const first = (await snap()).selectedSession;
   const browser = (input) => call({ type: 'browser', sessionId: first, input });
+  await browser({ action: 'navigate', url });
+  await page.getByRole('textbox', { name: 'Dirección web' }).waitFor();
   await until(async () =>
     (await snap()).browsers?.some((b) => b.sessionId === first && !b.loading && b.url === url),
   );
@@ -170,7 +171,7 @@ try {
   await page.getByRole('button', { name: 'Plegar proyectos' }).click();
   const mark = await page.locator('.project-mark').first().innerHTML();
   const rail = await page.locator('.sidebar').boundingBox();
-  assert.equal(rail.width, 40);
+  assert.equal(rail.width, 56);
   assert.equal(await page.locator('.project-initial').count(), 0);
   const divider = page.getByRole('separator', { name: 'Ancho del chat' });
   await page.waitForTimeout(250);
@@ -275,6 +276,8 @@ try {
     'PASS: minimal layout, stable project marks, pointer/keyboard resizing, 220px chat, saved split, CmdK, real browser navigation/DOM/click/fill/screenshot, credential redaction, renderer isolation, modal visibility, session separation, close lifecycle.',
   );
 } finally {
-  if (app) await app.close();
+  await app?.close().catch(() => {});
+  server.closeAllConnections();
   await new Promise((r) => server.close(r));
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

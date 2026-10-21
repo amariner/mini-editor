@@ -13,7 +13,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Manager } from './manager';
 import { actionSchema } from './core';
-import { opensAsText, resolveProjectPath, searchProjectFiles } from './project-files';
+import {
+  clearProjectFiles,
+  opensAsText,
+  resolveProjectPath,
+  searchProjectFiles,
+} from './project-files';
 import { readTheme, writeTheme } from './appearance';
 import { IPC_VERSION } from '../src/runtime';
 import { attentionBadge } from '../src/supervision';
@@ -440,10 +445,19 @@ app.whenReady().then(async () => {
           return manager.changeSessionAccount(a.sessionId, a.profile);
         case 'addAccount':
           return manager.addAccount(a.kind, a.name);
-        case 'removeAccount':
-          return manager.removeAccount(a.profile, a.confirmed, (directory) =>
+        case 'removeAccount': {
+          const sessions = manager.state.sessions.filter(
+            (session) => session.profile === a.profile,
+          );
+          const result = await manager.removeAccount(a.profile, a.confirmed, (directory) =>
             shell.trashItem(directory),
           );
+          await browser.removeSessions(sessions.map((session) => session.id));
+          for (const key of observedBrowserOutputs)
+            if (sessions.some((session) => key.startsWith(session.id + ':')))
+              observedBrowserOutputs.delete(key);
+          return result;
+        }
         case 'configureGoogleAccount': {
           const p = manager.state.profiles?.find((p) => p.id === a.profile);
           if (!p || p.kind !== 'gemini' || manager.accounts.changing(p.id))
@@ -581,16 +595,22 @@ app.whenReady().then(async () => {
           return;
         }
         case 'deleteSession':
-          return manager.deleteSession(a.sessionId, (sessions) =>
-            attachments.removeSessions(sessions),
-          );
+          return manager.deleteSession(a.sessionId, async (sessions) => {
+            await browser.removeSessions(sessions.map((session) => session.id));
+            await attachments.removeSessions(sessions);
+            for (const key of observedBrowserOutputs)
+              if (sessions.some((session) => key.startsWith(session.id + ':')))
+                observedBrowserOutputs.delete(key);
+          });
         case 'removeProject': {
+          const projectPath = manager.project(a.projectId).path;
           await manager.removeProject(a.projectId, async (sessions) => {
             await browser.removeProject(
               a.projectId,
               sessions.map((s) => s.id),
             );
             await attachments.removeSessions(sessions);
+            clearProjectFiles(projectPath);
             for (const key of observedBrowserOutputs)
               if (sessions.some((s) => key.startsWith(s.id + ':')))
                 observedBrowserOutputs.delete(key);
@@ -711,7 +731,7 @@ app.whenReady().then(async () => {
             return manager.accounts.buffers.get(a.sessionId) ?? { data: '', sequence: 0 };
           return manager.buffers.get(a.sessionId) ?? { data: '', sequence: 0 };
         case 'diff':
-          return manager.diff(a.projectId, a.sessionId);
+          return manager.diff(a.projectId, a.sessionId, a.summaryOnly);
         case 'setIsolation':
           return manager.setIsolation(a.sessionId, a.isolation);
         case 'worktree':

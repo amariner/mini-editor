@@ -493,7 +493,7 @@ export type Action =
   | { type: 'terminalWrite'; sessionId: string; data: string }
   | { type: 'terminalResize'; sessionId: string; cols: number; rows: number }
   | { type: 'terminalBuffer'; sessionId: string }
-  | { type: 'diff'; projectId: string; sessionId?: string }
+  | { type: 'diff'; projectId: string; sessionId?: string; summaryOnly?: boolean }
   | { type: 'setIsolation'; sessionId: string; isolation: 'worktree' | 'shared' }
   | { type: 'worktree'; sessionId: string; operation: 'merge' | 'update' | 'discard' }
   | { type: 'team'; sessionId: string; input: import('./team-protocol').TeamInput }

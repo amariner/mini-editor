@@ -7,6 +7,12 @@ import { build as buildRenderer } from 'vite';
 import { build } from 'esbuild';
 import electron from 'electron';
 import { buildOptions } from './build-options.mjs';
+import {
+  runtimeDependencies,
+  runtimeFile,
+  deduplicateBinaries,
+  payloadSize,
+} from './package-payload.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -20,13 +26,8 @@ const run = (command, args, options = {}) =>
   execFileSync(command, args, { cwd: root, stdio: 'inherit', ...options });
 
 // Fail before touching a previous distribution if dependencies or types are incomplete.
-const dependencies = run('npm', ['ls', '--omit=dev', '--all', '--parseable'], {
-  encoding: 'utf8',
-  stdio: ['ignore', 'pipe', 'inherit'],
-})
-  .trim()
-  .split('\n')
-  .filter((p) => p !== root);
+run('npm', ['ls', '--omit=dev', '--all'], { stdio: ['ignore', 'ignore', 'inherit'] });
+const dependencies = await runtimeDependencies(root);
 run(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit']);
 await fs.mkdir(release, { recursive: true });
 // Build privately so packaging never replaces the running development bundles.
@@ -63,27 +64,24 @@ try {
     sourcemap: false,
   });
 
-  console.log('Copiando dependencias de producción…');
-  // Ancestors already include their nested node_modules. Never copy repository data.
-  const directories = dependencies.sort((a, b) => a.length - b.length);
-  const copied = [];
-  for (const source of directories) {
-    // npm ls can list virtual optional packages for other platforms without a directory.
-    try {
-      await fs.lstat(source);
-    } catch (error) {
-      if (error.code === 'ENOENT') continue;
-      throw error;
-    }
-    if (copied.some((p) => source.startsWith(p + path.sep))) continue;
+  console.log(`Copiando ${dependencies.length} dependencias de ejecución…`);
+  for (const { source, pkg: dependency } of dependencies) {
     const relative = path.relative(root, source);
     if (!relative.startsWith('node_modules/')) throw new Error(`Dependencia externa: ${source}`);
     await fs.cp(source, path.join(stagedPayload, relative), {
       recursive: true,
       verbatimSymlinks: true,
+      filter: (file) => runtimeFile(dependency.name, path.relative(source, file)),
     });
-    copied.push(source);
   }
+  const deduplicated = await deduplicateBinaries(stagedPayload);
+  console.log(
+    `Binarios duplicados eliminados: ${(deduplicated.savedBytes / 1024 ** 2).toFixed(1)} MiB.`,
+  );
+  const size = await payloadSize(stagedPayload);
+  console.log(
+    `Contenido de la app: ${(size.bytes / 1024 ** 2).toFixed(1)} MiB en ${size.files} archivos.`,
+  );
   const bin = path.join(stagedPayload, 'node_modules/.bin');
   await fs.mkdir(bin, { recursive: true });
   for (const [name, target] of Object.entries({
@@ -162,6 +160,8 @@ try {
     '-ov',
     '-format',
     'UDZO',
+    '-imagekey',
+    'zlib-level=9',
     image,
   ]);
   run('/usr/bin/hdiutil', ['verify', image]);

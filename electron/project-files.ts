@@ -6,6 +6,7 @@ import { cleanEnv } from './core';
 const exec = promisify(execFile);
 const MAX_FILES = 40000;
 const CACHE_MS = 20000;
+const MAX_CACHED_PROJECTS = 8;
 const SKIP = new Set([
   '.git',
   'node_modules',
@@ -73,12 +74,23 @@ async function gitFiles(root: string) {
 }
 /** Project files relative to the root: Git's view when available, otherwise a bounded walk. */
 export function projectFiles(root: string) {
+  for (const [key, entry] of cache) if (Date.now() - entry.at >= CACHE_MS) cache.delete(key);
   const hit = cache.get(root);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.files;
+  if (hit) {
+    cache.delete(root);
+    cache.set(root, hit);
+    return hit.files;
+  }
   const files = gitFiles(root).catch(() => walk(root));
   cache.set(root, { at: Date.now(), files });
-  files.catch(() => cache.delete(root));
+  if (cache.size > MAX_CACHED_PROJECTS) cache.delete(cache.keys().next().value!);
+  files.catch(() => {
+    if (cache.get(root)?.files === files) cache.delete(root);
+  });
   return files;
+}
+export function clearProjectFiles(root: string) {
+  cache.delete(root);
 }
 /** Subsequence match favouring file names, contiguous runs and short paths. */
 export function scorePath(file: string, query: string) {

@@ -155,6 +155,7 @@ export class Manager {
   private gitJobs = new Set<string>();
   private gitWork = new Set<Promise<unknown>>();
   private eventTimer?: NodeJS.Timeout;
+  private pumpQueued = false;
   /** `profilesRoot` lets tests reuse authenticated profiles with an isolated state file. */
   constructor(
     root: string,
@@ -374,10 +375,14 @@ export class Manager {
     });
   }
   changed() {
-    queueMicrotask(() => {
-      this.pendingInputs.pump();
-      this.teams.pump();
-    });
+    if (!this.pumpQueued) {
+      this.pumpQueued = true;
+      queueMicrotask(() => {
+        this.pumpQueued = false;
+        this.pendingInputs.pump();
+        this.teams.pump();
+      });
+    }
     this.store.schedule();
     if (!this.eventTimer)
       this.eventTimer = setTimeout(() => {
@@ -580,10 +585,17 @@ export class Manager {
       this.pendingInputs.pause(s);
       this.modelJobs.get(id)?.controller.abort();
       await this.stopRuntime(id).catch(() => this.killRuntime(id));
-      await Promise.race([
-        Promise.allSettled([this.operationWork.get(id), this.modelJobs.get(id)?.work]),
-        new Promise((resolve) => setTimeout(resolve, 10000)),
-      ]);
+      let waitTimer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          Promise.allSettled([this.operationWork.get(id), this.modelJobs.get(id)?.work]),
+          new Promise((resolve) => {
+            waitTimer = setTimeout(resolve, 10000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(waitTimer);
+      }
       if (this.runtimes.has(id)) await this.stopRuntime(id).catch(() => this.killRuntime(id));
       if (this.runtimes.has(id)) this.killRuntime(id);
       // Do not report a permanent deletion while attachment files remain on disk.
@@ -2061,13 +2073,15 @@ export class Manager {
         (this.runtimes.has(s.id) || this.operations.has(s.id)),
     );
   }
-  async diff(id: string, sessionId?: string) {
+  async diff(id: string, sessionId?: string, summaryOnly = false) {
     const project = this.project(id);
     const s = sessionId ? this.session(sessionId) : undefined;
     if (s && s.projectId !== id) throw new Error('La sesión pertenece a otro proyecto.');
-    if (!s?.worktree) return readGit(project.path);
+    if (!s?.worktree) return readGit(project.path, summaryOnly);
     const status = await worktreeStatus(s.worktree);
-    const snapshot = status.exists ? await readGit(s.worktree.cwd) : await readGit(project.path);
+    const snapshot = status.exists
+      ? await readGit(s.worktree.cwd, summaryOnly)
+      : await readGit(project.path, summaryOnly);
     return { ...snapshot, worktree: status };
   }
   setIsolation(id: string, isolation: 'worktree' | 'shared') {
