@@ -32,9 +32,86 @@ npm run build
 npm start
 ```
 
-`npm run dev` inicia Vite en `127.0.0.1:5173`, compila main/preload y abre Electron. React recarga en caliente. Los cambios en main/preload se recompilan y muestran **Actualización preparada**: detén las sesiones abiertas y pulsa **Actualizar aplicación** para reiniciar Electron conservando Vite. Nunca se reinician agentes automáticamente. La interfaz comprueba la versión del proceso principal antes de ejecutar funciones nuevas. Si ya tenías abierta una versión anterior sin este mecanismo, sal con **⌘Q** y ejecuta de nuevo `npm run dev`; cerrar solo la ventana mantiene el proceso antiguo vivo. Esta entrega no incluye instalador `.dmg`, firma ni notarización.
+`npm run dev` inicia Vite en `127.0.0.1:5173`, compila main/preload y abre Electron. React recarga en caliente. Los cambios en main/preload se recompilan y muestran **Actualización preparada**: detén las sesiones abiertas y pulsa **Actualizar aplicación** para reiniciar Electron conservando Vite. Nunca se reinician agentes automáticamente. La interfaz comprueba la versión del proceso principal antes de ejecutar funciones nuevas. Si ya tenías abierta una versión anterior sin este mecanismo, sal con **⌘Q** y ejecuta de nuevo `npm run dev`; cerrar solo la ventana mantiene el proceso antiguo vivo.
 
-Codex se detecta en el PATH y dentro de ChatGPT.app (`/Applications`, `~/Applications`, `~/Aplicaciones`). También puedes seleccionar su ejecutable en **Ajustes → Herramientas y datos locales**.
+## Instalador local para macOS
+
+### Qué se guarda en GitHub
+
+El instalador se genera **en el Mac que ejecuta el empaquetado**. La carpeta `release/` está excluida en `.gitignore`: sus `.dmg` y `.app` no se añaden a los commits ni se suben con `git push`. Descargar o clonar el código desde GitHub no incluye el instalador generado en otro equipo.
+
+Este flujo no publica instaladores automáticamente. Para distribuir uno sin que quien lo recibe tenga que compilar, se puede compartir el `.dmg` generado o adjuntarlo manualmente a una **Release de GitHub**. Es una publicación separada del código; `npm run package:mac` solo crea archivos locales.
+
+### Generar el instalador después de descargar el proyecto
+
+Necesitas un **Mac con sesión gráfica abierta**, Node 22.12+, npm y Git. La instalación inicial de dependencias requiere conexión a Internet; reserva varios GB libres para Electron, los CLI y los archivos temporales del empaquetado. El comando de empaquetado usa las herramientas de macOS (`codesign`, `hdiutil`, `ditto` y `PlistBuddy`); no se ejecuta en Windows ni Linux.
+
+Descarga y descomprime el proyecto, o clona el repositorio. Abre una terminal **dentro de la carpeta del proyecto**, donde está `package.json`, y ejecuta:
+
+```bash
+npm ci
+npm run package:mac
+```
+
+`npm ci` instala las dependencias fijadas en `package-lock.json` y ejecuta su preparación, incluidos los binarios de los proveedores y `node-pty`. No uses `--ignore-scripts`: algunos ejecutables incluidos necesitan esos pasos de instalación. No hace falta ejecutar antes `npm run dev` ni `npm run build`; el empaquetado comprueba TypeScript, compila y prueba su propia copia de la app.
+
+Al terminar, imprime las rutas del instalador y de la aplicación. El nombre toma la versión de `package.json` y la arquitectura de Node que ejecuta el comando:
+
+| Entorno de compilación | Instalador | Aplicación sin imagen de disco |
+| --- | --- | --- |
+| Apple Silicon, Node ARM64 | `release/Agent-Desk-<version>-mac-arm64.dmg` | `release/mac-arm64/Agent Desk.app` |
+| Intel, Node x64 | `release/Agent-Desk-<version>-mac-x64.dmg` | `release/mac-x64/Agent Desk.app` |
+
+Por ejemplo, la versión `0.1.0` en Apple Silicon genera `release/Agent-Desk-0.1.0-mac-arm64.dmg`. La comprobación inicial se realizó en Apple Silicon; este comando no genera un paquete universal ni compila ambas arquitecturas a la vez. Utiliza Node y Electron de la misma arquitectura y genera el paquete correspondiente al Mac de destino. Repetir el comando con la misma versión y arquitectura sustituye los archivos de salida anteriores.
+
+### Instalar y abrir
+
+1. Abre el `.dmg` generado.
+2. Arrastra **Agent Desk.app** a **Applications** (Aplicaciones).
+3. Abre **Agent Desk** desde Aplicaciones. Después puedes expulsar la imagen de disco.
+
+Quien recibe el `.dmg` puede seguir estos pasos sin descargar el repositorio ni ejecutar npm. La app incluye Electron, las dependencias de producción, Claude Code, Gemini CLI, OpenCode, el SDK de Claude y un ejecutable Node basado en Electron; no requiere Node global para abrirse. Git y los CLI externos de Codex, Antigravity y Freebuff se detectan en el equipo o se seleccionan en **Ajustes → Herramientas y datos locales**. Codex también se busca dentro de ChatGPT.app (`/Applications`, `~/Applications`, `~/Aplicaciones`).
+
+El instalador tiene **firma local ad hoc**, sin cuenta Apple Developer, App Store ni notarización. Si macOS bloquea la primera apertura, intenta abrir la app y ve a **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**, según [las instrucciones de Apple](https://support.apple.com/es-es/102445).
+
+### Convivencia con desarrollo
+
+| | Desarrollo | Instalada |
+| --- | --- | --- |
+| Cómo abrir | `npm run dev` desde el proyecto | Agent Desk desde Aplicaciones |
+| Título de ventana | Agent Desk · Desarrollo | Agent Desk |
+| Datos locales | `~/Library/Application Support/Agent Desk` | `~/Library/Application Support/Agent Desk Installed` |
+| Cambios de código | Recarga de React y actualización del proceso principal descritas en «Arrancar» | Conserva la versión con la que se generó el instalador |
+
+Pueden abrirse simultáneamente: cada una tiene su estado de cuentas, conversaciones, ajustes y bloqueo de instancia. La instalada empieza vacía, sin importar datos o accesos de desarrollo. `npm run build` seguido de `npm start` sigue siendo una ejecución desde el proyecto y utiliza los datos de desarrollo; no instala una `.app`.
+
+Los archivos de un proyecto siguen siendo los mismos si lo añades a ambas versiones. Además, los CLI externos que comparten la sesión del usuario de macOS, como Antigravity y Freebuff, mantienen ese comportamiento: separar los datos de Agent Desk no crea otra sesión independiente en esas herramientas. `AGENT_DESK_DATA_DIR` y `AGENT_DESK_PROFILES_DIR` permiten elegir directorios explícitos para pruebas; evita apuntar ambas versiones al mismo directorio si buscas mantenerlas separadas.
+
+El empaquetado compila en un directorio temporal, sin sustituir `dist` ni `dist-electron` usados en desarrollo. Una vez copiada a Aplicaciones, la app instalada funciona independientemente de la carpeta del repositorio y del `.dmg`.
+
+### Actualizar la app instalada
+
+1. Actualiza el código del proyecto. Si has descargado una revisión nueva, ejecuta `npm ci` para sincronizar las dependencias.
+2. Ejecuta `npm run package:mac` y espera a que termine correctamente.
+3. Sal de la **app instalada** con **⌘Q**; cerrar solo la ventana puede dejar el proceso abierto.
+4. Abre el nuevo `.dmg` y sustituye **Agent Desk.app** en Aplicaciones.
+5. Abre la app desde Aplicaciones. Sus datos se conservan en `Agent Desk Installed`.
+
+Los cambios de desarrollo no llegan automáticamente a la instalada. No hay descarga automática de actualizaciones ni publicación automática en GitHub: hay que repetir la generación y sustitución de la `.app`.
+
+### Verificación y problemas de empaquetado
+
+Antes de generar el disco, el comando comprueba la firma local y abre la app real desde otra carpeta con datos temporales: carga de la interfaz, herramientas incluidas, SDK de Claude, terminal nativa, Node incluido, bloqueo de instancia y convivencia con Electron de desarrollo. Después genera el `.dmg` y verifica su integridad con `hdiutil verify`. Una comprobación fallida hace que el comando termine con error; espera al mensaje final con las rutas antes de usar el instalador.
+
+Para repetir la comprobación de la `.app` ya generada:
+
+```bash
+npm run test:package
+```
+
+No usa cuentas reales ni envía consultas a modelos. Guarda una captura en `artifacts/package-mac.png`.
+
+Si faltan dependencias o ejecutables de un proveedor, vuelve a ejecutar `npm ci` sin omitir los scripts de instalación y repite `npm run package:mac`. Si falla la apertura de las ventanas de prueba, ejecuta el comando en la sesión de escritorio del Mac, con permisos para abrir aplicaciones y conexiones locales. Para este flujo no necesitas certificados Developer ID ni credenciales de Apple.
 
 ## Vista Multichat
 

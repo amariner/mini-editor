@@ -17,6 +17,14 @@ import { IPC_VERSION } from '../src/runtime';
 import { attentionBadge } from '../src/supervision';
 import { editHistoryMenu } from './edit-menu';
 app.setName('Agent Desk');
+// Keep the existing development data in place; the distributed app owns another profile.
+if (app.isPackaged) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Agent Desk Installed'));
+  process.env.PATH = [
+    path.join(app.getAppPath(), 'node_modules/.bin'),
+    process.env.PATH ?? '',
+  ].join(path.delimiter);
+}
 let dockBadge = '';
 if (process.env.AGENT_DESK_DATA_DIR)
   app.setPath('userData', path.resolve(process.env.AGENT_DESK_DATA_DIR));
@@ -44,7 +52,7 @@ app.on('second-instance', () => {
     win.focus();
   }
 });
-const dev = process.env.AGENT_DESK_DEV_URL;
+const dev = app.isPackaged ? undefined : process.env.AGENT_DESK_DEV_URL;
 const observedBrowserOutputs = new Set<string>();
 let network: ProxySettings;
 const networkSessions = new Set<Electron.Session>();
@@ -114,7 +122,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 620,
     backgroundColor: windowBackground(),
-    title: 'Agent Desk',
+    title: app.isPackaged ? 'Agent Desk' : 'Agent Desk · Desarrollo',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 20 },
     webPreferences: {
@@ -124,6 +132,7 @@ async function createWindow() {
       sandbox: true,
     },
   });
+  win.on('page-title-updated', (event) => event.preventDefault());
   win.on('closed', () => browser?.hide());
   win.webContents.on('did-start-loading', () => browser?.hide());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

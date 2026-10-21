@@ -417,7 +417,12 @@ export class Manager {
         ...(name === 'freebuff'
           ? [path.join(this.profilesRoot, 'tools/freebuff/node_modules/.bin/freebuff')]
           : []),
-        path.resolve('node_modules/.bin', name),
+        // Finder launches with an unrelated cwd. Resolve bundled tools beside main.cjs.
+        path.join(
+          typeof __dirname === 'string' ? path.dirname(__dirname) : process.cwd(),
+          'node_modules/.bin',
+          name,
+        ),
         ...cleanEnv()
           .PATH.split(':')
           .map((p) => path.join(p, name)),
