@@ -1,3 +1,4 @@
+import { FloatChatButton } from './floating-chat';
 import { TeamIndicator } from './team';
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -565,6 +566,7 @@ function Card({
   disabled,
   visible,
   compatible,
+  floating,
   unseen,
   seen,
   controls,
@@ -598,6 +600,7 @@ function Card({
   disabled: boolean;
   visible: boolean;
   compatible: boolean;
+  floating: boolean;
   unseen: boolean;
   seen: () => void;
   controls: ChatControls;
@@ -776,6 +779,12 @@ function Card({
               {index + 1}
             </kbd>
           )}
+          <FloatChatButton
+            session={session}
+            floating={floating}
+            run={controls.run}
+            disabled={disabled || !compatible || !!controls.busy[session.id]}
+          />
           <button
             className="multichat-expand"
             aria-label={`Ampliar ${session.title}`}
@@ -973,7 +982,7 @@ function Card({
             {localError || session.error}
           </div>
         )}
-        {!terminal && (
+        {!terminal && !floating && (
           <PendingMessages
             session={session}
             run={controls.run}
@@ -989,7 +998,17 @@ function Card({
             }}
           />
         )}
-        {!terminal && (
+        {floating && (
+          <button
+            className="multichat-floating-notice"
+            onClick={() =>
+              void controls.run({ type: 'floatingChat', sessionId: session.id, operation: 'focus' })
+            }
+          >
+            Chat en ventana flotante · Mostrar
+          </button>
+        )}
+        {!terminal && !floating && (
           <form
             className="multichat-composer"
             onSubmit={(e) => {
@@ -1415,6 +1434,7 @@ export function Multichat({
                 actions={actionsFor(s)}
                 visible={visible}
                 controls={controls}
+                floating={!!state.floatingChats?.some((f) => f.sessionId === s.id)}
                 compatible={compatibleRuntime(state)}
                 project={state.projects.find((p) => p.id === s.projectId)?.name ?? 'Proyecto'}
                 root={state.projects.find((p) => p.id === s.projectId)?.path}

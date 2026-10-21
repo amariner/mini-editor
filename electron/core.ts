@@ -1,3 +1,4 @@
+import { floatingChatAction } from '../src/floating-chat-protocol';
 import { teamInput } from '../src/team-protocol';
 import { proxyUpdateSchema } from './proxy';
 import { browserInput } from '../src/browser-protocol';
@@ -56,6 +57,7 @@ export const modelSelectionSchema = z
 export const providerConfigSchema = z.object({ model: z.string().min(1).max(200) }).strict();
 export const accountColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
 export const actionSchema = z.discriminatedUnion('type', [
+  floatingChatAction,
   z.object({ type: z.literal('saveProxy'), config: proxyUpdateSchema }),
   z.object({
     type: z.literal('testProxy'),

@@ -11,6 +11,7 @@ const scripts = selected.length
       'attention',
       'settings-polish',
       'multichat',
+      'floating-chat',
       'compact-chat',
       'chat-design',
       'navigation',

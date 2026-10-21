@@ -1,3 +1,6 @@
+import { FloatChatButton, FloatingChatHeader, DetachedChat } from './floating-chat';
+import { floatingChatId } from './floating-chat-protocol';
+import { useTextDrafts, useImageDrafts, initializeDraftLifetime } from './chat-drafts';
 import { ProjectChats, TeamIndicator } from './team';
 import { Multichat } from './multichat';
 import { GitBar } from './git-bar';
@@ -64,6 +67,7 @@ import { AttentionPanel } from './attention-panel';
 import { AccountsSettings } from './accounts-settings';
 import { ChatActionsContext, type ChatActions } from './markdown';
 import { applyStyles, resetStyles, savedStyles } from './custom-styles';
+import { accountCardStyle } from './account-color';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import './shell-polish.css';
@@ -73,6 +77,9 @@ import './multichat-polish.css';
 import './browser-polish.css';
 import './attention.css';
 import './motion.css';
+import './floating-chat.css';
+const floatingSessionId = floatingChatId(window.location.hash);
+if (floatingSessionId) document.documentElement.classList.add('floating-chat-document');
 const statusLabels: Record<string, string> = {
   stopped: 'En espera',
   starting: 'Abriendo…',
@@ -84,6 +91,8 @@ const statusLabels: Record<string, string> = {
   error: 'Error',
 };
 function App() {
+  const [drafts, setDrafts] = useTextDrafts();
+  const [imageDrafts, setImageDrafts] = useImageDrafts();
   const split = useWorkspaceSplit();
   const terminalSplit = useWorkspaceSplit({
     storageKey: 'agent-desk.terminal-chat-width',
@@ -142,8 +151,6 @@ function App() {
     }),
     [diff, setDiff] = useState<GitSnapshot>(),
     [diffError, setDiffError] = useState(''),
-    [drafts, setDrafts] = useState<Record<string, string>>({}),
-    [imageDrafts, setImageDrafts] = useState<Record<string, Attachment[]>>({}),
     [busy, setBusy] = useState<Record<string, boolean>>({}),
     [removeId, setRemoveId] = useState<string>(),
     [editingName, setEditingName] = useState<{ kind: 'project' | 'session'; id: string }>(),
@@ -186,14 +193,24 @@ function App() {
   stateRef.current = state;
   // Chats being deleted vanish at once and stay hidden from intermediate broadcasts.
   const deleting = useRef(new Set<string>());
-  const visibleState = (snap: Snapshot): Snapshot =>
-    deleting.current.size
+  const visibleState = (snapshot: Snapshot): Snapshot => {
+    initializeDraftLifetime(snapshot.runtime?.instanceId);
+    const pinned = snapshot.sessions.find((s) => s.id === floatingSessionId);
+    const snap = floatingSessionId
+      ? { ...snapshot, selectedSession: pinned?.id, selectedProject: pinned?.projectId }
+      : snapshot;
+    return deleting.current.size
       ? { ...snap, sessions: snap.sessions.filter((s) => !deleting.current.has(s.id)) }
       : snap;
+  };
   useEffect(() => {
     const off = window.desk.subscribe((e) => {
       if (e.type === 'state') setState(visibleState(e.state));
-      if (e.type === 'browserOpened') {
+      if (e.type === 'chatDocked' && !floatingSessionId) {
+        setClosedSelection(undefined);
+        setMultichat('off');
+      }
+      if (e.type === 'browserOpened' && !floatingSessionId) {
         setShowBrowser(true);
         setBrowserTab(e.tabId ?? e.sessionId);
       }
@@ -478,10 +495,12 @@ function App() {
     confirmClose,
     removeId,
   ]);
+  // Only the editor emits notifications; floating renderers share its state.
   // System notification when a background turn finishes or needs an answer.
   const lastStatus = useRef<Record<string, { status: string; approvals: number }>>({});
   useEffect(() => {
     if (!state) return;
+    if (floatingSessionId) return;
     const previous = lastStatus.current;
     const next: typeof previous = {};
     for (const s of state.sessions) {
@@ -555,6 +574,10 @@ function App() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      if (floatingSessionId && (e.metaKey || e.ctrlKey) && ['n', 'k'].includes(e.key)) {
+        e.preventDefault();
+        return;
+      }
       // Modal controls own their keystrokes; never create a chat or change permissions behind one.
       const modal = search || settings || attentionOpen || confirmClose || removeId;
       const attentionShortcut =
@@ -935,8 +958,30 @@ function App() {
       }
     />
   );
+  const floatingPreferences = state.floatingChats?.find((f) => f.sessionId === session?.id);
+  // A floating window wears its account colour; the page paints it with the chosen transparency.
+  const { backgroundColor: floatingTint, ...floatingAccountStyle } =
+    (floatingSessionId &&
+      accountCardStyle(state.profiles?.find((p) => p.id === session?.profile)?.color)) ||
+    {};
+  if (floatingTint)
+    (floatingAccountStyle as Record<string, unknown>)['--floating-tint'] = floatingTint;
+  const detached = !floatingSessionId && !!floatingPreferences;
   return (
-    <div className="app" style={appearance.style}>
+    <div
+      className={`app ${floatingSessionId ? 'floating-chat-app' : ''}`}
+      style={
+        {
+          ...appearance.style,
+          ...(floatingSessionId
+            ? {
+                ...floatingAccountStyle,
+                '--floating-opacity': `${(floatingPreferences?.opacity ?? 1) * 100}%`,
+              }
+            : {}),
+        } as React.CSSProperties
+      }
+    >
       <aside className={`sidebar compact ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="traffic-space" />
         <div className="section-label">
@@ -1168,102 +1213,104 @@ function App() {
             </button>
           </div>
         </header>
-        <Multichat
-          opened={Object.values(tabs).flat()}
-          dismissed={hiddenChats}
-          toggleHidden={(id) =>
-            setHiddenChats((ids) =>
-              ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id],
-            )
-          }
-          close={(s) => void closeTab(s, true)}
-          drafts={drafts}
-          setDrafts={setDrafts}
-          images={imageDrafts}
-          setImages={setImageDrafts}
-          busy={busy}
-          run={run}
-          send={sendText}
-          openDev={(s, url) =>
-            void run({
-              type: 'openDevInChrome',
-              sessionId: s.id,
-              port: Number(new URL(url).port || (new URL(url).protocol === 'https:' ? 443 : 80)),
-            })
-          }
-          actionsFor={(s) => {
-            const activate = async () => {
-              await run({ type: 'select', projectId: s.projectId, sessionId: s.id });
-              if (stateRef.current?.selectedSession !== s.id) return false;
-              setMultichat('focused');
-              return true;
-            };
-            return {
-              root: s.worktree?.cwd ?? state.projects.find((p) => p.id === s.projectId)?.path,
-              openUrl: async (url) => {
-                if (await activate()) {
-                  setShowBrowser(true);
-                  await run({ type: 'browserNew', projectId: s.projectId, sessionId: s.id, url });
-                }
-              },
-              openPath: (path) =>
-                void run({ type: 'openPath', projectId: s.projectId, sessionId: s.id, path }),
-              revealPath: (path) =>
-                void run({
-                  type: 'openPath',
-                  projectId: s.projectId,
-                  sessionId: s.id,
-                  path,
-                  reveal: true,
-                }),
-              rewind: async (message, dryRun) =>
-                (await run({
-                  type: 'rewindFiles',
-                  sessionId: s.id,
-                  messageId: message.id,
-                  dryRun,
-                })) as RewindResult | undefined,
-              showChanges: async () => {
-                if (await activate()) setShowDiff(true);
-              },
-              reuse: (text) => {
-                setDrafts((v) => ({ ...v, [s.id]: text }));
-                requestAnimationFrame(() =>
+        {!floatingSessionId && (
+          <Multichat
+            opened={Object.values(tabs).flat()}
+            dismissed={hiddenChats}
+            toggleHidden={(id) =>
+              setHiddenChats((ids) =>
+                ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id],
+              )
+            }
+            close={(s) => void closeTab(s, true)}
+            drafts={drafts}
+            setDrafts={setDrafts}
+            images={imageDrafts}
+            setImages={setImageDrafts}
+            busy={busy}
+            run={run}
+            send={sendText}
+            openDev={(s, url) =>
+              void run({
+                type: 'openDevInChrome',
+                sessionId: s.id,
+                port: Number(new URL(url).port || (new URL(url).protocol === 'https:' ? 443 : 80)),
+              })
+            }
+            actionsFor={(s) => {
+              const activate = async () => {
+                await run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+                if (stateRef.current?.selectedSession !== s.id) return false;
+                setMultichat('focused');
+                return true;
+              };
+              return {
+                root: s.worktree?.cwd ?? state.projects.find((p) => p.id === s.projectId)?.path,
+                openUrl: async (url) => {
+                  if (await activate()) {
+                    setShowBrowser(true);
+                    await run({ type: 'browserNew', projectId: s.projectId, sessionId: s.id, url });
+                  }
+                },
+                openPath: (path) =>
+                  void run({ type: 'openPath', projectId: s.projectId, sessionId: s.id, path }),
+                revealPath: (path) =>
+                  void run({
+                    type: 'openPath',
+                    projectId: s.projectId,
+                    sessionId: s.id,
+                    path,
+                    reveal: true,
+                  }),
+                rewind: async (message, dryRun) =>
+                  (await run({
+                    type: 'rewindFiles',
+                    sessionId: s.id,
+                    messageId: message.id,
+                    dryRun,
+                  })) as RewindResult | undefined,
+                showChanges: async () => {
+                  if (await activate()) setShowDiff(true);
+                },
+                reuse: (text) => {
+                  setDrafts((v) => ({ ...v, [s.id]: text }));
+                  requestAnimationFrame(() =>
+                    document
+                      .querySelector<HTMLTextAreaElement>(
+                        `[data-session-id="${CSS.escape(s.id)}"] textarea`,
+                      )
+                      ?.focus(),
+                  );
+                },
+                runCommand: async (command) => {
+                  if (!(await activate())) return;
+                  setTerminalTarget('default');
+                  setShowTerminalPanel(true);
+                  const shell = `shell:${s.projectId}`;
+                  const fresh = !stateRef.current?.terminals?.some((t) => t.id === shell);
+                  await run({ type: 'openProjectTerminal', projectId: s.projectId });
+                  if (fresh) await new Promise((resolve) => setTimeout(resolve, 600));
+                  await run({
+                    type: 'terminalWrite',
+                    sessionId: shell,
+                    data: `\x1b[200~${command}\x1b[201~`,
+                  });
                   document
-                    .querySelector<HTMLTextAreaElement>(
-                      `[data-session-id="${CSS.escape(s.id)}"] textarea`,
-                    )
-                    ?.focus(),
-                );
-              },
-              runCommand: async (command) => {
-                if (!(await activate())) return;
-                setTerminalTarget('default');
-                setShowTerminalPanel(true);
-                const shell = `shell:${s.projectId}`;
-                const fresh = !stateRef.current?.terminals?.some((t) => t.id === shell);
-                await run({ type: 'openProjectTerminal', projectId: s.projectId });
-                if (fresh) await new Promise((resolve) => setTimeout(resolve, 600));
-                await run({
-                  type: 'terminalWrite',
-                  sessionId: shell,
-                  data: `\x1b[200~${command}\x1b[201~`,
-                });
-                document
-                  .querySelector<HTMLElement>('.terminal-pane .xterm-helper-textarea')
-                  ?.focus();
-              },
-            };
-          }}
-          state={state}
-          visible={multichat === 'grid'}
-          toolbar={topbarSlot}
-          disabled={navigating}
-          open={async (s) => {
-            await run({ type: 'select', projectId: s.projectId, sessionId: s.id });
-            if (stateRef.current?.selectedSession === s.id) setMultichat('focused');
-          }}
-        />
+                    .querySelector<HTMLElement>('.terminal-pane .xterm-helper-textarea')
+                    ?.focus();
+                },
+              };
+            }}
+            state={state}
+            visible={multichat === 'grid'}
+            toolbar={topbarSlot}
+            disabled={navigating}
+            open={async (s) => {
+              await run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+              if (stateRef.current?.selectedSession === s.id) setMultichat('focused');
+            }}
+          />
+        )}
         {multichat === 'grid' ? null : !project && showBrowser && compatibleRuntime(state) ? (
           browserPanel
         ) : !project ? (
@@ -1299,73 +1346,94 @@ function App() {
             >
               <ChatActionsContext.Provider value={chatActions}>
                 <section className="conversation">
-                  <div className="session-tabs-bar">
-                    <div className="session-tabs" role="tablist" aria-label="Conversaciones">
-                      {openTabs.map((s) => (
-                        <div
-                          className={`session-tab ${live(s) ? 'running' : ''} ${s.id === session?.id ? 'selected' : ''}`}
-                          key={s.id}
-                        >
-                          {editingName?.kind === 'session' && editingName.id === s.id ? (
-                            <EditableName
-                              value={s.title}
-                              label="Nombre del chat"
-                              close={() => setEditingName(undefined)}
-                              save={(title) => void run({ type: 'rename', sessionId: s.id, title })}
-                            />
-                          ) : (
-                            <button
-                              role="tab"
-                              className={`tab-${tabState(s)}`}
-                              aria-selected={s.id === session?.id}
-                              tabIndex={s.id === session?.id ? 0 : -1}
-                              onKeyDown={navigateTabs}
-                              aria-controls="conversation-content"
-                              aria-disabled={navigating}
-                              title={`${s.title} · ${live(s) ? 'Proceso abierto' : 'Proceso parado'}`}
-                              aria-description={live(s) ? 'Proceso abierto' : 'Proceso parado'}
-                              onClick={() =>
-                                run({ type: 'select', projectId: project.id, sessionId: s.id })
-                              }
-                              onDoubleClick={() => setEditingName({ kind: 'session', id: s.id })}
-                            >
-                              <i className="tab-state" aria-hidden="true" />
-                              <span>{s.title}</span>
-                            </button>
-                          )}
-                          <button
-                            className="tab-close"
-                            aria-label={`Cerrar ${s.title}`}
-                            title="Cerrar pestaña"
-                            disabled={navigating || busy[s.id]}
-                            onClick={() => void closeTab(s)}
+                  {floatingSessionId && session ? (
+                    <FloatingChatHeader
+                      session={session}
+                      project={project.name}
+                      preferences={floatingPreferences}
+                      run={run}
+                    />
+                  ) : (
+                    <div className="session-tabs-bar">
+                      <div className="session-tabs" role="tablist" aria-label="Conversaciones">
+                        {openTabs.map((s) => (
+                          <div
+                            className={`session-tab ${live(s) ? 'running' : ''} ${s.id === session?.id ? 'selected' : ''}`}
+                            key={s.id}
                           >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
+                            {editingName?.kind === 'session' && editingName.id === s.id ? (
+                              <EditableName
+                                value={s.title}
+                                label="Nombre del chat"
+                                close={() => setEditingName(undefined)}
+                                save={(title) =>
+                                  void run({ type: 'rename', sessionId: s.id, title })
+                                }
+                              />
+                            ) : (
+                              <button
+                                role="tab"
+                                className={`tab-${tabState(s)}`}
+                                aria-selected={s.id === session?.id}
+                                tabIndex={s.id === session?.id ? 0 : -1}
+                                onKeyDown={navigateTabs}
+                                aria-controls="conversation-content"
+                                aria-disabled={navigating}
+                                title={`${s.title} · ${live(s) ? 'Proceso abierto' : 'Proceso parado'}`}
+                                aria-description={live(s) ? 'Proceso abierto' : 'Proceso parado'}
+                                onClick={() =>
+                                  run({ type: 'select', projectId: project.id, sessionId: s.id })
+                                }
+                                onDoubleClick={() => setEditingName({ kind: 'session', id: s.id })}
+                              >
+                                <i className="tab-state" aria-hidden="true" />
+                                <span>{s.title}</span>
+                              </button>
+                            )}
+                            <button
+                              className="tab-close"
+                              aria-label={`Cerrar ${s.title}`}
+                              title="Cerrar pestaña"
+                              disabled={navigating || busy[s.id]}
+                              onClick={() => void closeTab(s)}
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {session && (
+                        <FloatChatButton
+                          session={session}
+                          floating={detached}
+                          run={run}
+                          disabled={!!busy[session.id] || !compatibleRuntime(state)}
+                        />
+                      )}
+                      {session && (
+                        <TeamIndicator
+                          key={session.id}
+                          session={session}
+                          sessions={state.sessions}
+                          open={(s) => {
+                            setClosedSelection(undefined);
+                            void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+                          }}
+                        />
+                      )}
+                      <button
+                        className="icon-btn ghost new-tab"
+                        title="Nueva conversación (⌘N)"
+                        disabled={navigating || !profile}
+                        aria-label="Nueva conversación"
+                        onClick={() =>
+                          profile && run({ type: 'newSession', projectId: project.id })
+                        }
+                      >
+                        <Plus size={16} />
+                      </button>
                     </div>
-                    {session && (
-                      <TeamIndicator
-                        key={session.id}
-                        session={session}
-                        sessions={state.sessions}
-                        open={(s) => {
-                          setClosedSelection(undefined);
-                          void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
-                        }}
-                      />
-                    )}
-                    <button
-                      className="icon-btn ghost new-tab"
-                      title="Nueva conversación (⌘N)"
-                      disabled={navigating || !profile}
-                      aria-label="Nueva conversación"
-                      onClick={() => profile && run({ type: 'newSession', projectId: project.id })}
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
+                  )}
                   {!session && (
                     <div className="empty no-session">
                       <DeskMark size={36} />
@@ -1393,7 +1461,8 @@ function App() {
                       )}
                     </div>
                   )}
-                  {session && (
+                  {session && detached && <DetachedChat session={session} run={run} />}
+                  {session && !detached && (
                     <>
                       <IsolationBar
                         session={session}

@@ -1,0 +1,290 @@
+.float-chat-button {
+  flex: 0 0 auto;
+}
+.session-tabs-bar .float-chat-button {
+  margin-left: auto;
+}
+.float-chat-button.on {
+  color: var(--text);
+  background: var(--tile);
+}
+.detached-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+.detached-chat h2 {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+}
+.detached-chat p {
+  max-width: 290px;
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.multichat-floating-notice {
+  margin: 8px 12px 12px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+html.floating-chat-document,
+.floating-chat-document body,
+.floating-chat-document #root {
+  background: transparent !important;
+}
+/* Floating window shape. Every value can be restyled from Ajustes → Interfaz → Estilos (CSS):
+   :root {
+     --floating-radius: 16px;          rounded corners of the window
+     --floating-border-width: 1px;     window edge
+     --floating-border-color: …;
+     --floating-gutter: 12px;          inner margin around messages and composer
+     --floating-header-height: 46px;
+     --floating-composer-radius: 12px;
+     --floating-background: …;         replaces the account colour tint
+     --floating-solid: 94%;            opacity while the pointer is over it or you type
+   } */
+.app.floating-chat-app {
+  --floating-fill: var(--floating-tint, var(--bg));
+  height: 100vh;
+  width: 100vw;
+  padding: 0;
+  border: var(--floating-border-width, 1px) solid
+    var(--floating-border-color, color-mix(in srgb, var(--text) 10%, transparent));
+  border-radius: var(--floating-radius, 16px);
+  overflow: hidden;
+  background: var(
+    --floating-background,
+    color-mix(in srgb, var(--floating-fill) var(--floating-opacity, 100%), transparent)
+  );
+  transition:
+    background-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 260ms ease;
+}
+/* In use (pointer over it or typing) the window turns solid; it only goes translucent at rest.
+   While the options are open it keeps the chosen tint so the slider previews it live. */
+.app.floating-chat-app:not(:has(.floating-chat-options)):is(:hover, :focus-within) {
+  background: var(
+    --floating-background,
+    color-mix(
+      in srgb,
+      var(--floating-fill) max(var(--floating-opacity, 100%), var(--floating-solid, 94%)),
+      transparent
+    )
+  );
+  border-color: var(--floating-border-color, color-mix(in srgb, var(--text) 14%, transparent));
+}
+.floating-chat-app > .sidebar,
+.floating-chat-app > main > .topbar {
+  display: none;
+}
+.floating-chat-app > main {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+}
+.floating-chat-app .work-area,
+.floating-chat-app .workspace,
+.floating-chat-app .workspace > .conversation {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.floating-chat-app .messages,
+.floating-chat-app .desk-input,
+.floating-chat-app .desk-input .composer,
+.floating-chat-app .desk-input .composer.enabled:focus-within,
+.floating-chat-app .composer-shell,
+.floating-chat-app .composer-footer,
+.floating-chat-app .git-summary,
+.floating-chat-app .conversation-footer {
+  background: transparent;
+}
+.floating-chat-app .messages {
+  padding: calc(var(--floating-gutter, 12px) + 6px) calc(var(--floating-gutter, 12px) + 6px);
+}
+.floating-chat-app .desk-input {
+  margin: 0 var(--floating-gutter, 12px) var(--floating-gutter, 12px);
+  border-radius: var(--floating-composer-radius, 12px);
+  /* The writing area keeps its own near-solid layer at any transparency. */
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--floating-fill) 94%, var(--text)) 86%,
+    transparent
+  );
+  box-shadow: 0 6px 20px color-mix(in srgb, #000 16%, transparent);
+}
+.floating-chat-app .desk-input :is(.git-summary, .composer) {
+  border-color: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.floating-chat-app .desk-input .git-summary {
+  margin: 0;
+  border-radius: var(--floating-composer-radius, 12px) var(--floating-composer-radius, 12px) 0 0;
+}
+.floating-chat-app .desk-input .composer-area {
+  padding: 0;
+}
+.floating-chat-app .desk-input .composer-area .composer {
+  border-radius: 0 0 var(--floating-composer-radius, 12px) var(--floating-composer-radius, 12px);
+}
+.floating-chat-app .composer-footer {
+  padding: 6px 4px 0;
+}
+.floating-chat-app .desk-input .composer textarea {
+  max-height: min(180px, 30vh);
+}
+.floating-chat-app .conv-head {
+  padding-inline: calc(var(--floating-gutter, 12px) + 6px);
+}
+.floating-chat-app .composer-shell {
+  min-width: 0;
+}
+.floating-chat-app .desk-input .git-summary {
+  font-size: 10px;
+}
+.floating-chat-app .composer-footer {
+  flex-wrap: wrap;
+}
+.floating-chat-app .modal {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+}
+.floating-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  position: relative;
+  z-index: 15;
+  min-height: var(--floating-header-height, 46px);
+  flex-shrink: 0;
+  padding: 6px calc(var(--floating-gutter, 12px) - 4px) 6px calc(var(--floating-gutter, 12px) + 6px);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 7%, transparent);
+  background: color-mix(in srgb, var(--floating-fill) 40%, transparent);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.floating-chat-title {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.floating-chat-title strong {
+  font-weight: 500;
+  font-size: 12px;
+}
+.floating-chat-title span {
+  font-size: 10px;
+  color: var(--muted);
+}
+.floating-chat-title :is(strong, span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.floating-chat-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--muted);
+}
+.floating-chat-status.working,
+.floating-chat-status.starting {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.floating-chat-status.waiting {
+  background: var(--warn);
+}
+.floating-chat-status.error {
+  background: var(--danger);
+}
+.floating-chat-controls {
+  display: flex;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+.floating-chat-controls button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.floating-chat-controls button:hover,
+.floating-chat-controls button[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+/* Inline code and badges stay readable over the tint. */
+.floating-chat-app .messages :is(code, .md-code, .badge) {
+  background: color-mix(in srgb, var(--text) 9%, var(--bg));
+}
+.floating-chat-options {
+  position: absolute;
+  right: 10px;
+  top: 48px;
+  width: 270px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--floating-fill, var(--bg)) 96%, transparent);
+  box-shadow: var(--shadow);
+  -webkit-app-region: no-drag;
+  user-select: auto;
+  animation: desk-surface-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.floating-chat-options > strong {
+  font-weight: 500;
+  font-size: 12px;
+}
+.floating-chat-options .floating-pin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 0;
+  font-size: 11px;
+}
+.floating-pin span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+.floating-chat-options label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin: 10px 0;
+}
+.floating-chat-options output {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.floating-chat-options input[type='range'] {
+  width: 100%;
+  padding: 0;
+  accent-color: var(--text);
+  cursor: pointer;
+}
+.floating-chat-options p {
+  margin: 10px 0 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--muted);
+}

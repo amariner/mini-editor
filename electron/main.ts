@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { FloatingChats } from './floating-chats';
 import { openInChrome } from './external-browser';
 import { COMMON_EXTENSIONS, IMAGE_EXTENSIONS } from '../src/attachment-policy';
 import { ProxySettings } from './proxy';
@@ -40,6 +42,7 @@ const attachments = new Attachments(path.join(app.getPath('userData'), 'attachme
     })
     .toDataURL();
 });
+let floatingChats: FloatingChats | undefined;
 let browser: DeskBrowser,
   manager: Manager,
   win: BrowserWindow | undefined,
@@ -84,6 +87,7 @@ function sanitize(value: any, key = ''): any {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitize(v, k)]));
   return value;
 }
+const instanceId = randomUUID();
 let updateAvailable = false;
 let restartRequested = false;
 const snapshot = () =>
@@ -91,12 +95,18 @@ const snapshot = () =>
     proxy: network?.snapshot(),
     ...manager.state,
     browsers: browser?.snapshot() ?? [],
+    floatingChats: floatingChats?.snapshot() ?? [],
     devServers: browser?.serverSnapshot() ?? [],
     accounts: manager.accounts.state,
     coordination: manager.coordinator.snapshot(),
     terminals: manager.terminals.snapshot(),
     theme: nativeTheme.themeSource,
-    runtime: { protocol: IPC_VERSION, updateAvailable, restartSupported: !!dev && !!process.send },
+    runtime: {
+      protocol: IPC_VERSION,
+      instanceId,
+      updateAvailable,
+      restartSupported: !!dev && !!process.send,
+    },
   });
 if (dev && process.send)
   process.on('message', (message) => {
@@ -133,7 +143,10 @@ async function createWindow() {
     },
   });
   win.on('page-title-updated', (event) => event.preventDefault());
-  win.on('closed', () => browser?.hide());
+  win.on('closed', () => {
+    browser?.hide();
+    win = undefined;
+  });
   win.webContents.on('did-start-loading', () => browser?.hide());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (event, url) => {
@@ -224,8 +237,10 @@ app.whenReady().then(async () => {
             app.dock?.setBadge(badge);
           }
         }
-        if (win && !win.isDestroyed())
-          win.webContents.send('desk:event', e.type === 'state' ? { ...e, state: snapshot() } : e);
+        if (e.type === 'state') floatingChats?.reconcile(e.state.sessions);
+        const event = e.type === 'state' ? { ...e, state: snapshot() } : e;
+        if (win && !win.isDestroyed()) win.webContents.send('desk:event', event);
+        floatingChats?.broadcast(event);
       },
       process.env.AGENT_DESK_PROFILES_DIR
         ? path.resolve(process.env.AGENT_DESK_PROFILES_DIR)
@@ -242,6 +257,12 @@ app.whenReady().then(async () => {
           return providerFetch(electronSession.defaultSession, network, input as string, init);
         },
       },
+    );
+    floatingChats = new FloatingChats(
+      app.getPath('userData'),
+      dev,
+      () => manager.changed(),
+      () => win,
     );
     browser = new DeskBrowser(
       () => win,
@@ -272,7 +293,9 @@ app.whenReady().then(async () => {
       {
         label: 'Edición',
         submenu: [
-          ...editHistoryMenu(() => win?.webContents),
+          ...editHistoryMenu(
+            () => BrowserWindow.getFocusedWindow()?.webContents ?? win?.webContents,
+          ),
           { type: 'separator' },
           { role: 'cut' },
           { role: 'copy' },
@@ -299,11 +322,15 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle('desk:action', async (event, input) => {
     try {
+      const senderWindow = BrowserWindow.fromWebContents(event.sender);
+      const floatingOwner = floatingChats?.owner(event.sender);
       if (
-        !win ||
-        event.sender !== win.webContents ||
-        event.senderFrame !== win.webContents.mainFrame ||
-        !trusted(event.senderFrame.url)
+        !senderWindow ||
+        event.senderFrame !== event.sender.mainFrame ||
+        !(
+          (event.sender === win?.webContents && trusted(event.senderFrame.url)) ||
+          floatingChats?.trusted(event.sender, event.senderFrame.url)
+        )
       )
         throw new Error('Origen IPC no permitido.');
       const parsed = actionSchema.safeParse(input);
@@ -315,6 +342,26 @@ app.whenReady().then(async () => {
       if ((restartRequested || quitting) && a.type !== 'snapshot')
         throw new Error('Agent Desk se está reiniciando. Espera a que vuelva a abrirse.');
       switch (a.type) {
+        case 'floatingChat': {
+          if (floatingOwner && floatingOwner !== a.sessionId)
+            throw new Error('Esta ventana pertenece a otra conversación.');
+          const session = manager.session(a.sessionId);
+          if (a.operation === 'open') await floatingChats!.open(session);
+          else if (a.operation === 'focus') floatingChats!.focus(a.sessionId);
+          else if (a.operation === 'configure') floatingChats!.configure(a.sessionId, a);
+          else if (a.operation === 'close') floatingChats!.close(a.sessionId);
+          else {
+            if (!win || win.isDestroyed()) await createWindow();
+            manager.select(session.projectId, session.id);
+            win!.webContents.send('desk:event', { type: 'chatDocked', sessionId: session.id });
+            if (win!.isMinimized()) win!.restore();
+            win!.show();
+            win!.focus();
+            // Let the invoking renderer finish handling the response before closing it.
+            setImmediate(() => floatingChats!.close(session.id));
+          }
+          return { ok: true };
+        }
         case 'saveProxy': {
           if (savingNetwork) throw new Error('Espera a que termine el guardado de red.');
           savingNetwork = true;
@@ -361,7 +408,7 @@ app.whenReady().then(async () => {
           };
         }
         case 'chooseProxyCertificate': {
-          const result = await dialog.showOpenDialog(win!, {
+          const result = await dialog.showOpenDialog(senderWindow, {
             title: 'Certificado CA corporativo (PEM)',
             properties: ['openFile'],
             filters: [{ name: 'Certificados PEM', extensions: ['pem', 'crt', 'cer'] }],
@@ -518,7 +565,7 @@ app.whenReady().then(async () => {
         case 'moveProject':
           return manager.moveProject(a.projectId, a.targetProjectId);
         case 'addProject': {
-          const r = await dialog.showOpenDialog(win, {
+          const r = await dialog.showOpenDialog(senderWindow, {
             title: 'Añadir proyecto local',
             properties: ['openDirectory'],
           });
@@ -575,7 +622,7 @@ app.whenReady().then(async () => {
         case 'contextUsage':
           return manager.contextUsage(a.sessionId);
         case 'chooseDirectory': {
-          const r = await dialog.showOpenDialog(win, {
+          const r = await dialog.showOpenDialog(senderWindow, {
             title: 'Añadir directorio adicional',
             properties: ['openDirectory'],
           });
@@ -595,7 +642,7 @@ app.whenReady().then(async () => {
           return manager.refreshUsage(a.profile);
         case 'pickImages': {
           manager.session(a.sessionId);
-          const r = await dialog.showOpenDialog(win, {
+          const r = await dialog.showOpenDialog(senderWindow, {
             title: 'Adjuntar archivos',
             properties: ['openFile', 'multiSelections'],
             filters: [
@@ -666,7 +713,7 @@ app.whenReady().then(async () => {
         case 'rewindFiles':
           return manager.rewind(a.sessionId, a.messageId, a.dryRun);
         case 'chooseBinary': {
-          const r = await dialog.showOpenDialog(win, {
+          const r = await dialog.showOpenDialog(senderWindow, {
             title: `Seleccionar ejecutable de ${a.tool}`,
             properties: ['openFile', 'showHiddenFiles'],
           });
@@ -690,7 +737,7 @@ app.whenReady().then(async () => {
     }
   })();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    if (!win || win.isDestroyed()) void createWindow();
   });
 });
 app.on('window-all-closed', () => {

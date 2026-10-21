@@ -2,6 +2,16 @@
 
 Aplicación local para macOS: una ventana Electron con tus proyectos, cuentas independientes de Claude Code, Codex, OpenRouter y Google · Gemini (sin cuentas precreadas). Claude funciona como un **chat nativo equivalente a Claude Code** (streaming, herramientas, permisos, preguntas, comandos, modelo, permisos y esfuerzo desde el compositor) y conserva su terminal oficial como modo opcional. La interfaz está en español, con un diseño plano y claro.
 
+## Chats flotantes
+
+El botón **Sacar chat** (ventana con un recuadro) está en la barra de conversaciones y junto a **Ampliar** en cada tarjeta del multichat. Abre una ventana nativa independiente con la conversación y el compositor juntos. Puedes sacar varios chats, arrastrarlos por la cabecera y cambiar su tamaño desde los bordes. Cada uno sigue vinculado a su conversación aunque cambies de proyecto en el editor.
+
+La ventana toma el **color de la cuenta** del chat. Su cabecera solo muestra **Volver al editor**, que devuelve el chat y enfoca su pestaña. Con **clic derecho en la cabecera** se abren las opciones: **Siempre encima** mantiene el chat sobre otras aplicaciones y **Transparencia en reposo** ajusta el fondo entre 50 % y 100 % sin atenuar el texto; al pasar el ratón o escribir la ventana vuelve a ser opaca. La posición, el tamaño y estas preferencias se recuerdan por conversación. **Cerrar ventana**, también en ese menú, conserva el chat y no detiene al agente. Los borradores y adjuntos se comparten entre ambas vistas. Los borradores de texto sobreviven al reinicio; los adjuntos pendientes pertenecen a la apertura actual de la aplicación.
+
+La forma se puede cambiar en **Ajustes → Interfaz → Estilos (CSS)** con variables: `--floating-radius` (esquinas), `--floating-border-width`, `--floating-border-color`, `--floating-gutter` (márgenes interiores), `--floating-header-height`, `--floating-composer-radius`, `--floating-background` (sustituye el color de la cuenta) y `--floating-solid` (opacidad en uso). Por ejemplo: `:root { --floating-radius: 22px; --floating-gutter: 16px; }`.
+
+Verificación aislada: `npm run build && node scripts/floating-chat-check.mjs`. Comprueba ventanas simultáneas, IPC, aislamiento de conversación, borradores y adjuntos, transparencia, tamaño, retorno al editor y cierre nativo. También forma parte de `node scripts/ui-regression.mjs`.
+
 ## Navegador y atención al trabajo en curso
 
 El navegador tiene una barra compacta con navegación, dirección y **…**. Zoom, abrir fuera, suspender y añadir contexto al chat se agrupan en ese desplegable; el botón de nueva pestaña queda junto a las pestañas. Las aperturas y los clics tienen transiciones breves (140–180 ms) y respetan **Reducir movimiento**. La vista nativa conserva su posición, sus bordes redondeados y su contenido al navegar; cambiar una URL no provoca un ciclo de ocultar y mostrar. La dirección que estás escribiendo se conserva frente a una navegación del agente; `Esc` recupera la URL actual.

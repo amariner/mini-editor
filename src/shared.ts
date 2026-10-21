@@ -387,6 +387,7 @@ export interface AccountState {
   loginStarting?: boolean;
 }
 export interface Snapshot {
+  floatingChats?: import('./floating-chat-protocol').FloatingChatState[];
   freebuffEnabled?: boolean;
   theme?: Theme;
   proxy?: import('./proxy-types').ProxySnapshot;
@@ -406,7 +407,12 @@ export interface Snapshot {
     paths: string[];
   }[];
   accounts?: Record<Profile, AccountState>;
-  runtime?: { protocol: number; updateAvailable: boolean; restartSupported: boolean };
+  runtime?: {
+    instanceId?: string;
+    protocol: number;
+    updateAvailable: boolean;
+    restartSupported: boolean;
+  };
   projects: Project[];
   sessions: Session[];
   selectedProject?: string;
@@ -416,6 +422,7 @@ export interface Snapshot {
   notice?: string;
 }
 export type Action =
+  | import('./floating-chat-protocol').FloatingChatAction
   | { type: 'setFreebuffEnabled'; enabled: boolean }
   | { type: 'saveProxy'; config: import('./proxy-types').ProxyUpdate }
   | { type: 'testProxy'; config: import('./proxy-types').ProxyUpdate; provider: 'codex' | 'claude' }
@@ -502,6 +509,7 @@ export type Action =
   | { type: 'chooseBinary'; tool: 'claude' | 'codex' | 'gemini' | 'freebuff' }
   | { type: 'chooseDirectory'; sessionId: string };
 export type DeskEvent =
+  | { type: 'chatDocked'; sessionId: string }
   | { type: 'shortcut'; action: 'search' | 'settings' | 'resetStyles' }
   | { type: 'browserOpened'; sessionId: string; tabId?: string }
   | { type: 'state'; state: Snapshot }
