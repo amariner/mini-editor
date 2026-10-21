@@ -582,6 +582,17 @@ export class Accounts {
         }
       }
       const ctx = await this.context(profile);
+      // Claude opens OAuth itself; BROWSER must be an executable, not a command with arguments.
+      if (process.platform === 'darwin') {
+        const browser = `${ctx.cwd}/open-login-browser.sh`;
+        await fs.writeFile(
+          browser,
+          '#!/bin/sh\nexec /usr/bin/open -a "Google Chrome" "$@"\n',
+          { mode: 0o700 },
+        );
+        await fs.chmod(browser, 0o700);
+        Object.assign(ctx.env, { BROWSER: browser });
+      }
       const terminal = pty.spawn(ctx.binary, ['auth', 'login', '--claudeai'], {
         cwd: ctx.cwd,
         env: ctx.env,

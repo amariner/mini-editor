@@ -21,6 +21,14 @@ if (process.argv[3] === 'status') {
   console.log(JSON.stringify({loggedIn, authMethod: loggedIn ? 'claude.ai' : 'none', email: loggedIn ? 'fixture@example.test' : null}));
   process.exit(loggedIn ? 0 : 1);
 }
+if (process.argv[3] === 'login' && process.platform === 'darwin') {
+  const browser = process.env.BROWSER;
+  if (!browser || !fs.existsSync(browser) || !(fs.statSync(browser).mode & 0o100) ||
+      !fs.readFileSync(browser, 'utf8').includes('exec /usr/bin/open -a "Google Chrome" "$@"')) {
+    process.stderr.write('Missing Chrome login launcher');
+    process.exit(43);
+  }
+}
 if (process.argv[3] === 'login' && mode === 'success') {
   console.log('Completa el acceso oficial');
   setTimeout(() => { fs.writeFileSync('authenticated', 'fixture'); process.exit(0); }, 150);

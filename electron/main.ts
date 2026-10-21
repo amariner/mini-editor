@@ -422,7 +422,7 @@ app.whenReady().then(async () => {
         case 'accountOpenLogin': {
           const url = manager.accounts.state[a.profile]?.loginUrl;
           if (!url) throw new Error('No hay un acceso pendiente para esta cuenta.');
-          await shell.openExternal(url);
+          await openInChrome(url);
           return true;
         }
         case 'accountCancel':
@@ -433,7 +433,7 @@ app.whenReady().then(async () => {
           const url = await manager.accounts.login(a.profile, a.stopSessions);
           if (url) {
             try {
-              await shell.openExternal(url);
+              await openInChrome(url);
             } catch (error) {
               await manager.accounts.cancel(a.profile);
               throw error;
@@ -631,7 +631,7 @@ app.whenReady().then(async () => {
               !['auth.openai.com', 'chatgpt.com'].includes(parsed.hostname)
             )
               throw new Error('URL de autenticación no reconocida.');
-            await shell.openExternal(url);
+            await openInChrome(url);
           }
           return;
         }
