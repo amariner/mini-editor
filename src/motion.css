@@ -492,21 +492,21 @@
   padding-inline: 8px;
 }
 
-/* Bottom controls never move: settings sits right above the fold button, same spot
-   whether the sidebar is open or folded. */
-.app .sidebar.compact .sidebar-bottom,
-.app .sidebar.compact:not(.collapsed) .sidebar-bottom {
+/* Keep settings above fold, even when saved CSS still contains the old row layout.
+   Both sidebar states anchor the controls 13px from the left edge. */
+.app .sidebar.compact .sidebar-bottom.sidebar-controls,
+.app .sidebar.compact:not(.collapsed) .sidebar-bottom.sidebar-controls {
   flex-direction: column-reverse;
   align-items: flex-start;
   justify-content: flex-start;
   gap: 6px;
   padding-inline: 3px 0;
 }
-.app .sidebar.compact.collapsed .sidebar-bottom {
-  padding-inline: calc((var(--project-icon-size, 20px) + 20px - var(--control-size)) / 2) 0;
+.app .sidebar.compact.collapsed .sidebar-bottom.sidebar-controls {
+  padding-inline: 5px 0;
 }
-.app .sidebar.compact .sidebar-bottom button,
-.app .sidebar.compact.collapsed .sidebar-bottom button {
+.app .sidebar.compact .sidebar-bottom.sidebar-controls button,
+.app .sidebar.compact.collapsed .sidebar-bottom.sidebar-controls button {
   width: var(--control-size);
   min-width: var(--control-size);
   height: var(--control-size);

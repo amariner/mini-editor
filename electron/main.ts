@@ -143,9 +143,17 @@ async function createWindow() {
     },
   });
   win.on('page-title-updated', (event) => event.preventDefault());
+  win.on('focus', () => floatingChats?.hideForEditor());
+  win.on('blur', () => {
+    // Focus settles on the new window before restoring the widgets in the background.
+    setImmediate(() => {
+      if (!quitting) floatingChats?.restoreAfterEditor();
+    });
+  });
   win.on('closed', () => {
     browser?.hide();
     win = undefined;
+    if (!quitting) floatingChats?.restoreAfterEditor();
   });
   win.webContents.on('did-start-loading', () => browser?.hide());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

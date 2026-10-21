@@ -71,7 +71,7 @@ export function FloatingChatHeader({
   const action = (operation: 'dock' | 'close' | 'configure', update = {}) =>
     void run({ type: 'floatingChat', sessionId: session.id, operation, ...update });
   return (
-    // One visible control keeps the window clean; pin and transparency live on right click.
+    // Window controls stay visible; pin and transparency live on right click.
     <header
       className="floating-chat-header"
       onContextMenu={(e) => {
@@ -99,6 +99,15 @@ export function FloatingChatHeader({
           onClick={() => action('dock')}
         >
           <Maximize2 size={14} />
+        </button>
+        <button
+          type="button"
+          className="floating-chat-close"
+          aria-label="Cerrar ventana flotante"
+          title="Cerrar ventana flotante · conservar el chat"
+          onClick={() => action('close')}
+        >
+          <X size={15} />
         </button>
       </div>
       {options && (

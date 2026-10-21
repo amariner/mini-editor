@@ -22,6 +22,35 @@ const float = async (page, id) => {
   await window.locator('.floating-chat-header').waitFor();
   return window;
 };
+const windows = () =>
+  app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .filter((w) => w.webContents.getURL().includes('#chat='))
+      .map((w) => ({
+        id: decodeURIComponent(w.webContents.getURL().split('#chat=')[1]),
+        visible: w.isVisible(),
+        focused: w.isFocused(),
+      })),
+  );
+const visibility = async (visible, count = 2) => {
+  let state;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    state = await windows();
+    if (state.length === count && state.every((w) => w.visible === visible)) return state;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.fail(`Expected ${count} floating windows visible=${visible}: ${JSON.stringify(state)}`);
+};
+const focusEditor = async () =>
+  app.evaluate(({ BrowserWindow }) => {
+    const editor = BrowserWindow.getAllWindows().find(
+      (w) =>
+        w.webContents.getURL().includes('/dist/index.html') &&
+        !w.webContents.getURL().includes('#chat='),
+    );
+    editor.show();
+    editor.focus();
+  });
 try {
   app = await electron.launch({
     args: ['.'],
@@ -75,7 +104,10 @@ try {
     projectId: first.projectId,
     profile: first.profile,
   });
+  await focusEditor();
+  await visibility(false, 1);
   const two = await float(page, second.id);
+  await visibility(true);
   assert.equal(app.windows().length, 3);
   await two
     .getByRole('textbox', { name: 'Mensaje', exact: true })
@@ -84,12 +116,42 @@ try {
   assert.equal(await one.locator('.floating-chat-title strong').innerText(), first.title);
   assert.equal((await snapshot(page)).selectedSession, second.id);
 
+  // Clicking the editor hides the whole group without closing or changing sessions.
+  await focusEditor();
+  await visibility(false);
+  assert.equal((await snapshot(page)).floatingChats.length, 2);
+  await call(page, { type: 'floatingChat', sessionId: first.id, operation: 'focus' });
+  await visibility(true);
+  assert.equal((await windows()).find((w) => w.focused)?.id, first.id);
+
+  // An unrelated native window exercises the same blur path as switching apps.
+  // The group stays visible and must not take focus away from that window.
+  const externalId = await app.evaluate(async ({ BrowserWindow }) => {
+    const external = new BrowserWindow({ show: false, width: 350, height: 250 });
+    await external.loadURL('about:blank');
+    external.show();
+    external.focus();
+    return external.id;
+  });
+  await visibility(true);
+  await focusEditor();
+  await visibility(false);
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id).focus(), externalId);
+  await visibility(true);
+  assert.equal(
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.id),
+    externalId,
+  );
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id).destroy(), externalId);
+  await call(page, { type: 'floatingChat', sessionId: first.id, operation: 'focus' });
+  await visibility(true);
+
   // Only native app windows can invoke IPC; a floating window cannot control a sibling.
   await assert.rejects(
     call(one, { type: 'floatingChat', sessionId: second.id, operation: 'close' }),
     /otra conversación/,
   );
-  // Options open from a right click on the header; the header shows only "Volver al editor".
+  // Pin and transparency remain accessible from a right click on the header.
   await one.locator('.floating-chat-header').click({ button: 'right' });
   await one.getByLabel('Transparencia en reposo').fill('55');
   await one.waitForFunction(() =>
@@ -114,10 +176,7 @@ try {
   assert.equal(alpha.body, 'rgba(0, 0, 0, 0)');
   assert.equal(alpha.text, '1');
   // The options panel is open, so the window previews the resting tint instead of turning solid.
-  // The options panel is open, so the window previews the resting tint instead of turning solid.
   assert.match(alpha.background, /0\.55/);
-  // The writing area keeps its own near-solid backing.
-  assert.match(alpha.input, /0\.86/);
   // The writing area keeps its own near-solid backing.
   assert.match(alpha.input, /0\.86/);
   assert.ok(
@@ -181,7 +240,7 @@ try {
     .getByText(fixtureSession.messages[1].text, { exact: true })
     .waitFor();
   await one.screenshot({ path: 'artifacts/floating-chat-dark.png' });
-  // Options open from a right click on the header; the header shows only "Volver al editor".
+  // Pin and transparency remain accessible from a right click on the header.
   await one.locator('.floating-chat-header').click({ button: 'right' });
   await one.screenshot({ path: 'artifacts/floating-chat-options.png' });
   await one.keyboard.press('Escape');
@@ -205,12 +264,22 @@ try {
     (await snapshot(page)).floatingChats.find((f) => f.sessionId === first.id).opacity,
     0.55,
   );
+  await reopened.getByRole('button', { name: 'Cerrar ventana flotante', exact: true }).click();
+  await closedReopened;
+  await visibility(true, 1);
+  const afterClose = await snapshot(page);
+  assert.ok(afterClose.sessions.some((s) => s.id === first.id));
+  assert.equal(afterClose.sessions.find((s) => s.id === first.id).status, first.status);
+  assert.equal(afterClose.floatingChats.length, 1);
+  // Native OS closure also preserves the chat and its draft.
+  const osWindow = await float(page, first.id);
+  const closedOSWindow = osWindow.waitForEvent('close');
   await app.evaluate(({ BrowserWindow }, id) => {
     BrowserWindow.getAllWindows()
       .find((w) => w.webContents.getURL().includes(id))
       .close();
   }, first.id);
-  await closedReopened;
+  await closedOSWindow;
   await draft.waitFor();
   assert.equal(await draft.inputValue(), 'Editado en la ventana flotante');
   // A floating chat survives closing the main editor and can recreate it on return.
@@ -247,7 +316,7 @@ try {
   assert.equal(reopened.isClosed(), true);
   assert.deepEqual(errors, []);
   console.log(
-    'Floating chats: native multiwindow, isolation, draft/attachment handoff, opacity, pin, bounds, docking, OS close and deletion OK.',
+    'Floating chats: grouped focus visibility, external-window focus, X close, multiwindow, draft/attachment handoff, opacity, docking, OS close and deletion OK.',
   );
 } finally {
   await app?.close();

@@ -231,6 +231,10 @@ html.floating-chat-document,
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text);
 }
+.floating-chat-controls .floating-chat-close:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
 /* Inline code and badges stay readable over the tint. */
 .floating-chat-app .messages :is(code, .md-code, .badge) {
   background: color-mix(in srgb, var(--text) 9%, var(--bg));

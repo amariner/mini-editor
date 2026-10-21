@@ -1125,7 +1125,7 @@ function App() {
             <p className="sidebar-hint">Añade una carpeta para empezar.</p>
           )}
         </nav>
-        <div className="sidebar-bottom">
+        <div className="sidebar-bottom sidebar-controls">
           <button
             aria-label={sidebarCollapsed ? 'Expandir proyectos' : 'Plegar proyectos'}
             title={sidebarCollapsed ? 'Expandir proyectos' : 'Plegar proyectos'}

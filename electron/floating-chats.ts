@@ -6,7 +6,7 @@ import { floatingChatHash, type FloatingChatState } from '../src/floating-chat-p
 import type { DeskEvent, Session } from '../src/shared';
 
 type Preferences = Omit<FloatingChatState, 'sessionId'> & { bounds?: Electron.Rectangle };
-type Entry = { window: BrowserWindow; preferences: Preferences };
+type Entry = { window: BrowserWindow; preferences: Preferences; ready: boolean };
 // Below this the tint no longer separates the chat from what is behind it.
 const MIN_OPACITY = 0.5;
 
@@ -15,6 +15,8 @@ export class FloatingChats {
   private entries = new Map<string, Entry>();
   private preferences: Record<string, Preferences> = {};
   private file: string;
+  private hiddenForEditor = false;
+  private revealing = false;
 
   constructor(
     dataDir: string,
@@ -65,6 +67,39 @@ export class FloatingChats {
       const session = sessions.find((s) => s.id === id);
       if (!session) entry.window.close();
       else entry.window.setTitle(`${session.title} · Agent Desk`);
+    }
+  }
+
+  hideForEditor() {
+    if (this.revealing) return;
+    this.hiddenForEditor = true;
+    for (const { window } of this.entries.values())
+      if (!window.isDestroyed() && window.isVisible()) window.hide();
+  }
+
+  restoreAfterEditor() {
+    const editor = this.parent();
+    if (!this.hiddenForEditor || (editor && !editor.isDestroyed() && editor.isFocused())) return;
+    this.showAll();
+  }
+
+  // Showing siblings must not activate the editor or steal focus from another app.
+  private showAll(target?: BrowserWindow) {
+    if (this.revealing) return;
+    this.revealing = true;
+    this.hiddenForEditor = false;
+    try {
+      for (const { window, ready } of this.entries.values()) {
+        if (!ready || window.isDestroyed()) continue;
+        if (target && window.isMinimized()) window.restore();
+        if (!window.isMinimized() && !window.isVisible()) window.showInactive();
+      }
+      if (target && !target.isDestroyed()) {
+        target.show();
+        target.focus();
+      }
+    } finally {
+      this.revealing = false;
     }
   }
 
@@ -144,7 +179,7 @@ export class FloatingChats {
         sandbox: true,
       },
     });
-    const entry = { window, preferences };
+    const entry = { window, preferences, ready: false };
     this.entries.set(session.id, entry);
     window.setAlwaysOnTop(preferences.alwaysOnTop, 'floating');
     if (process.platform === 'darwin')
@@ -159,6 +194,7 @@ export class FloatingChats {
     };
     window.on('moved', remember);
     window.on('resized', remember);
+    window.on('focus', () => this.showAll());
     window.on('close', remember);
     window.on('closed', () => {
       this.entries.delete(session.id);
@@ -173,8 +209,8 @@ export class FloatingChats {
     try {
       await window.loadURL(this.url(session.id));
       if (!window.isDestroyed()) {
-        window.show();
-        window.focus();
+        entry.ready = true;
+        this.showAll(window);
         remember();
       }
       this.changed();
@@ -185,15 +221,27 @@ export class FloatingChats {
   }
 
   focus(id: string) {
-    const window = this.entries.get(id)?.window;
-    if (!window || window.isDestroyed()) return;
-    if (window.isMinimized()) window.restore();
-    window.show();
-    window.focus();
+    const entry = this.entries.get(id);
+    if (!entry?.ready || entry.window.isDestroyed()) return;
+    this.showAll(entry.window);
   }
 
   close(id: string) {
-    this.entries.get(id)?.window.close();
+    const window = this.entries.get(id)?.window;
+    if (!window || window.isDestroyed()) return;
+    // Closing the active widget should leave another widget active, rather than
+    // activating the editor and hiding all the remaining conversations.
+    if (window.isFocused()) {
+      const sibling = [...this.entries.values()].find(
+        (entry) =>
+          entry.window !== window &&
+          entry.ready &&
+          !entry.window.isDestroyed() &&
+          entry.window.isVisible(),
+      );
+      sibling?.window.focus();
+    }
+    window.close();
   }
 
   configure(id: string, update: { opacity?: number; alwaysOnTop?: boolean }) {
