@@ -5,12 +5,12 @@
   --select-line: color-mix(in srgb, var(--brand, var(--accent)) 38%, transparent);
   --select-surface: color-mix(in srgb, var(--text) 5%, transparent);
   --hover-surface: color-mix(in srgb, var(--text) 3.5%, transparent);
-  --quiet-focus: color-mix(in srgb, var(--field-focus) 45%, transparent);
+  --quiet-focus: var(--accent);
 }
 
 /* Sidebar: rows keep the same box when hovered, focused, pressed or selected. */
 .app .sidebar .project-chat {
-  color: color-mix(in srgb, var(--ui-text-color, var(--text-2)) 72%, var(--bg));
+  color: color-mix(in srgb, var(--ui-text-color, var(--text-2)) 85%, var(--bg));
   border: 0;
   outline: none;
   transform: none;
@@ -32,7 +32,7 @@
 }
 .app .sidebar :is(.project-chat, .project-name, .team-fold):focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--quiet-focus);
+  box-shadow: inset 0 0 0 2px var(--quiet-focus);
 }
 .app .sidebar .project-chat svg {
   transition: color var(--motion-slow) ease;
@@ -60,9 +60,9 @@
   animation: desk-fade-in var(--motion-slow) ease both;
 }
 
-/* Session tabs: a faint underline fades in; text stays close to the background. */
+/* Session tabs: a faint underline fades in while labels remain readable. */
 .app .workspace .session-tab {
-  color: color-mix(in srgb, var(--ui-text-color, var(--muted)) 85%, var(--bg));
+  color: var(--ui-text-color, var(--muted));
   border-bottom: 1px solid transparent;
   box-shadow: none;
   transition:
@@ -90,7 +90,7 @@
 .app .workspace .session-tab > button[role='tab']:focus-visible,
 .app .workspace .session-tab .tab-close:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--quiet-focus);
+  box-shadow: inset 0 0 0 2px var(--quiet-focus);
 }
 .app .workspace .session-tab {
   animation: desk-fade-in var(--motion-enter) ease both;
@@ -236,7 +236,7 @@
   padding-bottom: 4px;
 }
 
-/* Dividers never stay lit: a hairline that only warms while hovered or dragged. */
+/* Dividers stay quiet at rest; keyboard focus clearly identifies the resize target. */
 .app .workspace-separator,
 .app .workspace-separator:is(:focus, :focus-visible) {
   outline: none;
@@ -253,8 +253,9 @@
 .app .resizing .workspace-separator::after {
   background: color-mix(in srgb, var(--text) 22%, var(--line));
 }
-.app .workspace-separator:focus-visible:not(:hover)::after {
-  background: color-mix(in srgb, var(--field-focus) 45%, var(--line));
+.app .workspace-separator:focus-visible::after {
+  width: 3px;
+  background: var(--quiet-focus);
 }
 
 /* Composer tools fold behind "+": they slide out in a row; their menus still open upwards. */
@@ -516,7 +517,25 @@
 }
 .app .sidebar :is(.sidebar-bottom button, .section-label button):focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--quiet-focus);
+  box-shadow: inset 0 0 0 2px var(--quiet-focus);
+}
+/* High contrast mode removes box shadows, so keyboard focus needs a real outline. */
+@media (forced-colors: active) {
+  .app
+    .sidebar
+    :is(
+      .project-chat,
+      .project-name,
+      .team-fold,
+      .sidebar-bottom button,
+      .section-label button
+    ):focus-visible,
+  .app .workspace .session-tab > button[role='tab']:focus-visible,
+  .app .workspace .session-tab .tab-close:focus-visible,
+  .app .workspace-separator:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 /* Same clearance for the macOS window controls with the wider folded rail. */
 .app:has(.sidebar.collapsed) > main > .topbar {

@@ -4149,7 +4149,7 @@ main {
   --attention: #8f5c0e;
   --tk-k: #7254c4;
   --tk-s: #3f7f5c;
-  --tk-c: #8a8a87;
+  --tk-c: var(--muted);
   --tk-n: #b25466;
   --tk-f: #4a5fc4;
   --tk-t: #76671f;
@@ -4168,7 +4168,6 @@ main {
     --attention: #e9b45a;
     --tk-k: #b9a9f4;
     --tk-s: #a5cdb5;
-    --tk-c: #6f6f6b;
     --tk-n: #e3a6b0;
     --tk-f: #9db0f5;
     --tk-t: #d9c98f;
@@ -4538,7 +4537,7 @@ a.md-link:focus-visible {
   position: static;
   padding: 0 4px;
   font-size: 10.5px;
-  color: var(--ui-text-color, var(--faint));
+  color: var(--ui-text-color, var(--muted));
   font-family: var(--mono);
   pointer-events: none;
 }
