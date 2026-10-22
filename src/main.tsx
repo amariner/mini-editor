@@ -1,5 +1,5 @@
 import { FloatChatButton, FloatingChatHeader, DetachedChat } from './floating-chat';
-import { floatingChatId } from './floating-chat-protocol';
+import { floatingChatId } from './floating-chat-state';
 import { useTextDrafts, useImageDrafts, initializeDraftLifetime } from './chat-drafts';
 import { ProjectChats, TeamIndicator } from './team';
 import { Multichat } from './multichat';
@@ -10,7 +10,14 @@ import { providerKind, providerNames, isCodex } from './shared';
 import { useInterfacePreferences } from './interface-settings';
 import { useModalFocus } from './modal-focus';
 import { navigateTabs } from './tab-keyboard';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   LayoutGrid,
@@ -68,6 +75,8 @@ import { ChatActionsContext, type ChatActions } from './markdown';
 import { applyStyles, resetStyles, savedStyles } from './custom-styles';
 import { accountCardStyle } from './account-color';
 import { isLocalPage, workspaceAvailability } from './workspace-availability';
+import { SnapshotSync } from './snapshot-sync';
+import { searchWorkspace } from './workspace-search';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import './shell-polish.css';
@@ -185,6 +194,7 @@ function App() {
     diffRequest = useRef(0),
     diffReads = useRef(0),
     navigationInFlight = useRef(false),
+    pendingActions = useRef(new Map<string, number>()),
     recentSessions = useRef<Record<string, string | null>>({}),
     stateRef = useRef<Snapshot | undefined>(undefined);
   const projectDrag = useRef<string | undefined>(undefined);
@@ -210,9 +220,25 @@ function App() {
       ? { ...snap, sessions: snap.sessions.filter((s) => !deleting.current.has(s.id)) }
       : snap;
   };
+  const snapshotSync = useMemo(
+    () =>
+      new SnapshotSync<Snapshot>(
+        () => window.desk.invoke({ type: 'snapshot' }),
+        (snapshot) => {
+          stateRef.current = visibleState(snapshot);
+          setState(stateRef.current);
+        },
+      ),
+    [],
+  );
   useEffect(() => {
+    const draftStorageError = () =>
+      setError(
+        'No se pudo guardar el borrador en este equipo. Se conserva mientras la app siga abierta; copia el texto antes de cerrarla.',
+      );
+    window.addEventListener('agent-desk:draft-storage-error', draftStorageError);
     const off = window.desk.subscribe((e) => {
-      if (e.type === 'state') setState(visibleState(e.state));
+      if (e.type === 'state') snapshotSync.receive(e.state);
       if (e.type === 'chatDocked' && !floatingSessionId) {
         setClosedSelection(undefined);
         setMultichat('off');
@@ -225,19 +251,23 @@ function App() {
         if (e.action === 'resetStyles') resetStyles();
         else if (e.action === 'search') {
           setAttentionOpen(false);
+          setSettings(false);
           setSearch(true);
           setQuery('');
+          setSearchIndex(0);
         } else {
           setAttentionOpen(false);
+          setSearch(false);
           setSettings(true);
         }
       }
     });
-    window.desk
-      .invoke({ type: 'snapshot' })
-      .then((snap) => setState(visibleState(snap)))
-      .catch((e) => setError(e.message));
-    return off;
+    void snapshotSync.refresh().catch((e) => setError(actionError(e)));
+    return () => {
+      off();
+      window.removeEventListener('agent-desk:draft-storage-error', draftStorageError);
+      snapshotSync.invalidate();
+    };
   }, []);
   const accountProfiles = state?.profiles ?? [];
   const project = state?.projects.find((p) => p.id === state.selectedProject),
@@ -276,7 +306,9 @@ function App() {
   // Session creation order keeps tabs stationary when navigating; MRU only controls eviction.
   openTabs.sort((a, b) => state!.sessions.indexOf(a) - state!.sessions.indexOf(b));
   useEffect(() => {
-    localStorage.setItem('agent-desk.multichat-dismissed.v1', JSON.stringify(hiddenChats));
+    try {
+      localStorage.setItem('agent-desk.multichat-dismissed.v1', JSON.stringify(hiddenChats));
+    } catch {}
   }, [hiddenChats]);
   const closeTab = async (s: Session, remove = false, confirmed = false) => {
     if (!confirmed && (remove || live(stateRef.current?.sessions.find((x) => x.id === s.id)))) {
@@ -287,15 +319,13 @@ function App() {
     if (remove) {
       deleting.current.add(s.id);
       if (stateRef.current) {
-        stateRef.current = visibleState(stateRef.current);
-        setState(stateRef.current);
+        snapshotSync.receive(stateRef.current);
       }
       const deleted = await run({ type: 'deleteSession', sessionId: s.id });
       deleting.current.delete(s.id);
       if (!deleted) {
         // A failed cleanup keeps the chat; restore it from the persisted state.
-        const snap = await window.desk.invoke({ type: 'snapshot' }).catch(() => undefined);
-        if (snap) setState((stateRef.current = visibleState(snap)));
+        await snapshotSync.refresh().catch(() => {});
         return;
       }
       const withoutDeleted = <T,>(values: Record<string, T>) => {
@@ -358,15 +388,20 @@ function App() {
       action.type === 'refreshModels'
         ? `models:${action.sessionId}`
         : (('sessionId' in action ? action.sessionId : undefined) ?? action.type);
+    pendingActions.current.set(key, (pendingActions.current.get(key) ?? 0) + 1);
     setBusy((v) => ({ ...v, [key]: true }));
     try {
       setError('');
       assertCompatibleAction(stateRef.current, action);
       const r = await window.desk.invoke(action);
       if (action.type === 'restartApp') return r;
-      const snap = await window.desk.invoke({ type: 'snapshot' });
-      stateRef.current = visibleState(snap);
-      setState(stateRef.current);
+      // The action has already succeeded. A refresh failure must not invite a
+      // duplicate send or restore attachments that the provider has accepted.
+      await snapshotSync
+        .refresh()
+        .catch((e) =>
+          setError(`La acción se completó, pero no se pudo actualizar la vista: ${actionError(e)}`),
+        );
       if (navigation) {
         setClosedSelection(undefined);
       }
@@ -379,11 +414,16 @@ function App() {
         navigationInFlight.current = false;
         setNavigating(false);
       }
-      setBusy((v) => {
-        const next = { ...v };
-        delete next[key];
-        return next;
-      });
+      const remaining = (pendingActions.current.get(key) ?? 1) - 1;
+      if (remaining) pendingActions.current.set(key, remaining);
+      else {
+        pendingActions.current.delete(key);
+        setBusy((v) => {
+          const next = { ...v };
+          delete next[key];
+          return next;
+        });
+      }
     }
   };
   const runRef = useRef(run);
@@ -597,7 +637,7 @@ function App() {
   }, [sessionIds]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       if (floatingSessionId && (e.metaKey || e.ctrlKey) && ['n', 'k'].includes(e.key)) {
         e.preventDefault();
         return;
@@ -671,12 +711,6 @@ function App() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [search, settings, attentionOpen, confirmClose, removeId, multichat]);
-  useEffect(() => {
-    if (search)
-      document
-        .querySelector<HTMLElement>('.palette-results .on')
-        ?.scrollIntoView({ block: 'nearest' });
-  }, [search, searchIndex, query]);
   const refreshDiff = async () => {
     if (!project) return;
     const request = ++diffRequest.current;
@@ -757,7 +791,9 @@ function App() {
       clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
-  }, [profile, project?.id, session?.status, state?.runtime?.protocol]);
+    // Working/waiting/ready transitions can occur many times in one turn. Account
+    // quota polling belongs to the account, not to every change in agent activity.
+  }, [profile, project?.id, state?.runtime?.protocol]);
   const last = session?.messages.at(-1);
   const lastBlocks = last?.blocks?.length ?? 0;
   const lastText = last?.blocks?.at(-1);
@@ -775,50 +811,42 @@ function App() {
     multichat,
     stick,
   ]);
-  if (!state) return <div className="loading">Abriendo Agent Desk…{error}</div>;
+  const deferredQuery = useDeferredValue(query);
+  // Opening/clearing the palette must show its full list immediately; otherwise
+  // fast arrow navigation would still operate on the previous filtered list.
+  const searchQuery = query.trim() ? deferredQuery : query;
+  const results = useMemo(
+    () => (search && state ? searchWorkspace(state, searchQuery, statusLabels) : []),
+    [search, state, searchQuery],
+  );
+  const selectedSearchIndex = Math.min(searchIndex, Math.max(0, results.length - 1));
+  useLayoutEffect(() => {
+    if (search)
+      document
+        .querySelector<HTMLElement>('.palette-results .on')
+        ?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  }, [search, selectedSearchIndex, results]);
+  if (!state)
+    return (
+      <div className="loading" role={error ? 'alert' : 'status'}>
+        {error ? (
+          <>
+            <p>No se pudo abrir Agent Desk: {error}</p>
+            <button
+              onClick={() => {
+                setError('');
+                void snapshotSync.refresh().catch((e) => setError(actionError(e)));
+              }}
+            >
+              Reintentar
+            </button>
+          </>
+        ) : (
+          'Abriendo Agent Desk…'
+        )}
+      </div>
+    );
   const attention = attentionItems(state.sessions, seen, unreadCompleted);
-  const results = search
-    ? [
-        ...state.projects.map((p) => ({
-          key: p.id,
-          title: p.name,
-          subtitle: p.path,
-          projectId: p.id,
-          sessionId: undefined as string | undefined,
-        })),
-        ...state.sessions.map((s) => ({
-          key: s.id,
-          title: s.title,
-          subtitle: `${state.projects.find((p) => p.id === s.projectId)?.name} · ${accountProfiles.find((p) => p.id === s.profile)?.name} · ${statusLabels[s.status]}`,
-          projectId: s.projectId,
-          sessionId: s.id,
-        })),
-      ].filter((r) => `${r.title} ${r.subtitle}`.toLowerCase().includes(query.toLowerCase()))
-    : [];
-  // Full-text search over conversations once the query is specific enough.
-  const needle = query.trim().toLowerCase();
-  if (search && needle.length >= 3)
-    for (const s of state.sessions) {
-      if (results.length >= 60) break;
-      if (results.some((r) => r.sessionId === s.id)) continue;
-      for (const m of s.messages) {
-        if (m.role !== 'user' && m.role !== 'assistant') continue;
-        const text = m.blocks
-          ? m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join(' ')
-          : m.text;
-        const at = text.toLowerCase().indexOf(needle);
-        if (at < 0) continue;
-        const start = Math.max(0, at - 40);
-        results.push({
-          key: `${s.id}:${m.id}`,
-          title: s.title,
-          subtitle: `${start ? '…' : ''}${text.slice(start, at + needle.length + 60).replace(/\s+/g, ' ')}…`,
-          projectId: s.projectId,
-          sessionId: s.id,
-        });
-        break;
-      }
-    }
   const choose = (r: (typeof results)[number]) => {
     void run({ type: 'select', projectId: r.projectId, sessionId: r.sessionId });
     setSearch(false);
@@ -1852,11 +1880,25 @@ function App() {
                                 accountProfiles.find((p) => p.id === session.profile)?.optimization
                               }
                               draft={drafts[session.id] ?? ''}
-                              setDraft={(v) => setDrafts((d) => ({ ...d, [session.id]: v }))}
+                              setDraft={(value) =>
+                                setDrafts((d) => ({
+                                  ...d,
+                                  [session.id]:
+                                    typeof value === 'function'
+                                      ? value(d[session.id] ?? '')
+                                      : value,
+                                }))
+                              }
                               run={run}
                               images={imageDrafts[session.id] ?? []}
-                              setImages={(images) =>
-                                setImageDrafts((d) => ({ ...d, [session.id]: images }))
+                              setImages={(value) =>
+                                setImageDrafts((d) => ({
+                                  ...d,
+                                  [session.id]:
+                                    typeof value === 'function'
+                                      ? value(d[session.id] ?? [])
+                                      : value,
+                                }))
                               }
                               onSend={(text, images) => sendText(session, text, images)}
                               onLocalCommand={localCommand}
@@ -2115,7 +2157,7 @@ function App() {
                 aria-expanded="true"
                 aria-controls="palette-results"
                 aria-activedescendant={
-                  results[searchIndex] ? `palette-result-${searchIndex}` : undefined
+                  results[selectedSearchIndex] ? `palette-result-${selectedSearchIndex}` : undefined
                 }
                 placeholder="Buscar proyecto o sesión…"
                 value={query}
@@ -2124,17 +2166,26 @@ function App() {
                   setSearchIndex(0);
                 }}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+                  if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return;
+                  const currentResults =
+                    query === searchQuery ? results : searchWorkspace(state, query, statusLabels);
                   if (e.key === 'ArrowDown') {
                     e.preventDefault();
-                    setSearchIndex((i) => Math.max(0, Math.min(i + 1, results.length - 1)));
+                    setSearchIndex((i) => Math.max(0, Math.min(i + 1, currentResults.length - 1)));
                   }
                   if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     setSearchIndex((i) => Math.max(0, i - 1));
                   }
-                  if (e.key === 'Enter' && results[searchIndex]) {
-                    e.preventDefault();
-                    choose(results[searchIndex]);
+                  if (e.key === 'Enter') {
+                    // Typing stays deferred, but an immediate Enter must select
+                    // the current query rather than ignore it or open stale results.
+                    const target = currentResults[Math.min(searchIndex, currentResults.length - 1)];
+                    if (target) {
+                      e.preventDefault();
+                      choose(target);
+                    }
                   }
                 }}
               />
@@ -2145,15 +2196,16 @@ function App() {
               id="palette-results"
               role="listbox"
               aria-label="Proyectos y sesiones"
+              aria-busy={query !== searchQuery}
             >
               {results.map((r, i) => (
                 <button
                   key={r.key}
                   id={`palette-result-${i}`}
                   role="option"
-                  aria-selected={i === searchIndex}
+                  aria-selected={i === selectedSearchIndex}
                   tabIndex={-1}
-                  className={i === searchIndex ? 'on' : ''}
+                  className={i === selectedSearchIndex ? 'on' : ''}
                   onClick={() => choose(r)}
                 >
                   {r.sessionId ? <MessageSquare size={15} /> : <Folder size={15} />}

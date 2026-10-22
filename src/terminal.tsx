@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { ChevronsDown, ChevronsUp, MoveVertical, ScanLine, SlidersHorizontal } from 'lucide-react';
 import type { Session } from './shared';
+import { createTerminalStream } from './terminal-stream';
 export { sessionIsLive as live } from './session-tabs';
 import { sessionIsLive as live } from './session-tabs';
 const light = {
@@ -67,6 +68,8 @@ export function TerminalView({
   const [modelHelp, setModelHelp] = useState(false);
   const reading = useRef(false);
   reading.current = readingScreen;
+  const reportError = useRef(onError);
+  reportError.current = onError;
   const host = useRef<HTMLDivElement>(null),
     viewport = useRef<HTMLDivElement>(null),
     fit = useRef<FitAddon>(null),
@@ -111,54 +114,85 @@ export function TerminalView({
         return false;
       });
     }
-    let disposed = false,
-      ready = false,
-      queue: { data: string; sequence: number }[] = [];
+    let disposed = false;
+    const output = createTerminalStream((data) => term.write(data));
     const unsubscribe = window.desk.subscribe((e) => {
-      if (e.type === 'terminal' && e.sessionId === session.id) {
-        if (ready) term.write(e.data);
-        else queue.push(e);
-      }
+      if (e.type === 'terminal' && e.sessionId === session.id) output.push(e);
     });
+    const restoreTimeout = setTimeout(() => {
+      output.restore();
+      reportError.current(
+        'No se pudo cargar el historial de la terminal. La salida en directo sigue disponible.',
+      );
+    }, 10000);
     window.desk
       .invoke({ type: 'terminalBuffer', sessionId: session.id })
       .then((buffer) => {
+        clearTimeout(restoreTimeout);
         if (disposed) return;
-        term.write(buffer.data);
-        for (const chunk of queue) if (chunk.sequence > buffer.sequence) term.write(chunk.data);
-        queue = [];
-        ready = true;
+        output.restore(buffer);
       })
-      .catch((e) => onError(e.message));
+      .catch((e) => {
+        clearTimeout(restoreTimeout);
+        if (disposed) return;
+        output.restore();
+        reportError.current(e instanceof Error ? e.message : 'No se pudo cargar la terminal.');
+      });
     const input = term.onData(
       (data) =>
         void window.desk
           .invoke({ type: 'terminalWrite', sessionId: session.id, data })
-          .catch((e) => onError(e.message)),
+          .catch((e) => {
+            if (!disposed) reportError.current(e.message);
+          }),
     );
+    let lastSize = '';
+    const sendSize = () => {
+      const size = `${term.cols}:${term.rows}`;
+      if (disposed || size === lastSize) return;
+      lastSize = size;
+      void window.desk
+        .invoke({
+          type: 'terminalResize',
+          sessionId: session.id,
+          cols: term.cols,
+          rows: term.rows,
+        })
+        .catch(() => {});
+    };
+    // Both the observer and explicit fit on reveal go through the same deduplicated resize.
+    const resized = term.onResize(sendSize);
+    let resizeFrame = 0;
     const resize = () => {
-      if (host.current && host.current.clientWidth > 0 && host.current.clientHeight > 0) {
-        addon.fit();
-        void window.desk
-          .invoke({
-            type: 'terminalResize',
-            sessionId: session.id,
-            cols: term.cols,
-            rows: term.rows,
-          })
-          .catch(() => {});
-      }
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        if (
+          !disposed &&
+          host.current &&
+          host.current.clientWidth > 0 &&
+          host.current.clientHeight > 0
+        ) {
+          addon.fit();
+          sendSize();
+        }
+      });
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host.current!);
     resize();
     return () => {
       disposed = true;
+      clearTimeout(restoreTimeout);
+      cancelAnimationFrame(resizeFrame);
+      output.dispose();
       media.removeEventListener('change', onScheme);
       observer.disconnect();
       unsubscribe();
       input.dispose();
+      resized.dispose();
       term.dispose();
+      terminal.current = null;
+      fit.current = null;
     };
   }, [session.id, scrollableScreen]);
   useEffect(() => {
@@ -170,7 +204,7 @@ export function TerminalView({
   }, [readingScreen]);
   useEffect(() => {
     if (terminal.current) terminal.current.options.disableStdin = !live(session);
-  }, [session.status]);
+  }, [session.id, session.status, scrollableScreen]);
   useEffect(() => {
     if (!visible || !live(session)) return;
     const timer = setTimeout(() => {

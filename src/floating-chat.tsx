@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Maximize2, Pin, PinOff, PictureInPicture2, Settings2, X } from 'lucide-react';
 import type { Action, Session } from './shared';
-import { MIN_FLOATING_OPACITY, type FloatingChatState } from './floating-chat-protocol';
+import { MIN_FLOATING_OPACITY, type FloatingChatState } from './floating-chat-state';
 
 export function FloatChatButton({
   session,

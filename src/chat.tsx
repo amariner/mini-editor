@@ -157,6 +157,8 @@ function copyText(text: string) {
 }
 function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
+  const reset = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(reset.current), []);
   return (
     <button
       className={`msg-action ${done ? 'done' : ''}`}
@@ -165,7 +167,8 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
       onClick={async () => {
         if (await copyText(text)) {
           setDone(true);
-          setTimeout(() => setDone(false), 1400);
+          clearTimeout(reset.current);
+          reset.current = setTimeout(() => setDone(false), 1400);
         }
       }}
     >
@@ -823,12 +826,17 @@ export function ConversationMessages({
   session,
   kind,
   limit,
+  entries: suppliedEntries,
 }: {
   session: Session;
   kind: ProviderKind;
   limit?: number;
+  entries?: ReturnType<typeof conversationEntries>;
 }) {
-  const entries = conversationEntries(session);
+  const entries = useMemo(
+    () => suppliedEntries ?? conversationEntries(session),
+    [suppliedEntries, session.messages, session.status, session.approvals.length],
+  );
   const visible = limit === undefined ? entries : entries.slice(-limit);
   return (
     <>
@@ -1708,10 +1716,10 @@ export function Composer({
   disabled?: boolean;
   optimization?: TokenOptimization;
   draft: string;
-  setDraft: (v: string) => void;
+  setDraft: React.Dispatch<React.SetStateAction<string>>;
   run: Run;
   images: Attachment[];
-  setImages: (images: Attachment[]) => void;
+  setImages: React.Dispatch<React.SetStateAction<Attachment[]>>;
   onSend: (text: string, images: Attachment[]) => Promise<boolean>;
   onLocalCommand: (name: string, arg: string) => boolean;
   footerControl?: React.ReactNode;
@@ -1726,14 +1734,15 @@ export function Composer({
   const [flash, setFlash] = useState<{ ok: boolean; text: string }>();
   const [toolsOpen, setToolsOpen] = useState(false);
   const insightId = useId();
+  const menuId = useId();
+  const flashReset = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flashReset.current), []);
   const tools = useRef<HTMLDivElement>(null);
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState('');
   const [files, setFiles] = useState<{ query: string; items: string[] }>({ query: '', items: [] });
   const [recall, setRecall] = useState(-1);
   const pickingRef = useRef(false);
-  const imagesRef = useRef(images);
-  imagesRef.current = images;
   const sendingRef = useRef(false);
   const connected = isConnectedProvider(session.profile);
   const claude = providerKind(session.profile) === 'claude';
@@ -1793,9 +1802,7 @@ export function Composer({
           : { type: 'pickImages', sessionId: session.id },
       );
       if (chosen?.length) {
-        const next = [...imagesRef.current, ...chosen];
-        imagesRef.current = next;
-        setImages(next);
+        setImages((current) => [...current, ...chosen]);
       }
     } catch (error) {
       setImageError((error as Error).message);
@@ -1908,7 +1915,7 @@ export function Composer({
           ? { type: 'slash', items: commands }
           : undefined;
   const menuSize = menu?.items.length ?? 0;
-  useEffect(() => setIndex(0), [menuSize, menu?.type]);
+  useEffect(() => setIndex(0), [menuKey, menuSize, menu?.type]);
   const selected = Math.max(0, Math.min(index, menuSize - 1));
   useEffect(() => {
     const el = area.current;
@@ -1917,13 +1924,15 @@ export function Composer({
     el.style.height = Math.min(el.scrollHeight, 260) + 'px';
   }, [draft]);
   const history = useMemo(
-    () =>
-      [...session.messages]
-        .reverse()
-        .filter((m) => m.role === 'user' && m.text.trim())
-        .map((m) => m.text)
-        .filter((t, i, all) => all.indexOf(t) === i),
-    [session.messages.length],
+    () => [
+      ...new Set(
+        [...session.messages]
+          .reverse()
+          .filter((m) => m.role === 'user' && m.text.trim())
+          .map((m) => m.text),
+      ),
+    ],
+    [session.id, session.messages.length],
   );
   const edit = (value: string, cursor = value.length) => {
     setDraft(value);
@@ -1953,7 +1962,8 @@ export function Composer({
             ? 'No se ha podido copiar'
             : 'No hay ninguna respuesta que copiar',
       });
-      setTimeout(() => setFlash(undefined), 1800);
+      clearTimeout(flashReset.current);
+      flashReset.current = setTimeout(() => setFlash(undefined), 1800);
       return;
     }
     if (!images.length && text.startsWith('/')) {
@@ -1965,12 +1975,19 @@ export function Composer({
     }
     sendingRef.current = true;
     setSending(true);
-    setDraft('');
+    setImageError('');
     setRecall(-1);
     try {
       const ok = await onSend(text, images);
-      if (!ok) setDraft(text);
-      else setImages([]);
+      if (ok) {
+        // A pending send can finish after switching views or recovering another message.
+        // Remove only the submitted content; preserve any newer draft and attachments.
+        setDraft((current) => (current === draft ? '' : current));
+        const sentIds = new Set(images.map((attachment) => attachment.id));
+        setImages((current) => current.filter((attachment) => !sentIds.has(attachment.id)));
+      } else setImageError('No se pudo enviar. Tu borrador se conserva.');
+    } catch {
+      setImageError('No se pudo enviar. Tu borrador se conserva.');
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -2005,6 +2022,7 @@ export function Composer({
       {menu && (
         <div
           className="slash-menu"
+          id={menuId}
           role="listbox"
           aria-label={menu.type === 'slash' ? 'Comandos' : 'Archivos del proyecto'}
         >
@@ -2012,6 +2030,7 @@ export function Composer({
             ? menu.items.map((c, i) => (
                 <button
                   key={c.name}
+                  id={`${menuId}-${i}`}
                   role="option"
                   aria-selected={i === selected}
                   className={i === selected ? 'on' : ''}
@@ -2029,6 +2048,7 @@ export function Composer({
                 return (
                   <button
                     key={file}
+                    id={`${menuId}-${i}`}
                     role="option"
                     aria-selected={i === selected}
                     className={`file-option ${i === selected ? 'on' : ''}`}
@@ -2067,7 +2087,7 @@ export function Composer({
                   title="Quitar archivo"
                   disabled={sending || picking}
                   onClick={() => {
-                    setImages(images.filter((x) => x.id !== i.id));
+                    setImages((current) => current.filter((x) => x.id !== i.id));
                     void run({
                       type: 'discardImages',
                       sessionId: session.id,
@@ -2084,6 +2104,9 @@ export function Composer({
         <textarea
           ref={area}
           aria-label="Mensaje"
+          aria-autocomplete="list"
+          aria-controls={menu ? menuId : undefined}
+          aria-activedescendant={menu ? `${menuId}-${selected}` : undefined}
           rows={1}
           placeholder={
             sending || session.status === 'starting'
@@ -2120,6 +2143,8 @@ export function Composer({
             );
           }}
           onKeyDown={(e) => {
+            // IME uses Enter, arrows and Escape to choose characters before committing text.
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
             if (menu && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
               e.preventDefault();
               setIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : menuSize - 1)) % menuSize);

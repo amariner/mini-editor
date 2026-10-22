@@ -1,4 +1,12 @@
-import React, { createContext, memo, useContext, useState } from 'react';
+import React, {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Check,
   Copy,
@@ -115,7 +123,7 @@ const INLINE = new RegExp(
     '~~(?=\\S)([\\s\\S]*?\\S)~~', // 5 strikethrough
     '\\*(?=[^\\s*])((?:\\*\\*[^*\\n]+\\*\\*|[^*\\n])*?[^\\s*])\\*(?!\\*)', // 6 italic
     '(?<![\\w])_(?=[^\\s_])([^_\\n]*?[^\\s_])_(?!\\w)', // 7 italic
-    '\\[((?:[^\\[\\]\\n]|\\[[^\\]\\n]*\\])+)\\]\\(\\s*<?([^()\\s<>]+(?:\\([^()\\s]*\\)[^()\\s<>]*)*)>?(?:\\s+"[^"\\n]*")?\\s*\\)', // 8-9 link
+    '\\[((?:[^\\[\\]\\n]|\\[[^\\]\\n]*\\])+)\\]\\(\\s*(<[^<>\\r\\n]+>|[^()\\s<>]+(?:\\([^()\\s]*\\)[^()\\s<>]*)*)(?:\\s+"[^"\\n]*")?\\s*\\)', // 8-9 link; angle brackets allow spaces in paths
     '<(https?:\\/\\/[^>\\s]+)>', // 10 autolink
     '(https?:\\/\\/[^\\s<>"`]*[^\\s<>"`.,;:!?\'()\\[\\]{}*_~])', // 11 bare URL
   ].join('|'),
@@ -125,7 +133,10 @@ function text(s: string, key: string): React.ReactNode[] {
   const lines = restoreMarks(s).split('\n');
   return lines.flatMap((line, i) => (i ? [<br key={`${key}-br${i}`} />, line] : [line]));
 }
-export function inline(source: string, prefix = 'i', links = true): React.ReactNode[] {
+const MAX_NESTING = 48;
+export function inline(source: string, prefix = 'i', links = true, depth = 0): React.ReactNode[] {
+  // Provider output is untrusted structure; pathological nesting must not crash the chat.
+  if (depth >= MAX_NESTING) return text(escapeMarks(source), prefix);
   const s = escapeMarks(source);
   const out: React.ReactNode[] = [];
   let last = 0,
@@ -149,14 +160,21 @@ export function inline(source: string, prefix = 'i', links = true): React.ReactN
         ),
       );
     } else if (m[3] !== undefined || m[4] !== undefined)
-      out.push(<strong key={key}>{inline(restoreMarks(m[3] ?? m[4], true), key, links)}</strong>);
+      out.push(
+        <strong key={key}>
+          {inline(restoreMarks(m[3] ?? m[4], true), key, links, depth + 1)}
+        </strong>,
+      );
     else if (m[5] !== undefined)
-      out.push(<del key={key}>{inline(restoreMarks(m[5], true), key, links)}</del>);
+      out.push(<del key={key}>{inline(restoreMarks(m[5], true), key, links, depth + 1)}</del>);
     else if (m[6] !== undefined || m[7] !== undefined)
-      out.push(<em key={key}>{inline(restoreMarks(m[6] ?? m[7], true), key, links)}</em>);
+      out.push(
+        <em key={key}>{inline(restoreMarks(m[6] ?? m[7], true), key, links, depth + 1)}</em>,
+      );
     else {
-      const label = m[8] !== undefined ? inline(restoreMarks(m[8], true), key, false) : undefined;
-      const href = restoreMarks(m[9] ?? m[10] ?? m[11]);
+      const label =
+        m[8] !== undefined ? inline(restoreMarks(m[8], true), key, false, depth + 1) : undefined;
+      const href = restoreMarks(m[9] ?? m[10] ?? m[11]).replace(/^<(.*)>$/, '$1');
       const target = links ? linkTarget(href) : undefined;
       out.push(
         target ? (
@@ -180,15 +198,25 @@ function commandText(code: string) {
   const prompted = lines.filter((l) => l.trim()).every((l) => /^\s*\$\s/.test(l));
   return (prompted ? lines.map((l) => l.replace(/^\s*\$\s/, '')) : lines).join('\n');
 }
-export function CodeBlock({ code, lang = '' }: { code: string; lang?: string }) {
+export const CodeBlock = memo(function CodeBlock({
+  code,
+  lang = '',
+}: {
+  code: string;
+  lang?: string;
+}) {
   const actions = useChatActions();
   const [copied, setCopied] = useState(false);
+  const reset = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(reset.current), []);
+  const highlighted = useMemo(() => highlight(code, lang), [code, lang]);
   const runnable = isShell(lang) && !!actions.runCommand && !!code.trim();
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
+      clearTimeout(reset.current);
+      reset.current = setTimeout(() => setCopied(false), 1400);
     } catch {
       /* clipboard unavailable: the code stays selectable */
     }
@@ -217,11 +245,11 @@ export function CodeBlock({ code, lang = '' }: { code: string; lang?: string }) 
         </button>
       </div>
       <pre>
-        <code>{highlight(code, lang)}</code>
+        <code>{highlighted}</code>
       </pre>
     </div>
   );
-}
+});
 const FENCE = /^(\s{0,3})(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const RULE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
@@ -255,7 +283,7 @@ const startsBlock = (lines: string[], i: number) =>
   QUOTE.test(lines[i]) ||
   ITEM.test(lines[i]) ||
   isTableStart(lines, i);
-function list(lines: string[], start: number, prefix: string) {
+function list(lines: string[], start: number, prefix: string, depth: number) {
   const first = ITEM.exec(lines[start])!;
   const base = first[1].length;
   const ordered = /\d/.test(first[2]);
@@ -297,7 +325,7 @@ function list(lines: string[], start: number, prefix: string) {
       <li key={key} className={task ? 'md-task' : undefined}>
         {task && <span className={`md-check ${task[1] !== ' ' ? 'on' : ''}`} aria-hidden="true" />}
         {task && <span className="sr-only">{task[1] !== ' ' ? 'Hecho: ' : 'Pendiente: '}</span>}
-        {blocks(body, key, true)}
+        {blocks(body, key, true, depth + 1)}
       </li>,
     );
   }
@@ -310,7 +338,9 @@ function list(lines: string[], start: number, prefix: string) {
   );
   return { node, next: i };
 }
-function blocks(source: string[], prefix: string, tight = false): React.ReactNode[] {
+function blocks(source: string[], prefix: string, tight = false, depth = 0): React.ReactNode[] {
+  if (depth >= MAX_NESTING)
+    return [<p key={prefix}>{text(escapeMarks(source.join('\n')), prefix)}</p>];
   const lines = source.map((l) => l.replace(/^\t+/, (t) => '    '.repeat(t.length)));
   const nodes: React.ReactNode[] = [];
   const paragraph: string[] = [];
@@ -336,12 +366,11 @@ function blocks(source: string[], prefix: string, tight = false): React.ReactNod
       flush();
       const [, indent, mark, lang] = fence;
       const body: string[] = [];
+      const endFence = new RegExp(`^\\s{0,3}${mark[0]}{${mark.length},}\\s*$`);
+      const leadingIndent = new RegExp(`^ {0,${indent.length}}`);
       i++;
-      while (
-        i < lines.length &&
-        !new RegExp(`^\\s{0,3}${mark[0] === '`' ? '`' : '~'}{${mark.length},}\\s*$`).test(lines[i])
-      )
-        body.push(lines[i++].replace(new RegExp(`^ {0,${indent.length}}`), ''));
+      while (i < lines.length && !endFence.test(lines[i]))
+        body.push(lines[i++].replace(leadingIndent, ''));
       i++;
       nodes.push(<CodeBlock key={key()} code={body.join('\n')} lang={lang} />);
       continue;
@@ -363,7 +392,7 @@ function blocks(source: string[], prefix: string, tight = false): React.ReactNod
     }
     if (ITEM.test(line) && (ITEM.exec(line)![4].trim() || !paragraph.length)) {
       flush();
-      const { node, next } = list(lines, i, key());
+      const { node, next } = list(lines, i, key(), depth);
       nodes.push(node);
       i = next;
       continue;
@@ -382,10 +411,11 @@ function blocks(source: string[], prefix: string, tight = false): React.ReactNod
               <Icon size={13} />
               {kind.label}
             </div>
-            {blocks(body.slice(1), key())}
+            {blocks(body.slice(1), key(), false, depth + 1)}
           </div>,
         );
-      } else nodes.push(<blockquote key={key()}>{blocks(body, key())}</blockquote>);
+      } else
+        nodes.push(<blockquote key={key()}>{blocks(body, key(), false, depth + 1)}</blockquote>);
       continue;
     }
     if (isTableStart(lines, i)) {

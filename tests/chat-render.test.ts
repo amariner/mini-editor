@@ -111,3 +111,34 @@ test('rutas de entregables entre comillas de código se revelan sin enlaces anid
   assert.equal((labelled.match(/<a /g) ?? []).length, 1);
   assert.doesNotMatch(render('[mal](javascript:alert(1))'), /<a /);
 });
+
+test('los enlaces con rutas entre ángulos conservan espacios, acentos y referencias a líneas', () => {
+  const out = renderToStaticMarkup(
+    React.createElement(
+      ChatActionsContext.Provider,
+      { value: { revealPath: () => {} } },
+      React.createElement(Markdown, {
+        text: '[Informe](</tmp/Mis informes/revisión final.pdf>) y [Código](<src/Mi archivo.ts:12>)',
+      }),
+    ),
+  );
+  assert.equal((out.match(/class="md-link path"/g) ?? []).length, 2);
+  assert.match(out, /title="\/tmp\/Mis informes\/revisión final.pdf · Mostrar en carpeta"/);
+  assert.match(out, /title="src\/Mi archivo.ts:12 · Mostrar en carpeta"/);
+  assert.doesNotMatch(html('[peligro](<javascript:alert(1)>)'), /<a /);
+});
+
+test('markdown con miles de citas anidadas conserva el texto sin agotar la pila', () => {
+  const out = html(`${'> '.repeat(5000)}contenido conservado`);
+  assert.match(out, /contenido conservado/);
+  assert.ok((out.match(/<blockquote>/g) ?? []).length <= 48);
+  assert.match(out, /&gt;/);
+});
+
+test('un bloque de código largo conserva cercas internas más cortas y todo el contenido', () => {
+  const body = `primero\n\`\`\`\n${'const x = 1;\n'.repeat(3000)}último`;
+  const out = html(`\`\`\`\`js\n${body}\n\`\`\`\``);
+  assert.match(out, /primero\n```/);
+  assert.match(out, /último<\/code>/);
+  assert.equal((out.match(/const x = 1;/g) ?? []).length, 3000);
+});

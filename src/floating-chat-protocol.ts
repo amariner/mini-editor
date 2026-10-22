@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { MIN_FLOATING_OPACITY } from './floating-chat-state';
+export { MIN_FLOATING_OPACITY, floatingChatHash, floatingChatId } from './floating-chat-state';
+export type { FloatingChatState } from './floating-chat-state';
 
-export const MIN_FLOATING_OPACITY = 0.1;
 export const floatingChatAction = z
   .object({
     type: z.literal('floatingChat'),
@@ -12,19 +14,3 @@ export const floatingChatAction = z
   .strict();
 
 export type FloatingChatAction = z.infer<typeof floatingChatAction>;
-export interface FloatingChatState {
-  sessionId: string;
-  opacity: number;
-  alwaysOnTop: boolean;
-}
-
-export const floatingChatHash = (id: string) => `#chat=${encodeURIComponent(id)}`;
-export function floatingChatId(hash: string) {
-  if (!hash.startsWith('#chat=')) return undefined;
-  try {
-    const id = decodeURIComponent(hash.slice(6));
-    return id && id.length <= 150 ? id : undefined;
-  } catch {
-    return undefined;
-  }
-}

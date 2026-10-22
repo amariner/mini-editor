@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 
 const focusable =
   'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])';
@@ -7,7 +7,7 @@ const visible = (element: HTMLElement) =>
 
 /** Keep keyboard work inside the foremost modal, including nested confirmations. */
 export function useModalFocus(active: boolean) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) return;
     const opener = document.activeElement as HTMLElement | null;
     const background = [...document.querySelectorAll<HTMLElement>('.app > aside, .app > main')];

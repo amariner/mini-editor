@@ -48,6 +48,9 @@ export function BrowserPanel({
   const optionsButton = useRef<HTMLButtonElement>(null);
   const currentTabId = useRef(state?.id);
   currentTabId.current = state?.id;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const operationInFlight = useRef(false);
   const syncBounds = useRef<() => void>(() => {});
   const present = useRef({ visible: false, onError });
   present.current = { visible: !blocked && !!state?.url && !state.suspended, onError };
@@ -148,6 +151,9 @@ export function BrowserPanel({
     return tab as BrowserState;
   };
   const act = async (input: BrowserInput, tabId = state?.id) => {
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
+    const selectionAtStart = selectedRef.current;
     setBusy(true);
     try {
       if (input.action === 'new') {
@@ -160,7 +166,11 @@ export function BrowserPanel({
       }
       if (!tabId) return;
       await window.desk.invoke({ type: 'browserTab', tabId, input });
-      if (input.action === 'close' && tabId === state?.id) {
+      if (
+        input.action === 'close' &&
+        tabId === state?.id &&
+        selectedRef.current === selectionAtStart
+      ) {
         const index = tabs.findIndex((tab) => tab.id === tabId);
         const next = tabs[index + 1] ?? tabs[index - 1];
         if (next) select(next.id);
@@ -168,22 +178,26 @@ export function BrowserPanel({
     } catch (e) {
       onError((e as Error).message);
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };
   const openExternal = async () => {
-    if (!state) return;
+    if (!state || operationInFlight.current) return;
+    operationInFlight.current = true;
     setBusy(true);
     try {
       await window.desk.invoke({ type: 'browserOpenExternal', tabId: state.id });
     } catch (error) {
       onError((error as Error).message);
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };
   const captureContext = async () => {
-    if (!state || !onCaptureContext) return;
+    if (!state || !onCaptureContext || operationInFlight.current) return;
+    operationInFlight.current = true;
     setBusy(true);
     try {
       await onCaptureContext(state);
@@ -191,6 +205,7 @@ export function BrowserPanel({
     } catch (error) {
       onError((error as Error).message);
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };

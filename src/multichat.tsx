@@ -45,6 +45,7 @@ import { accountCardStyle } from './account-color';
 import type { GitSnapshot } from './git-types';
 import { cardStatus as status, isPending, lastTurnChanges, planProgress } from './supervision';
 import { shortPath } from './activity';
+import { readDroppedFiles } from './image-drop';
 import {
   autoLayout,
   fitColumns,
@@ -624,10 +625,15 @@ function Card({
   const content = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const following = useRef(true);
+  const previousScroll = useRef<{ top: number; height: number } | undefined>(undefined);
   const draft = controls.drafts[session.id] ?? '';
   const images = controls.images[session.id] ?? [];
   const messages = session.messages.filter((m) => m.role === 'user' || m.role === 'assistant');
-  const entryCount = conversationEntries(session).length;
+  const entries = useMemo(
+    () => conversationEntries(session),
+    [session.messages, session.status, session.approvals.length],
+  );
+  const entryCount = entries.length;
   const tail = messages.slice(-1);
   const textOf = (m: Session['messages'][number]) =>
     m.blocks?.some((b) => b.type === 'text')
@@ -637,6 +643,13 @@ function Card({
           .join('\n\n')
       : m.text;
   const lastText = tail.length ? textOf(tail[tail.length - 1]) : '';
+  useLayoutEffect(() => {
+    const before = previousScroll.current;
+    const viewport = preview.current;
+    if (!before || !viewport) return;
+    viewport.scrollTop = before.top + viewport.scrollHeight - before.height;
+    previousScroll.current = undefined;
+  }, [limit]);
   useEffect(() => {
     if (visible && following.current && preview.current)
       preview.current.scrollTop = preview.current.scrollHeight;
@@ -674,7 +687,7 @@ function Card({
   const setDraft = (value: string) => controls.setDrafts((v) => ({ ...v, [session.id]: value }));
   const submit = async () => {
     const text = draft.trim();
-    if (!enabled || (!text && !images.length) || sendingRef.current) return;
+    if (!enabled || (!text && !images.length) || sendingRef.current || pickingRef.current) return;
     sendingRef.current = true;
     setSending(true);
     setLocalError('');
@@ -695,17 +708,23 @@ function Card({
       setSending(false);
     }
   };
-  const attach = async () => {
-    if (!enabled || pickingRef.current) return;
+  const attach = async (files?: File[]) => {
+    if (!enabled || pickingRef.current || sendingRef.current) return;
     pickingRef.current = true;
     setPicking(true);
+    setLocalError('');
     try {
-      const picked: Attachment[] | undefined = await controls.run({
-        type: 'pickImages',
-        sessionId: session.id,
-      });
+      const picked: Attachment[] | undefined = await controls.run(
+        files
+          ? { type: 'dropImages', sessionId: session.id, images: await readDroppedFiles(files) }
+          : { type: 'pickImages', sessionId: session.id },
+      );
       if (picked?.length)
         controls.setImages((v) => ({ ...v, [session.id]: [...(v[session.id] ?? []), ...picked] }));
+    } catch (error) {
+      setLocalError(
+        error instanceof Error ? error.message : 'No se pudieron adjuntar los archivos.',
+      );
     } finally {
       pickingRef.current = false;
       setPicking(false);
@@ -720,8 +739,19 @@ function Card({
         aria-label={`${project} · ${session.title} · ${unseen ? 'Terminado sin revisar' : label}`}
         onPointerDown={seen}
         onFocus={seen}
-        onDragOver={dragOver}
-        onDrop={drop}
+        onDragOver={(e) => {
+          if (Array.from(e.dataTransfer.types).includes('Files')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = enabled && !floating ? 'copy' : 'none';
+          } else dragOver(e);
+        }}
+        onDrop={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes('Files')) return drop(e);
+          e.preventDefault();
+          e.stopPropagation();
+          if (enabled && !floating) void attach(Array.from(e.dataTransfer.files));
+          else setLocalError('Espera a que el chat esté disponible para adjuntar archivos.');
+        }}
       >
         {/* The whole header is the drag handle; the title keeps rename and keyboard moves. */}
         <div
@@ -911,6 +941,11 @@ function Card({
                   className="multichat-earlier"
                   onClick={() => {
                     following.current = false;
+                    if (preview.current)
+                      previousScroll.current = {
+                        top: preview.current.scrollTop,
+                        height: preview.current.scrollHeight,
+                      };
                     setLimit((v) => v + 20);
                   }}
                 >
@@ -921,6 +956,7 @@ function Card({
                 session={session}
                 kind={providerKind(session.profile)}
                 limit={limit}
+                entries={entries}
               />
               {!session.messages.length && !terminal && (
                 <p className="multichat-hint">Escribe abajo para empezar.</p>
@@ -986,7 +1022,10 @@ function Card({
             session={session}
             run={controls.run}
             recover={(text, attachments) => {
-              setDraft([draft, text].filter(Boolean).join('\n'));
+              controls.setDrafts((current) => ({
+                ...current,
+                [session.id]: [current[session.id], text].filter(Boolean).join('\n'),
+              }));
               controls.setImages((d) => ({
                 ...d,
                 [session.id]: [
@@ -1050,9 +1089,17 @@ function Card({
                 rows={1}
                 value={draft}
                 readOnly={sending}
+                aria-busy={sending || picking}
                 onChange={(e) => setDraft(e.target.value)}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData.files);
+                  if (!files.length) return;
+                  e.preventDefault();
+                  void attach(files);
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+                  if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     void submit();
                   } else if (e.key === 'Escape') e.currentTarget.blur();
