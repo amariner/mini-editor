@@ -2,6 +2,26 @@
 .app .sidebar {
   --project-action-size: 24px;
 }
+.app .sidebar.compact:not(.collapsed) {
+  width: 216px;
+  min-width: 216px;
+}
+.app .sidebar .project-block {
+  margin-bottom: 8px;
+}
+.app .sidebar .project-chats {
+  padding: 1px 2px 4px 20px;
+}
+.app .sidebar .project-chat,
+.app .sidebar .project-chat-row {
+  min-height: 26px;
+  height: auto;
+}
+.app .sidebar .project-chat {
+  padding: 3px 6px;
+  border-radius: 6px;
+  line-height: 18px;
+}
 .app .sidebar .section-label {
   padding-inline: 0;
 }
@@ -27,10 +47,21 @@
 .app .sidebar .project-row {
   padding-right: 2px;
   gap: 0;
+  min-height: 34px;
 }
 .app .sidebar .project-name {
+  flex: 0 1 auto;
+  max-width: calc(100% - 48px);
   padding-left: 6px;
   padding-right: 2px;
+  min-height: 30px;
+}
+.app .sidebar .project-name .project-mark {
+  flex-shrink: 0;
+}
+.app .sidebar .project-row > .inline-name {
+  flex: 1;
+  width: 0;
 }
 .app .sidebar .project-row > .project-new-chat,
 .app .sidebar .project-row > .project-remove {
@@ -45,7 +76,7 @@
   pointer-events: none;
 }
 .app .sidebar .project-block:is(:hover, :focus-within) .project-new-chat,
-.app .sidebar .project-block:is(:hover, :focus-within) .project-remove {
+.app .sidebar .project-row:is(:hover, :focus-within) .project-remove {
   opacity: 1;
   pointer-events: auto;
 }
@@ -54,6 +85,64 @@
 }
 .app .sidebar .project-remove:hover {
   color: var(--danger);
+}
+.app .sidebar .project-status-slot {
+  position: relative;
+  margin-left: auto;
+  flex: 0 0 var(--project-action-size);
+  width: var(--project-action-size);
+  height: var(--project-action-size);
+}
+.app .sidebar .project-status,
+.app .sidebar .project-status-slot .project-remove {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 5px;
+}
+.app .sidebar .project-status {
+  pointer-events: none;
+}
+.app .sidebar .project-status-slot .project-remove {
+  background: transparent;
+  visibility: visible;
+  opacity: 0;
+  pointer-events: none;
+}
+.app .sidebar .project-row:is(:hover, :focus-within) .project-status-slot .project-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+.app .sidebar .project-row:is(:hover, :focus-within) .project-status {
+  visibility: hidden;
+}
+.app .sidebar .project-status-slot .project-remove:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.app .sidebar .project-chat-row {
+  position: relative;
+}
+.app .sidebar .project-chat-row[data-reorder-edge]::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  left: 2px;
+  right: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.app .sidebar .project-chat-row[data-reorder-edge='before']::after {
+  top: -1px;
+}
+.app .sidebar .project-chat-row[data-reorder-edge='after']::after {
+  bottom: -1px;
 }
 .app .sidebar.compact.collapsed {
   width: calc(var(--project-icon-size, 20px) + 32px);
@@ -64,6 +153,8 @@
   padding-right: 0;
 }
 .app .sidebar.collapsed .project-name {
+  flex: 1;
+  max-width: 100%;
   padding-inline: 6px;
   justify-content: center;
 }
@@ -87,7 +178,8 @@
   flex-basis: 72px;
 }
 .app .sidebar.collapsed .project-row > .project-remove,
-.app .sidebar.collapsed .project-row > .project-new-chat {
+.app .sidebar.collapsed .project-row > .project-new-chat,
+.app .sidebar.collapsed .project-status-slot {
   display: none;
 }
 .app .sidebar .sidebar-bottom {
@@ -99,5 +191,21 @@
   .app .sidebar .project-row > .project-remove {
     opacity: 1;
     pointer-events: auto;
+  }
+  .app .sidebar .project-status-slot .project-status {
+    visibility: hidden;
+  }
+  .app .sidebar .project-status-slot .project-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (max-width: 900px) {
+  .app .sidebar.compact:not(.collapsed) {
+    width: 184px;
+    min-width: 184px;
+  }
+  .app .sidebar .project-chats {
+    padding-left: 16px;
   }
 }

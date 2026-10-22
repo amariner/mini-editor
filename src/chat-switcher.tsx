@@ -5,6 +5,8 @@ import { EditableName } from './editable-name';
 import { cardStatus } from './supervision';
 import { useChatDetachDrag } from './chat-detach-drag';
 import './chat-navigation.css';
+import { orderedProjectChats } from './chat-order';
+import { useChatOrder } from './use-chat-order';
 
 // Selection replaces this component. Keep the focus request across that replacement,
 // and consume it only after React commits an enabled trigger for the selected chat.
@@ -52,7 +54,8 @@ export function ChatSwitcher({
   const initialFocus = useRef<'selected' | 'first' | 'last'>('selected');
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const chats = sessions.filter((chat) => chat.projectId === session.projectId);
+  const { order } = useChatOrder(sessions);
+  const chats = orderedProjectChats(sessions, session.projectId, order);
   const { handleProps, preview, dragging } = useChatDetachDrag({
     session,
     run,

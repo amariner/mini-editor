@@ -262,14 +262,17 @@ try {
       .first();
     await newChat.waitFor();
     assert.equal(await newChat.locator('.lucide-plus').count(), 0, 'New chat uses a writing icon');
-    await assertAligned(
-      newChat.locator('svg'),
-      deleteButton.locator('svg'),
-      'x',
-      'New chat action aligns with the chat status column',
+    const newChatBounds = await newChat.boundingBox();
+    const projectNameBounds = await projectName.boundingBox();
+    const projectStatusBounds = await firstProject.locator('.project-status').boundingBox();
+    assert.ok(
+      newChatBounds.x >= projectNameBounds.x + projectNameBounds.width - 1 &&
+        newChatBounds.x + newChatBounds.width <= projectStatusBounds.x + 1,
+      'Writing action follows the project name, before the separate status column',
     );
+    await assertAligned(newChat, projectName, 'y', 'Writing action shares the project baseline');
     await page.screenshot({ path: `${artifactRoot}/${colorScheme}-desktop.png` });
-    check(`${colorScheme}: chat deletion replaces status, writing action aligns in project header`);
+    check(`${colorScheme}: chat deletion replaces status, writing action follows the project name`);
 
     const switcher = page.locator('.chat-switcher-trigger');
     await switcher.waitFor();
@@ -568,7 +571,7 @@ try {
     );
     await page.screenshot({ path: `${artifactRoot}/${colorScheme}-many-chats.png` });
     await page.keyboard.press('Enter');
-    await selected(page, 'many-19');
+    await selected(page, 's1');
     await firstProject.locator('.project-chat').filter({ hasText: 'Revisar interfaz' }).click();
     await selected(page, 's1');
     await page.evaluate(() => {

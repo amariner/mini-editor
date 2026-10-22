@@ -64,6 +64,7 @@ import { UsageSwitcher, UsageWindowDetail } from './usage-switcher';
 import { EditableName } from './editable-name';
 import { useWorkspaceSplit } from './workspace-split';
 import { DeskMark, ProjectMark } from './project-mark';
+import { ChatStateMark, projectChatStatus } from './chat-state-mark';
 import { captureBrowserContext } from './browser-context';
 import type { BrowserState } from './browser-protocol';
 import { attentionItems } from './attention';
@@ -1106,135 +1107,155 @@ function App() {
               </div>
               <nav ref={projectOverflow.viewportRef} className="projects" aria-label="Proyectos">
                 <div ref={projectOverflow.contentRef} className="project-list">
-                  {state.projects.map((p) => (
-                    <div
-                      key={p.id}
-                      className={`project-block ${p.id === project?.id ? 'selected' : ''} ${draggedProject === p.id ? 'dragging' : ''} ${projectDrop === p.id ? 'drop-target' : ''}`}
-                      data-project-id={p.id}
-                      onDragOver={(e) => {
-                        if (!projectDrag.current || projectDrag.current === p.id) return;
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        setProjectDrop(p.id);
-                      }}
-                      onDrop={(e) => {
-                        const source = projectDrag.current;
-                        if (!source || source === p.id) return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        finishProjectDrag();
-                        void run({ type: 'moveProject', projectId: source, targetProjectId: p.id });
-                      }}
-                    >
-                      <div className="project-row">
-                        {editingName?.kind === 'project' && editingName.id === p.id ? (
-                          <EditableName
-                            value={p.name}
-                            label="Nombre del proyecto"
-                            close={() => setEditingName(undefined)}
-                            save={(name) =>
-                              void run({ type: 'renameProject', projectId: p.id, name })
-                            }
-                          />
-                        ) : (
-                          <button
-                            className="project-name"
-                            draggable={compatibleRuntime(state) && !navigating && !busy.moveProject}
-                            onDragStart={(e) => {
-                              projectDrag.current = p.id;
-                              suppressProjectClick.current = true;
-                              setDraggedProject(p.id);
-                              e.dataTransfer.effectAllowed = 'move';
-                              e.dataTransfer.setData('application/x-agent-desk-project', p.id);
-                            }}
-                            onDragEnd={finishProjectDrag}
-                            onKeyDown={(e) => {
-                              if (e.key === 'F2' && compatibleRuntime(state)) {
+                  {state.projects.map((p) => {
+                    const projectSessions = state.sessions.filter(
+                      (chat) => chat.projectId === p.id,
+                    );
+                    const [projectTone, projectStatus] = projectChatStatus(projectSessions);
+                    const projectUnread = projectSessions.some((chat) =>
+                      unreadCompleted.has(chat.id),
+                    );
+                    return (
+                      <div
+                        key={p.id}
+                        className={`project-block ${p.id === project?.id ? 'selected' : ''} ${draggedProject === p.id ? 'dragging' : ''} ${projectDrop === p.id ? 'drop-target' : ''}`}
+                        data-project-id={p.id}
+                        onDragOver={(e) => {
+                          if (!projectDrag.current || projectDrag.current === p.id) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          setProjectDrop(p.id);
+                        }}
+                        onDrop={(e) => {
+                          const source = projectDrag.current;
+                          if (!source || source === p.id) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          finishProjectDrag();
+                          void run({
+                            type: 'moveProject',
+                            projectId: source,
+                            targetProjectId: p.id,
+                          });
+                        }}
+                      >
+                        <div className="project-row">
+                          {editingName?.kind === 'project' && editingName.id === p.id ? (
+                            <EditableName
+                              value={p.name}
+                              label="Nombre del proyecto"
+                              close={() => setEditingName(undefined)}
+                              save={(name) =>
+                                void run({ type: 'renameProject', projectId: p.id, name })
+                              }
+                            />
+                          ) : (
+                            <button
+                              className="project-name"
+                              draggable={
+                                compatibleRuntime(state) && !navigating && !busy.moveProject
+                              }
+                              onDragStart={(e) => {
+                                projectDrag.current = p.id;
+                                suppressProjectClick.current = true;
+                                setDraggedProject(p.id);
+                                e.dataTransfer.effectAllowed = 'move';
+                                e.dataTransfer.setData('application/x-agent-desk-project', p.id);
+                              }}
+                              onDragEnd={finishProjectDrag}
+                              onKeyDown={(e) => {
+                                if (e.key === 'F2' && compatibleRuntime(state)) {
+                                  e.preventDefault();
+                                  setSidebarCollapsed(false);
+                                  setEditingName({ kind: 'project', id: p.id });
+                                  return;
+                                }
+                                if (
+                                  !compatibleRuntime(state) ||
+                                  busy.moveProject ||
+                                  !e.altKey ||
+                                  !['ArrowUp', 'ArrowDown'].includes(e.key)
+                                )
+                                  return;
                                 e.preventDefault();
-                                setSidebarCollapsed(false);
-                                setEditingName({ kind: 'project', id: p.id });
-                                return;
-                              }
-                              if (
-                                !compatibleRuntime(state) ||
-                                busy.moveProject ||
-                                !e.altKey ||
-                                !['ArrowUp', 'ArrowDown'].includes(e.key)
-                              )
-                                return;
-                              e.preventDefault();
-                              const projects = stateRef.current?.projects ?? [];
-                              const index = projects.findIndex((x) => x.id === p.id);
-                              const target = projects[index + (e.key === 'ArrowUp' ? -1 : 1)];
-                              if (target)
-                                void run({
-                                  type: 'moveProject',
-                                  projectId: p.id,
-                                  targetProjectId: target.id,
-                                }).then(() =>
-                                  requestAnimationFrame(() =>
-                                    document
-                                      .querySelector<HTMLButtonElement>(
-                                        `[data-project-id="${CSS.escape(p.id)}"] .project-name`,
-                                      )
-                                      ?.focus(),
-                                  ),
-                                );
-                            }}
-                            title={`${p.path} · Doble clic: plegar/expandir · F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
-                            aria-disabled={navigating}
-                            aria-label={p.name}
-                            aria-current={p.id === project?.id ? 'page' : undefined}
-                            onClick={(e) => {
-                              if (e.detail < 2 && !suppressProjectClick.current) {
-                                void switchProject(p.id);
-                              }
+                                const projects = stateRef.current?.projects ?? [];
+                                const index = projects.findIndex((x) => x.id === p.id);
+                                const target = projects[index + (e.key === 'ArrowUp' ? -1 : 1)];
+                                if (target)
+                                  void run({
+                                    type: 'moveProject',
+                                    projectId: p.id,
+                                    targetProjectId: target.id,
+                                  }).then(() =>
+                                    requestAnimationFrame(() =>
+                                      document
+                                        .querySelector<HTMLButtonElement>(
+                                          `[data-project-id="${CSS.escape(p.id)}"] .project-name`,
+                                        )
+                                        ?.focus(),
+                                    ),
+                                  );
+                              }}
+                              title={`${p.path} · Doble clic: plegar/expandir · F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
+                              aria-disabled={navigating}
+                              aria-label={p.name}
+                              aria-current={p.id === project?.id ? 'page' : undefined}
+                              onClick={(e) => {
+                                if (e.detail < 2 && !suppressProjectClick.current) {
+                                  void switchProject(p.id);
+                                }
+                              }}
+                            >
+                              <ProjectMark identity={p.path} />
+                              <span className="project-label">{p.name}</span>
+                            </button>
+                          )}
+                          <button
+                            className="icon-btn ghost project-new-chat"
+                            aria-label={`Nuevo chat en ${p.name}`}
+                            title="Nuevo chat (⌘N)"
+                            disabled={navigating || !profile || !compatibleRuntime(state)}
+                            onClick={() => {
+                              setMultichat('off');
+                              void run({ type: 'newSession', projectId: p.id });
                             }}
                           >
-                            <ProjectMark identity={p.path} />
-                            <span className="project-label">{p.name}</span>
-                            {state.sessions.some((s) => s.projectId === p.id && live(s)) && (
-                              <i
-                                className={`live-dot ${state.sessions.some((s) => s.projectId === p.id && s.approvals.length) ? 'waiting' : ''}`}
-                              />
-                            )}
+                            <SquarePen size={14} />
                           </button>
-                        )}
-                        <button
-                          className="icon-btn ghost project-remove"
-                          title="Quitar de la lista"
-                          aria-label={`Quitar ${p.name}`}
-                          onClick={() => setRemoveId(p.id)}
-                        >
-                          <X size={13} />
-                        </button>
-                        <button
-                          className="icon-btn ghost project-new-chat"
-                          aria-label={`Nuevo chat en ${p.name}`}
-                          title="Nuevo chat (⌘N)"
-                          disabled={navigating || !profile || !compatibleRuntime(state)}
-                          onClick={() => {
+                          <div className="project-status-slot">
+                            <span className="project-status" title={projectStatus}>
+                              <ChatStateMark
+                                tone={projectTone}
+                                status={projectStatus}
+                                unread={projectUnread}
+                              />
+                            </span>
+                            <button
+                              className="icon-btn ghost project-remove"
+                              title="Quitar de la lista"
+                              aria-label={`Quitar ${p.name}`}
+                              onClick={() => setRemoveId(p.id)}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        </div>
+                        <ProjectChats
+                          state={state}
+                          projectId={p.id}
+                          hiddenChats={[]}
+                          unreadCompleted={unreadCompleted}
+                          run={run}
+                          remove={(s) => void closeTab(s, true)}
+                          open={(s) => {
+                            setClosedSelection(undefined);
                             setMultichat('off');
-                            void run({ type: 'newSession', projectId: p.id });
+                            void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
                           }}
-                        >
-                          <SquarePen size={14} />
-                        </button>
+                        />
                       </div>
-                      <ProjectChats
-                        state={state}
-                        projectId={p.id}
-                        hiddenChats={[]}
-                        run={run}
-                        remove={(s) => void closeTab(s, true)}
-                        open={(s) => {
-                          setClosedSelection(undefined);
-                          setMultichat('off');
-                          void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
-                        }}
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </nav>
             </>

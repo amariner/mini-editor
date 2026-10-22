@@ -167,7 +167,11 @@ export function useChatDetachDrag(options: Options) {
         <span className="chat-detach-preview-copy">
           <strong>{options.session.title}</strong>
           <small>
-            {point.outside ? 'Soltar para abrir ventana flotante' : 'Arrastra fuera para separar'}
+            {point.outside
+              ? 'Soltar para abrir ventana flotante'
+              : options.onDropInside
+                ? 'Arrastra para ordenar o separar'
+                : 'Arrastra fuera para separar'}
           </small>
         </span>
       </div>,

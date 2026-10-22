@@ -1,0 +1,83 @@
+:root {
+  --chat-complete-ink: color-mix(in srgb, var(--ok) 55%, var(--text-2));
+}
+
+.chat-state-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.chat-state-mark > svg {
+  display: block;
+  flex-shrink: 0;
+}
+.app .chat-state-mark:is(.working, .done, .attention, .error) > svg {
+  color: inherit;
+}
+.chat-state-mark.working {
+  color: var(--brand);
+}
+.chat-state-mark.attention {
+  color: var(--attention);
+}
+.chat-state-mark.error {
+  color: var(--danger);
+}
+.chat-state-mark.done {
+  color: var(--chat-complete-ink);
+}
+.chat-state-mark.done.unread {
+  background: color-mix(in srgb, var(--chat-complete-ink) 16%, transparent);
+}
+
+/* The app's four shapes breathe in sequence; no JavaScript animation or timer. */
+.chat-state-mark.working .desk-mark > g > * {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chat-state-breathe calc(var(--motion-slow, 240ms) * 7) ease-in-out infinite;
+}
+.chat-state-mark.working .desk-mark > g:nth-child(2) > * {
+  animation-delay: calc(var(--motion-slow, 240ms) * -1.5);
+}
+.chat-state-mark.working .desk-mark > g:nth-child(3) > * {
+  animation-delay: calc(var(--motion-slow, 240ms) * -4.5);
+}
+.chat-state-mark.working .desk-mark > g:nth-child(4) > * {
+  animation-delay: calc(var(--motion-slow, 240ms) * -3);
+}
+@keyframes chat-state-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.72);
+  }
+}
+
+/* Completed chats stay recognisable after reading; unread completion is stronger. */
+.app .sidebar .project-chat-target.chat-completed .project-chat {
+  background: color-mix(in srgb, var(--chat-complete-ink) 5%, transparent);
+}
+.app .sidebar .project-chat-target.chat-completed .project-chat:hover {
+  background: color-mix(in srgb, var(--chat-complete-ink) 9%, transparent);
+}
+.app .sidebar .project-chat-target.chat-completed.completion-unread .project-chat {
+  background: color-mix(in srgb, var(--chat-complete-ink) 12%, transparent);
+}
+.app .sidebar .project-chat-target.chat-completed .project-chat.selected {
+  background: color-mix(in srgb, var(--chat-complete-ink) 10%, var(--select-surface));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-state-mark.working .desk-mark > g > * {
+    animation: none;
+  }
+}

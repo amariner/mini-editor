@@ -56,11 +56,11 @@ Estas comprobaciones usan datos temporales, proveedores simulados y servidores l
 
 - Añadir proyecto aparece al pasar por el panel o enfocarlo con teclado y comparte el eje de los iconos. Buscar solo aparece cuando la lista requiere scroll; ⌘K sigue disponible.
 - Doble clic en el panel o en el nombre/icono del proyecto pliega o expande la barra. ⌘B ofrece el mismo control por teclado y F2 permite renombrar. En el panel plegado el icono queda libre para seleccionar y expandir; ⌘N crea un chat.
-- El lápiz del proyecto crea conversaciones y se alinea con el estado de sus chats. Al pasar por un chat, la X de eliminación sustituye la bolita en su misma posición; conserva la confirmación antes de borrar.
+- El lápiz del proyecto crea conversaciones y aparece junto al nombre al pasar por el bloque o enfocarlo. Los estados de proyecto, chats y subchats comparten una columna; al pasar por cada fila, la X sustituye al estado en su misma posición y conserva la confirmación antes de borrar.
 - Se retiran las pestañas superiores. El nombre del chat aparece junto al proyecto en el compositor, con un menú que permite navegar por todas las conversaciones del proyecto y renombrar. El aislamiento se configura dentro del panel de Git/worktree inferior.
 - Crear o eliminar conversaciones no borra el estado de Git del mismo repositorio ni deja la barra en «Consultando…» hasta el siguiente sondeo.
 - Los chats de la misma carpeta comparten el estado de las operaciones Git y su borrador de commit. El selector devuelve el foco al nuevo chat cuando está disponible; cualquier interacción posterior cancela esa devolución para respetar la intención del usuario.
-- Arrastrar un chat fuera del panel, del selector inferior o de la cuadrícula muestra una tarjeta elevada y permite abrir una ventana flotante al soltar. Escape, perder el foco o soltar dentro cancelan la separación; Alt+Mayús+F ofrece acceso por teclado. La cuadrícula conserva su ordenación interna.
+- Arrastrar un chat fuera del panel, del selector inferior o de la cuadrícula muestra una tarjeta elevada y permite abrir una ventana flotante al soltar. Escape o perder el foco cancelan el gesto; Alt+Mayús+F ofrece acceso por teclado. Dentro del panel se ordenan chats hermanos y la cuadrícula conserva su ordenación interna.
 
 Verificación de esta iteración: **269/269 pruebas de lógica** y **28 comprobaciones nuevas de navegación**, en claro y oscuro y con anchos de 1280, 760 y 480 píxeles. Incluyen geometría, hover, foco, borradores, creación/eliminación, worktree, desbordamiento y cancelación del arrastre. Registro y capturas: `artifacts/project-navigation/`.
 
@@ -71,3 +71,19 @@ SOURCE_BUILD=1 node scripts/project-navigation-check.mjs
 La comprobación compila el renderer en una carpeta temporal para no interferir con la aplicación de desarrollo abierta.
 
 También pasan los recorridos de multichat, estilo/foco en claro y oscuro, navegación nativa, ventanas flotantes nativas y ciclo de vida de chats (`tabs-check.mjs`, adaptado al nuevo selector). Este último comprueba foco por teclado, cancelación al interactuar, borradores, procesos activos, terminal y eliminación confirmada. Para los recorridos de Electron mientras `npm run dev` está abierto, usa `SOURCE_DEV_URL=http://127.0.0.1:5173`; sus perfiles y datos siguen siendo temporales. La aplicación valida ese origen, por lo que un servidor de preview en un puerto aleatorio no sirve para esas pruebas nativas.
+
+## Refinamiento del panel de chats
+
+- El estado del proyecto queda alineado con el de todos sus chats, incluidos los anidados. La X ocupa exactamente ese lugar al pasar por la fila. El lápiz junto al nombre mantiene libre el icono del proyecto para seleccionar y plegar con doble clic.
+- Los chats nuevos aparecen primero dentro de su grupo. Se pueden seleccionar y ordenar verticalmente con arrastre o Alt+↑/↓; los hijos acompañan al padre y no cambian de relación. Al arrastrar cerca de los bordes, la lista se desplaza automáticamente.
+- El orden manual se conserva al recargar y se comparte con el selector inferior. Se guarda por grupo en el almacenamiento local de esta instalación, sin modificar el protocolo IPC ni el formato de los proyectos. Los chats creados después se anteponen al orden guardado.
+- Durante la ejecución se animan las cuatro formas de Agent Desk mediante CSS, sin temporizadores de JavaScript. Se respeta la preferencia de movimiento reducido. Al completar, aparece una marca verde suave y una ligera coloración de la fila, más visible mientras queda pendiente de leer; se mantienen las notificaciones existentes.
+- La barra lateral pasa a 216 px en escritorio y 184 px en ventanas estrechas; las filas de chat tienen 26 px de alto mínimo. Los iconos y controles permanecen en posiciones estables al aparecer y desaparecer.
+
+Comprobaciones específicas y capturas en `artifacts/sidebar-refinement/`. Para repetirlas con datos temporales:
+
+```bash
+SOURCE_BUILD=1 node scripts/sidebar-refinement-check.mjs
+```
+
+Resultado final de este refinamiento: **275/275 pruebas de lógica**, TypeScript y compilación del renderer correctos, **20 comprobaciones específicas** y **28 comprobaciones de navegación** en claro y oscuro. Se verifica también autoscroll con 40 chats, cancelación sin escrituras ni ventanas flotantes, y ordenación por teclado sin perder el foco. El JavaScript principal de producción queda en 470,03 kB (150,44 kB gzip); no se han añadido dependencias.

@@ -3,23 +3,38 @@ import { ChevronDown, ChevronRight, Circle, Users, X } from 'lucide-react';
 import type { Action, Session, Snapshot } from './shared';
 import { cardStatus } from './supervision';
 import { chatDetachHint, useChatDetachDrag } from './chat-detach-drag';
+import { ChatStateMark } from './chat-state-mark';
+import { chatOrderGroup, orderSiblingChats, type ChatOrderEdge } from './chat-order';
+import { useChatOrder } from './use-chat-order';
+
+type DropTarget = { sessionId: string; edge: ChatOrderEdge };
 
 function ProjectChatRow({
   session,
   selected,
   project,
   floating,
+  unread,
   open,
   remove,
   run,
+  dragMove,
+  dragEnd,
+  dropInside,
+  moveBy,
 }: {
   session: Session;
   selected: boolean;
   project?: string;
   floating: boolean;
+  unread: boolean;
   open: (session: Session) => void;
   remove: (session: Session) => void;
   run: (action: Action) => Promise<unknown>;
+  dragMove: (session: Session, x: number, y: number, outside: boolean) => void;
+  dragEnd: () => void;
+  dropInside: (session: Session, x: number, y: number) => void;
+  moveBy: (session: Session, direction: -1 | 1) => void;
 }) {
   const [tone, status] = cardStatus(session);
   const { handleProps, preview, dragging } = useChatDetachDrag({
@@ -27,23 +42,37 @@ function ProjectChatRow({
     run,
     floating,
     sourceZone: '.sidebar',
+    onDragMove: (x, y, outside) => dragMove(session, x, y, outside),
+    onDragEnd: dragEnd,
+    onDropInside: (x, y) => dropInside(session, x, y),
   });
   return (
     <>
-      <div className={`project-chat-target ${dragging ? 'detaching' : ''}`}>
+      <div
+        className={`project-chat-target ${dragging ? 'detaching reordering' : ''} ${tone === 'done' ? 'chat-completed' : ''} ${tone === 'done' && unread ? 'completion-unread' : ''}`}
+      >
         <button
           type="button"
           {...handleProps}
           className={`project-chat ${selected ? 'selected' : ''}`}
           onClick={() => open(session)}
+          onKeyDown={(event) => {
+            handleProps.onKeyDown?.(event);
+            if (event.defaultPrevented || !event.altKey || event.shiftKey) return;
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            event.stopPropagation();
+            moveBy(session, event.key === 'ArrowUp' ? -1 : 1);
+          }}
+          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+Shift+F"
           aria-current={selected ? 'true' : undefined}
-          title={`${session.title} · ${status}\n${chatDetachHint}`}
+          title={`${session.title} · ${status}\nArrastra para ordenar · Alt + ↑/↓ para mover · ${chatDetachHint}`}
         >
           <span>{session.title}</span>
           {project && <small>{project}</small>}
         </button>
         <span className={`project-chat-status ${tone}`} aria-hidden="true">
-          <Circle size={7} fill="currentColor" />
+          <ChatStateMark tone={tone} status={status} unread={unread} />
         </span>
         <button
           type="button"
@@ -64,6 +93,7 @@ export function ProjectChats({
   state,
   projectId,
   hiddenChats,
+  unreadCompleted,
   open,
   remove,
   run,
@@ -71,68 +101,161 @@ export function ProjectChats({
   state: Snapshot;
   projectId: string;
   hiddenChats: string[];
+  unreadCompleted?: ReadonlySet<string>;
   open: (s: Session) => void;
   remove: (s: Session) => void;
   run: (action: Action) => Promise<unknown>;
 }) {
+  const container = useRef<HTMLDivElement>(null);
+  const dragPoint = useRef<{ session: Session; x: number; y: number } | undefined>(undefined);
+  const scrollFrame = useRef(0);
   const [folded, setFolded] = useState<string[]>([]);
+  const [drop, setDrop] = useState<DropTarget>();
+  const [announcement, setAnnouncement] = useState('');
+  const { order, move } = useChatOrder(state.sessions);
   const visibleSessions = state.sessions.filter((s) => !hiddenChats.includes(s.id));
+  const visibleIds = new Set(visibleSessions.map((s) => s.id));
+  const childrenByParent = new Map<string, Session[]>();
+  for (const session of visibleSessions) {
+    if (!session.parentId) continue;
+    const siblings = childrenByParent.get(session.parentId) ?? [];
+    siblings.push(session);
+    childrenByParent.set(session.parentId, siblings);
+  }
   const roots = visibleSessions.filter(
-    (s) =>
-      s.projectId === projectId &&
-      (!s.parentId || !visibleSessions.some((p) => p.id === s.parentId)),
+    (s) => s.projectId === projectId && (!s.parentId || !visibleIds.has(s.parentId)),
   );
-  const row = (s: Session, child = false) => (
-    <ProjectChatRow
-      session={s}
-      selected={state.selectedSession === s.id}
-      project={
-        child && s.projectId !== projectId
-          ? state.projects.find((p) => p.id === s.projectId)?.name
-          : undefined
-      }
-      floating={!!state.floatingChats?.some((chat) => chat.sessionId === s.id)}
-      open={open}
-      remove={remove}
-      run={run}
-    />
-  );
-  return (
-    <div className="project-chats">
-      {roots.map((s) => {
-        const children = visibleSessions.filter((c) => c.parentId === s.id);
-        const collapsed = folded.includes(s.id);
-        return (
-          <div key={s.id}>
-            <div className="project-chat-row">
-              {!!children.length && (
-                <button
-                  className="team-fold"
-                  aria-label={`${collapsed ? 'Expandir' : 'Plegar'} subchats de ${s.title}`}
-                  aria-expanded={!collapsed}
-                  onClick={() =>
-                    setFolded((ids) =>
-                      collapsed ? ids.filter((id) => id !== s.id) : [...ids, s.id],
-                    )
-                  }
-                >
-                  {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                </button>
-              )}
-              {row(s)}
-            </div>
-            {!!children.length && !collapsed && (
-              <div className="project-subchats">
-                {children.map((c) => (
-                  <div key={c.id} className="project-chat-row">
-                    {row(c, true)}
-                  </div>
-                ))}
-              </div>
+  const findDrop = (session: Session, x: number, y: number): DropTarget | undefined => {
+    const rows = container.current?.querySelectorAll<HTMLElement>('.project-chat-row');
+    if (!rows) return;
+    const group = chatOrderGroup(session);
+    for (const row of rows) {
+      if (row.dataset.orderGroup !== group || row.dataset.sessionId === session.id) continue;
+      const bounds = row.getBoundingClientRect();
+      if (y < bounds.top || y > bounds.bottom || x < bounds.left || x > bounds.right) continue;
+      return {
+        sessionId: row.dataset.sessionId!,
+        edge: y < bounds.top + bounds.height / 2 ? 'before' : 'after',
+      };
+    }
+  };
+  const markDrop = (next?: DropTarget) =>
+    setDrop((previous) =>
+      previous?.sessionId === next?.sessionId && previous?.edge === next?.edge ? previous : next,
+    );
+  const clearDrag = () => {
+    dragPoint.current = undefined;
+    cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = 0;
+    markDrop();
+  };
+  useLayoutEffect(() => () => cancelAnimationFrame(scrollFrame.current), []);
+  const dragMove = (session: Session, x: number, y: number, outside: boolean) => {
+    if (outside) {
+      clearDrag();
+      return;
+    }
+    dragPoint.current = { session, x, y };
+    markDrop(findDrop(session, x, y));
+    if (scrollFrame.current) return;
+    const scroll = () => {
+      scrollFrame.current = 0;
+      const point = dragPoint.current;
+      const viewport = container.current?.closest<HTMLElement>('.projects');
+      if (!point || !viewport) return;
+      const bounds = viewport.getBoundingClientRect();
+      const edge = 28;
+      const distance =
+        point.y < bounds.top + edge
+          ? point.y - bounds.top - edge
+          : point.y > bounds.bottom - edge
+            ? point.y - bounds.bottom + edge
+            : 0;
+      if (!distance) return;
+      const previous = viewport.scrollTop;
+      viewport.scrollTop += Math.sign(distance) * Math.min(12, Math.ceil(Math.abs(distance) / 3));
+      if (previous === viewport.scrollTop) return;
+      markDrop(findDrop(point.session, point.x, point.y));
+      scrollFrame.current = requestAnimationFrame(scroll);
+    };
+    scrollFrame.current = requestAnimationFrame(scroll);
+  };
+  const moveBy = (session: Session, direction: -1 | 1) => {
+    const siblings = order[chatOrderGroup(session)]?.filter((id) => visibleIds.has(id)) ?? [];
+    const index = siblings.indexOf(session.id);
+    const target = siblings[index + direction];
+    if (!target || !move(session.id, target, direction === -1 ? 'before' : 'after')) return;
+    setAnnouncement(`${session.title}: posición ${index + direction + 1} de ${siblings.length}`);
+    requestAnimationFrame(() => {
+      const rows = container.current?.querySelectorAll<HTMLElement>('.project-chat-row');
+      const row = rows && [...rows].find((item) => item.dataset.sessionId === session.id);
+      row?.querySelector<HTMLButtonElement>('.project-chat')?.focus({ preventScroll: true });
+      row?.scrollIntoView({ block: 'nearest' });
+    });
+  };
+  const renderGroup = (siblings: Session[], ancestors = new Set<string>()): React.ReactNode =>
+    orderSiblingChats(siblings, order).map((session) => {
+      if (ancestors.has(session.id)) return null;
+      const children = childrenByParent.get(session.id) ?? [];
+      const collapsed = folded.includes(session.id);
+      const nextAncestors = new Set(ancestors).add(session.id);
+      return (
+        <div key={session.id} data-session-group={session.id}>
+          <div
+            className="project-chat-row"
+            data-session-id={session.id}
+            data-order-group={chatOrderGroup(session)}
+            data-reorder-edge={drop?.sessionId === session.id ? drop.edge : undefined}
+          >
+            {!!children.length && (
+              <button
+                className="team-fold"
+                aria-label={`${collapsed ? 'Expandir' : 'Plegar'} subchats de ${session.title}`}
+                aria-expanded={!collapsed}
+                onClick={() =>
+                  setFolded((ids) =>
+                    collapsed ? ids.filter((id) => id !== session.id) : [...ids, session.id],
+                  )
+                }
+              >
+                {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+              </button>
             )}
+            <ProjectChatRow
+              session={session}
+              selected={state.selectedSession === session.id}
+              project={
+                session.projectId !== projectId
+                  ? state.projects.find((p) => p.id === session.projectId)?.name
+                  : undefined
+              }
+              floating={!!state.floatingChats?.some((chat) => chat.sessionId === session.id)}
+              unread={!!unreadCompleted?.has(session.id)}
+              open={open}
+              remove={remove}
+              run={run}
+              moveBy={moveBy}
+              dragMove={dragMove}
+              dragEnd={clearDrag}
+              dropInside={(source, x, y) => {
+                const target = findDrop(source, x, y);
+                if (target && move(source.id, target.sessionId, target.edge))
+                  setAnnouncement(`Se ha cambiado la posición de ${source.title}`);
+              }}
+            />
           </div>
-        );
-      })}
+          {!!children.length && !collapsed && (
+            <div className="project-subchats">{renderGroup(children, nextAncestors)}</div>
+          )}
+        </div>
+      );
+    });
+  return (
+    <div className="project-chats" ref={container}>
+      {renderGroup(roots)}
+      <span className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </span>
     </div>
   );
 }
