@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Attachment } from '../src/shared';
@@ -52,6 +53,19 @@ function fileType(name: string, data: Buffer) {
   return { mediaType: documentTypes[extension] ?? 'application/octet-stream', image: false };
 }
 const digest = (data: Buffer) => createHash('sha256').update(data).digest('hex');
+async function fileDigest(filename: string) {
+  const hash = createHash('sha256');
+  let size = 0;
+  let header = Buffer.alloc(0);
+  for await (const chunk of createReadStream(filename)) {
+    hash.update(chunk);
+    if (header.length < 1024)
+      header = Buffer.concat([header, chunk.subarray(0, 1024 - header.length)]);
+    size += chunk.length;
+  }
+  return { hash: hash.digest('hex'), size, header };
+}
+type AttachmentSource = { name: string } & ({ data: Buffer } | { filename: string });
 const safeName = (name: string) => {
   const base = path.basename(name.replaceAll('\\', '/')).replace(/[\x00-\x1f\x7f]/g, '_');
   return !base || base === '.' || base === '..' ? 'archivo' : base;
@@ -76,17 +90,10 @@ export class Attachments {
   ) {}
   async add(sessionId: string, paths: string[]) {
     if (!paths.length) throw new Error('Selecciona al menos un archivo.');
-    const entries = await Promise.all(
-      paths.map(async (filename) => {
-        const stat = await fs.stat(filename);
-        if (!stat.isFile()) throw new Error('Selecciona archivos, no carpetas.');
-        return { filename, name: safeName(filename), size: stat.size };
-      }),
+    return this.save(
+      sessionId,
+      paths.map((filename) => ({ filename, name: safeName(filename) })),
     );
-    const files = [];
-    for (const entry of entries)
-      files.push({ name: entry.name, data: await fs.readFile(entry.filename) });
-    return this.save(sessionId, files);
   }
   async addData(sessionId: string, files: { name: string; data: string }[]) {
     if (!files.length) throw new Error('Selecciona al menos un archivo.');
@@ -98,31 +105,68 @@ export class Attachments {
     });
     return this.save(sessionId, decoded);
   }
-  private async save(sessionId: string, files: { name: string; data: Buffer }[]) {
+  private async save(sessionId: string, files: AttachmentSource[]) {
     if (this.removedSessions.has(sessionId)) throw new Error('Este chat se ha eliminado.');
-    const prepared = files.map(({ name, data }) => {
-      const type = fileType(name, data),
+    const prepared = [];
+    // Validate the entire batch before copying. Reading headers keeps large local
+    // documents out of the main process heap; originals are never modified.
+    for (const source of files) {
+      const { name } = source;
+      let header: Buffer, size: number;
+      if ('data' in source) {
+        header = source.data;
+        size = source.data.length;
+      } else {
+        if (!(await fs.stat(source.filename)).isFile())
+          throw new Error('Selecciona archivos, no carpetas.');
+        const file = await fs.open(source.filename, 'r');
+        try {
+          const stat = await file.stat();
+          if (!stat.isFile()) throw new Error('Selecciona archivos, no carpetas.');
+          header = Buffer.alloc(Math.min(stat.size, 1024));
+          const { bytesRead } = await file.read(header, 0, header.length, 0);
+          header = header.subarray(0, bytesRead);
+          size = stat.size;
+        } finally {
+          await file.close();
+        }
+      }
+      const type = fileType(name, header),
         id = randomUUID();
-      return {
+      prepared.push({
         sessionId,
         path: path.join(this.root, id, name),
         ...type,
-        hash: digest(data),
+        hash: '',
         attachment: {
           id,
           name,
           mediaType: type.mediaType,
-          size: data.length,
-          ...(type.image ? { preview: this.preview(data) } : {}),
-        },
-        data,
-      };
-    });
+          size,
+        } as Attachment,
+        source,
+      });
+    }
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     try {
       for (const p of prepared) {
         await fs.mkdir(path.dirname(p.path), { mode: 0o700 });
-        await fs.writeFile(p.path, p.data, { mode: 0o600 });
+        if ('data' in p.source) {
+          await fs.writeFile(p.path, p.source.data, { mode: 0o600 });
+          p.hash = digest(p.source.data);
+          if (p.image) p.attachment.preview = this.preview(p.source.data);
+        } else {
+          await fs.copyFile(p.source.filename, p.path);
+          await fs.chmod(p.path, 0o600);
+          const copied = await fileDigest(p.path);
+          if (
+            copied.size !== p.attachment.size ||
+            fileType(p.attachment.name, copied.header).mediaType !== p.mediaType
+          )
+            throw new Error('El archivo ha cambiado mientras se adjuntaba. Vuelve a adjuntarlo.');
+          p.hash = copied.hash;
+          if (p.image) p.attachment.preview = this.preview(await fs.readFile(p.path));
+        }
       }
       if (this.removedSessions.has(sessionId)) throw new Error('Este chat se ha eliminado.');
     } catch (error) {
@@ -132,7 +176,7 @@ export class Attachments {
       throw error;
     }
     for (const p of prepared) {
-      const { data: _data, ...entry } = p;
+      const { source: _source, ...entry } = p;
       this.files.set(p.attachment.id, entry);
     }
     return prepared.map((p) => p.attachment);
@@ -182,22 +226,23 @@ export class Attachments {
         throw new Error('El archivo no pertenece a este chat. Vuelve a adjuntarlo.');
       return f;
     });
-    return Promise.all(
-      entries.map(async (f) => {
-        const stat = await fs.stat(f.path);
-        if (stat.size !== f.attachment.size)
-          throw new Error('El archivo ha cambiado. Vuelve a adjuntarlo.');
-        const data = await fs.readFile(f.path);
-        if (digest(data) !== f.hash)
-          throw new Error('El archivo ha cambiado. Vuelve a adjuntarlo.');
-        return {
-          attachment: f.attachment,
-          path: f.path,
-          mediaType: f.mediaType,
-          data: f.image ? data.toString('base64') : '',
-        };
-      }),
-    );
+    const resolved: PreparedAttachment[] = [];
+    for (const f of entries) {
+      const stat = await fs.stat(f.path);
+      if (stat.size !== f.attachment.size)
+        throw new Error('El archivo ha cambiado. Vuelve a adjuntarlo.');
+      const data = f.image ? await fs.readFile(f.path) : undefined;
+      const checked = data ? { hash: digest(data), size: data.length } : await fileDigest(f.path);
+      if (checked.hash !== f.hash || checked.size !== f.attachment.size)
+        throw new Error('El archivo ha cambiado. Vuelve a adjuntarlo.');
+      resolved.push({
+        attachment: f.attachment,
+        path: f.path,
+        mediaType: f.mediaType,
+        data: data ? data.toString('base64') : '',
+      });
+    }
+    return resolved;
   }
 }
 function withFileReferences(text: string, files: PreparedAttachment[]) {

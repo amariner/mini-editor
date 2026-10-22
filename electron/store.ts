@@ -194,6 +194,7 @@ const schema = z.object({
 export class Store {
   state: Snapshot;
   private timer?: NodeJS.Timeout;
+  private deadline?: NodeJS.Timeout;
   private savedDigest?: string;
   constructor(readonly root: string) {
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -266,9 +267,14 @@ export class Store {
   schedule() {
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.flush(), 250);
+    // A busy agent can stream indefinitely without a 250 ms pause. Keep its history
+    // recoverable while still coalescing bursts and avoiding a write for every delta.
+    this.deadline ??= setTimeout(() => this.flush(), 2000);
   }
   flush() {
     clearTimeout(this.timer);
+    clearTimeout(this.deadline);
+    this.timer = this.deadline = undefined;
     const { dataDir, notice, ...data } = this.state;
     const safe = {
       ...data,

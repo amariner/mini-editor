@@ -5,6 +5,7 @@ import { codexRpcError } from './codex-errors';
 export class Rpc extends EventEmitter {
   process: ChildProcessWithoutNullStreams;
   private sequence = 0;
+  private stopping?: Promise<void>;
   private pending = new Map<
     number,
     { resolve: (r: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
@@ -62,6 +63,7 @@ export class Rpc extends EventEmitter {
     else p.resolve(msg.result);
   }
   send(msg: unknown) {
+    if (this.stopping) throw new Error('El servidor se está cerrando.');
     if (this.closed) throw new Error('El servidor está detenido.');
     this.process.stdin.write(
       JSON.stringify(this.jsonRpc ? { jsonrpc: '2.0', ...(msg as object) } : msg) + '\n',
@@ -95,26 +97,44 @@ export class Rpc extends EventEmitter {
     });
     this.send({ method: 'initialized', params: {} });
   }
-  async stop() {
-    if (this.closed) return;
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error('No se ha confirmado el cierre del proceso. La carpeta sigue bloqueada.'));
-      }, 7000);
-      this.once('closed', () => {
+  stop(): Promise<void> {
+    if (this.stopping) return this.stopping;
+    if (this.closed) return Promise.resolve();
+    const work = new Promise<void>((resolve, reject) => {
+      let timer: NodeJS.Timeout | undefined, force: NodeJS.Timeout | undefined;
+      const cleanup = () => {
         clearTimeout(timer);
         clearTimeout(force);
+        this.removeListener('closed', onClosed);
+      };
+      const onClosed = () => {
+        cleanup();
         resolve();
-      });
+      };
+      this.once('closed', onClosed);
       const signal = (s: NodeJS.Signals) => {
         try {
-          process.kill(-this.process.pid!, s);
+          if (this.process.pid) process.kill(-this.process.pid, s);
+          else this.process.kill(s);
         } catch {
-          this.process.kill(s);
+          try {
+            this.process.kill(s);
+          } catch (error) {
+            cleanup();
+            reject(error);
+          }
         }
       };
-      const force = setTimeout(() => signal('SIGKILL'), 3000);
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('No se ha confirmado el cierre del proceso. La carpeta sigue bloqueada.'));
+      }, 7000);
+      force = setTimeout(() => signal('SIGKILL'), 3000);
       signal('SIGTERM');
     });
+    this.stopping = work.finally(() => {
+      this.stopping = undefined;
+    });
+    return this.stopping;
   }
 }
