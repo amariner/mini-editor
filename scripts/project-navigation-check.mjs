@@ -486,21 +486,62 @@ try {
       `${colorScheme}: lift preview, inside/Escape/blur cancellation, one floating action per drop, draft retained`,
     );
 
-    // Project rename remains reachable without conflicting with the new double-click gesture.
-    await projectName.focus();
-    await projectName.press('F2');
+    // Names rename, projects fold their chats, and only the free rail toggles panel width.
+    const accordion = firstProject.locator('.project-chat-accordion');
+    const railWidth = (await sidebar.boundingBox()).width;
+    const projectExpandedBeforeRename = await accordion.getAttribute('data-expanded');
     const name = page.getByRole('textbox', { name: 'Nombre del proyecto', exact: true });
+    const assertStableProject = async (expanded, label) => {
+      assert.equal(await accordion.getAttribute('data-expanded'), expanded, `${label}: accordion`);
+      assert.ok(
+        Math.abs((await sidebar.boundingBox()).width - railWidth) <= 0.5,
+        `${label}: rail width`,
+      );
+      assert.equal(
+        await sidebar.evaluate((element) => element.classList.contains('collapsed')),
+        false,
+      );
+    };
+    await projectName.dblclick();
+    await name.waitFor();
+    await assertStableProject(projectExpandedBeforeRename, 'Double-click rename');
+    await name.fill('Nombre que se cancela');
+    await name.press('Escape');
+    assert.equal(await projectName.getAttribute('aria-label'), 'Estudio');
+    await assertStableProject(projectExpandedBeforeRename, 'Cancelling rename');
+
+    await projectName.dblclick();
     await name.fill('Estudio de interfaz');
     await name.press('Enter');
     await page.waitForFunction(
       () => window.fixture.state.projects[0].name === 'Estudio de interfaz',
     );
-    const projectExpandedBeforeRailToggle = await projectName.getAttribute('aria-expanded');
+    await assertStableProject(projectExpandedBeforeRename, 'Saving rename');
+    await projectName.focus();
+    await projectName.press('F2');
+    await name.fill('Estudio de navegación');
+    await name.press('Enter');
+    await page.waitForFunction(
+      () => window.fixture.state.projects[0].name === 'Estudio de navegación',
+    );
+    await assertStableProject(projectExpandedBeforeRename, 'F2 rename');
+
+    await projectName.click();
+    assert.equal(await accordion.getAttribute('data-expanded'), 'false', 'One click folds chats');
     await projectName.dblclick();
+    await name.waitFor();
+    await assertStableProject('false', 'Renaming a folded project');
+    await name.press('Escape');
+    await projectName.click();
+    assert.equal(await accordion.getAttribute('data-expanded'), 'true', 'One click unfolds chats');
+    await firstProject.dblclick({ position: { x: 1, y: 1 } });
+    assert.equal(await name.count(), 0, 'Project padding does not enter rename');
+    await assertStableProject('true', 'Double-clicking project padding');
+
+    await sidebar.dblclick({ position: { x: 12, y: 420 } });
     await page.waitForFunction(() =>
       document.querySelector('.sidebar')?.classList.contains('collapsed'),
     );
-    assert.equal(await name.count(), 0, 'Double click collapses rather than entering rename');
     await visuallyHidden(page, '[data-project-id="p"] .project-new-chat');
     assert.equal(
       await firstProject.locator('.project-new-chat').boundingBox(),
@@ -515,25 +556,13 @@ try {
       'Collapsed add project aligns with the project mark',
     );
     await page.screenshot({ path: `${artifactRoot}/${colorScheme}-collapsed.png` });
-    await projectName.dblclick();
-    await page.waitForFunction(
-      () => !document.querySelector('.sidebar')?.classList.contains('collapsed'),
-    );
-    assert.equal(
-      await projectName.getAttribute('aria-expanded'),
-      projectExpandedBeforeRailToggle,
-      'Double-clicking the rail does not change the project accordion',
-    );
-    await sidebar.dblclick({ position: { x: 12, y: 420 } });
-    await page.waitForFunction(() =>
-      document.querySelector('.sidebar')?.classList.contains('collapsed'),
-    );
     await sidebar.dblclick({ position: { x: 12, y: 420 } });
     await page.waitForFunction(
       () => !document.querySelector('.sidebar')?.classList.contains('collapsed'),
     );
+    await assertStableProject('true', 'Double-clicking the free rail');
     check(
-      `${colorScheme}: double-click widget toggles width without changing the accordion and F2 renames project`,
+      `${colorScheme}: double-click/F2 rename with save/cancel preserves accordion and width; project padding stays inert; free rail collapses and expands`,
     );
 
     await page.evaluate(() => {

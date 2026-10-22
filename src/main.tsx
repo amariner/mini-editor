@@ -1085,16 +1085,11 @@ function App() {
         <aside
           className={`sidebar compact ${sidebarCollapsed ? 'collapsed' : ''} ${!hasProjects ? 'onboarding-sidebar' : ''}`}
           aria-label="Panel de proyectos"
-          title="Doble clic para plegar o expandir proyectos · ⌘B"
+          title="Doble clic en una zona libre para plegar o expandir el panel · ⌘B"
           onDoubleClick={(event) => {
             const target = event.target as HTMLElement;
-            if (
-              target.closest(
-                'input, .project-chat-row, .project-tools, .sidebar-bottom, .team-fold',
-              )
-            )
+            if (target.closest('input, button, .project-block, .project-tools, .sidebar-bottom'))
               return;
-            if (target.closest('button') && !target.closest('.project-name')) return;
             if (!suppressProjectClick.current) setSidebarCollapsed((value) => !value);
           }}
         >
@@ -1220,7 +1215,7 @@ function App() {
                                     ),
                                   );
                               }}
-                              title={`${p.path} · Clic: ${projectFolded ? 'desplegar' : 'plegar'} chats · Doble clic: plegar/expandir panel · F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
+                              title={`${p.path} · Clic: ${projectFolded ? 'desplegar' : 'plegar'} chats · Doble clic o F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
                               aria-disabled={navigating}
                               aria-label={p.name}
                               aria-expanded={!sidebarCollapsed && !projectFolded}
@@ -1237,11 +1232,16 @@ function App() {
                                     void switchProject(p.id);
                                 }
                               }}
-                              onDoubleClick={() => {
-                                // A double click belongs to the whole sidebar; undo its first click's fold.
+                              onDoubleClick={(event) => {
+                                event.stopPropagation();
+                                // Renaming must not keep the accordion toggle from the first click.
                                 const click = projectAccordionClick.current;
                                 if (click?.id === p.id) setProjectFolded(p.id, click.folded);
                                 projectAccordionClick.current = undefined;
+                                if (compatibleRuntime(state) && !suppressProjectClick.current) {
+                                  setSidebarCollapsed(false);
+                                  setEditingName({ kind: 'project', id: p.id });
+                                }
                               }}
                             >
                               <ProjectMark identity={p.path} />
