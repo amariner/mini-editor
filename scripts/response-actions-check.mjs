@@ -49,7 +49,7 @@ try {
     args: ['.'],
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: data,
       AGENT_DESK_PROFILES_DIR: '',
     },

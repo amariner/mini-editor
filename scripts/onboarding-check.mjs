@@ -154,14 +154,14 @@ try {
   await button('Añadir proyecto').waitFor();
   await absent('Añadir cuenta');
   assert.ok(await button('Ajustes').isVisible());
-  assert.ok(await button('Plegar proyectos').isVisible());
+  await absent('Plegar proyectos');
   assert.equal(await page.locator('.project-tools:visible').count(), 0);
   assert.equal(await page.locator('.sidebar-hint:visible').count(), 0);
   await noPanels();
   await centered();
-  await button('Plegar proyectos').click();
+  await page.keyboard.press('Meta+b');
   await centered();
-  await button('Expandir proyectos').click();
+  await page.keyboard.press('Meta+b');
   await page.screenshot({ path: 'artifacts/inicio-sin-proyectos.png' });
   await page.setViewportSize({ width: 800, height: 900 });
   await centered();

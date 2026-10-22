@@ -136,7 +136,9 @@ try {
             return {
               repository: true,
               branch: 'main',
+              branches: ['main'],
               files: [],
+              commits: [],
               lines: { added: 0, removed: 0 },
               counts: { conflicts: 0 },
             };
@@ -234,9 +236,9 @@ try {
       .getByRole('dialog', { name: 'Buscar proyectos y sesiones' })
       .waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 's2');
-    assert.ok(
-      await page.getByRole('img', { name: 'Sin cambios locales', exact: true }).isVisible(),
-    );
+    await page.getByRole('button', { name: 'Gestionar ramas y Git', exact: true }).click();
+    assert.ok(await page.getByText('Sin cambios locales', { exact: true }).isVisible());
+    await page.keyboard.press('Escape');
     await page.evaluate(() => {
       const fixture = window.fixture;
       for (let i = 0; i < 30; i++)
@@ -265,7 +267,7 @@ try {
     });
 
     // Project rail state survives reload; native window controls retain a clear drag area.
-    await page.locator('.project-name').first().dblclick();
+    await page.keyboard.press('Meta+b');
     await page.reload();
     await page.locator('.sidebar.collapsed').waitFor();
     await page.getByRole('button', { name: 'Multichat', exact: true }).click();

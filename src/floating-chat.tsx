@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Maximize2, Pin, PinOff, PictureInPicture2, Settings2, X } from 'lucide-react';
 import type { Action, Session } from './shared';
 import { MIN_FLOATING_OPACITY, type FloatingChatState } from './floating-chat-state';
+import { ChatStateMark } from './chat-state-mark';
+import { cardStatus } from './supervision';
 
 export function FloatingChatHeader({
   session,
@@ -18,10 +20,11 @@ export function FloatingChatHeader({
   const [opacity, setOpacity] = useState(preferences?.opacity ?? 1);
   const popup = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const [tone, status] = cardStatus(session);
   useEffect(() => setOpacity(preferences?.opacity ?? 1), [preferences?.opacity]);
   useEffect(() => {
     if (!options) return;
-    const close = (e: PointerEvent) => {
+    const close = (e: Event) => {
       if (
         !popup.current?.contains(e.target as Node) &&
         !trigger.current?.contains(e.target as Node)
@@ -35,10 +38,12 @@ export function FloatingChatHeader({
       }
     };
     document.addEventListener('pointerdown', close);
+    document.addEventListener('focusin', close);
     document.addEventListener('keydown', escape);
     popup.current?.querySelector<HTMLInputElement>('input')?.focus();
     return () => {
       document.removeEventListener('pointerdown', close);
+      document.removeEventListener('focusin', close);
       document.removeEventListener('keydown', escape);
     };
   }, [options]);
@@ -53,10 +58,7 @@ export function FloatingChatHeader({
         setOptions(true);
       }}
     >
-      <span
-        className={`floating-chat-status ${session.status}`}
-        aria-label={session.status === 'working' ? 'Trabajando' : undefined}
-      />
+      <ChatStateMark tone={tone} status={status} />
       <div
         className="floating-chat-title"
         title={`${session.title} · ${project} · Arrastra para mover · Clic derecho: opciones`}
@@ -71,7 +73,7 @@ export function FloatingChatHeader({
           aria-label="Opciones de ventana flotante"
           title="Opciones · opacidad y siempre encima"
           aria-expanded={options}
-          aria-controls="floating-chat-options"
+          aria-controls={options ? 'floating-chat-options' : undefined}
           aria-haspopup="dialog"
           onClick={() => setOptions((open) => !open)}
         >

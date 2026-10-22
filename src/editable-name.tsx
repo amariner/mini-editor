@@ -37,6 +37,7 @@ export function EditableName({
       onDoubleClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
+        if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
         if (e.key === 'Enter') {
           e.preventDefault();
           finish();

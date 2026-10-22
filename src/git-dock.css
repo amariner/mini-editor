@@ -79,6 +79,15 @@
 .git-dock-heading button {
   flex: none;
 }
+.git-dock-panel :is(p, .git-counts, .git-error) {
+  overflow-wrap: anywhere;
+}
+.git-dock-panel .isolation-toggle {
+  min-height: 28px;
+}
+.git-dock-panel .isolation-toggle input {
+  accent-color: var(--text);
+}
 .git-dock-details {
   display: flex;
   flex-wrap: wrap;

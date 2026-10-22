@@ -1163,7 +1163,21 @@ function App() {
                             <EditableName
                               value={p.name}
                               label="Nombre del proyecto"
-                              close={() => setEditingName(undefined)}
+                              close={() => {
+                                const from = document.activeElement;
+                                setEditingName(undefined);
+                                requestAnimationFrame(() => {
+                                  if (
+                                    document.activeElement === document.body ||
+                                    document.activeElement === from
+                                  )
+                                    document
+                                      .querySelector<HTMLButtonElement>(
+                                        `[data-project-id="${CSS.escape(p.id)}"] .project-name`,
+                                      )
+                                      ?.focus({ preventScroll: true });
+                                });
+                              }}
                               save={(name) =>
                                 void run({ type: 'renameProject', projectId: p.id, name })
                               }
@@ -1218,6 +1232,7 @@ function App() {
                               title={`${p.path} · Clic: ${projectFolded ? 'desplegar' : 'plegar'} chats · Doble clic o F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
                               aria-disabled={navigating}
                               aria-label={p.name}
+                              aria-keyshortcuts="F2 Alt+ArrowUp Alt+ArrowDown"
                               aria-expanded={!sidebarCollapsed && !projectFolded}
                               aria-controls={accordionId}
                               aria-current={p.id === project?.id ? 'page' : undefined}

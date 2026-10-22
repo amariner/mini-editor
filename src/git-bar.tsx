@@ -201,9 +201,13 @@ export function GitBar({
           <GitBranch size={12} strokeWidth={1.5} aria-hidden="true" />
           <span className="git-dock-branch">{branchLabel}</span>
           {!!counts?.conflicts ? (
-            <span className="git-dock-count has-conflicts">{counts.conflicts} conflictos</span>
+            <span className="git-dock-count has-conflicts">
+              {counts.conflicts} {counts.conflicts === 1 ? 'conflicto' : 'conflictos'}
+            </span>
           ) : dirty ? (
-            <span className="git-dock-count">{state!.files.length} cambios</span>
+            <span className="git-dock-count">
+              {state!.files.length} {state!.files.length === 1 ? 'cambio' : 'cambios'}
+            </span>
           ) : null}
         </button>
       ) : (
@@ -372,6 +376,7 @@ export function GitBar({
                   type="button"
                   className="icon-btn ghost"
                   aria-label="Cerrar Git"
+                  title="Cerrar Git (Esc)"
                   onClick={() => closePopup(true)}
                 >
                   <X size={14} aria-hidden="true" />

@@ -68,6 +68,8 @@ const { outputFiles } = await build({
   },
   write: false,
   bundle: true,
+  // This behaviour-only fixture does not render app styles.
+  loader: { '.css': 'empty' },
   format: 'iife',
   define: { 'process.env.NODE_ENV': '"development"' },
 });

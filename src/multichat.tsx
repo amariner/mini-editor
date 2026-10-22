@@ -1,5 +1,6 @@
 import { chatDetachHint, useChatDetachDrag } from './chat-detach-drag';
 import { TeamIndicator } from './team';
+import { ChatStateMark } from './chat-state-mark';
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -765,7 +766,11 @@ function Card({
       >
         {/* The title drags within the grid to reorder, or outside it to detach. */}
         <div className="multichat-card-head">
-          <i className="multichat-dot" title={unseen ? 'Terminado sin revisar' : label} />
+          <ChatStateMark
+            tone={tone}
+            status={unseen ? 'Terminado sin revisar' : label}
+            unread={unseen}
+          />
           {editingTitle ? (
             <EditableName
               value={session.title}

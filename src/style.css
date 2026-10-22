@@ -6082,30 +6082,6 @@ button.msg-action.reading {
 .multichat-card-head:active {
   cursor: grabbing;
 }
-.multichat-dot {
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  margin-right: 7px;
-  border-radius: 50%;
-  background: var(--faint);
-}
-.multichat-card.working .multichat-dot {
-  background: var(--c-blue);
-  animation: pulse 1.6s infinite;
-}
-.multichat-card.attention .multichat-dot {
-  background: var(--warn);
-}
-.multichat-card.error .multichat-dot {
-  background: var(--danger);
-}
-.multichat-card.done .multichat-dot {
-  background: var(--ok);
-}
-.multichat-card.unseen .multichat-dot {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent);
-}
 .multichat-title {
   flex: 1;
   min-width: 0;
@@ -6717,7 +6693,6 @@ button.msg-action.reading {
   background: transparent;
 }
 @media (prefers-reduced-motion: reduce) {
-  .multichat-dot,
   .multichat-summary i {
     animation: none !important;
   }
@@ -7057,13 +7032,6 @@ button.team-member:hover,
   display: block;
   color: var(--muted);
   font-size: 10px;
-}
-.team-member .working {
-  color: #c99030;
-}
-.team-member .attention,
-.team-member .error {
-  color: var(--danger);
 }
 
 .pending-messages {

@@ -7,9 +7,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 // Compare with the actual runtime imports so new components cannot silently go missing.
 const mainSource = await fs.readFile('src/main.tsx', 'utf8');
-const sources = [...mainSource.matchAll(/^import '([^']+\.css)';$/gm)].map(([, file]) =>
-  file.startsWith('.') ? path.join('src', file) : path.join('node_modules', file),
-);
+// Component-owned styles are evaluated before the shell imports. Keep their first
+// occurrence: chat-navigation is also imported by main but applied only once.
+const sources = [
+  ...new Set([
+    'src/chat-state-mark.css',
+    'src/chat-detach-drag.css',
+    'src/chat-navigation.css',
+    'src/git-dock.css',
+    ...[...mainSource.matchAll(/^import '([^']+\.css)';$/gm)].map(([, file]) =>
+      file.startsWith('.') ? path.join('src', file) : path.join('node_modules', file),
+    ),
+  ]),
+];
 const expectedBase = (await Promise.all(sources.map((file) => fs.readFile(file, 'utf8')))).join(
   '\n\n',
 );
@@ -121,7 +131,13 @@ try {
   );
   await editor.scrollIntoViewIfNeeded();
   const css = await editor.inputValue();
-  assert.ok(css === expectedBase, 'debe incluir todas las fuentes CSS, en el orden de aplicación');
+  const firstDifference = [...css].findIndex(
+    (character, index) => character !== expectedBase[index],
+  );
+  assert.ok(
+    css === expectedBase,
+    `debe incluir todas las fuentes CSS, en el orden de aplicación (primera diferencia en ${firstDifference}, actual ${css.length}, esperado ${expectedBase.length})`,
+  );
   assert.equal(await page.locator('.style-state').innerText(), 'Estilos originales');
   // A fixture clipboard exercises the paste event without reading or changing the system clipboard.
   await editor.focus();

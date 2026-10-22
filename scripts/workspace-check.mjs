@@ -115,5 +115,9 @@ try {
     'PASS: watermark, absent lifecycle/mode controls, actual project PTY and cwd, retained buffer, bottom terminal with side Git, 900px layout, Codex first-send startup and auth failure preserves draft.',
   );
 } finally {
-  if (app) await app.close();
+  try {
+    if (app) await app.close();
+  } finally {
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
 }

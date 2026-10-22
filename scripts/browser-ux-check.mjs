@@ -73,7 +73,7 @@ try {
     args: ['.'],
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: path.join(root, 'data'),
       AGENT_DESK_PROFILES_DIR: '',
     },
@@ -156,6 +156,15 @@ try {
   assert.equal(await options.evaluate((element) => element === document.activeElement), true);
   assert.equal(await page.getByRole('combobox', { name: 'Zoom del navegador' }).count(), 0);
   await until(geometryMatches);
+
+  // The options trigger retains keyboard focus when opening. Escape must work
+  // before the user tabs into the secondary controls as well as inside them.
+  await options.focus();
+  await options.press('Enter');
+  assert.equal(await options.getAttribute('aria-expanded'), 'true');
+  await options.press('Escape');
+  assert.equal(await options.getAttribute('aria-expanded'), 'false');
+  assert.equal(await options.evaluate((element) => element === document.activeElement), true);
 
   // Page navigations must not flash the native surface off/on.
   await app.evaluate(({ BrowserWindow }, origin) => {

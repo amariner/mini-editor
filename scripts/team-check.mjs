@@ -1,8 +1,18 @@
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { build, preview } from 'vite';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+import os from 'node:os';
+import path from 'node:path';
+const testBuild = process.env.SOURCE_BUILD
+  ? await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-team-'))
+  : undefined;
+if (testBuild) await build({ build: { outDir: testBuild, emptyOutDir: true }, logLevel: 'silent' });
+const server = await preview({
+  build: { outDir: testBuild ?? 'dist' },
+  preview: { host: '127.0.0.1', port: 0 },
+  logLevel: 'silent',
+});
 const protocol = Number(
   (await fs.readFile('src/runtime.ts', 'utf8')).match(/IPC_VERSION = (\d+)/)[1],
 );
@@ -114,15 +124,20 @@ try {
   assert.equal(await page.locator('.project-subchats .project-chat').count(), 0);
   await page.getByRole('button', { name: 'Expandir subchats de Coordinador Medel' }).click();
   assert.equal(await page.locator('.team-panel').count(), 0);
-  const header = page.locator('.session-tabs-bar');
-  await header.getByRole('button', { name: 'Ver equipo: 3 chats' }).click();
+  assert.equal(await page.locator('.session-tabs-bar').count(), 0);
+  await page.getByRole('button', { name: 'Multichat', exact: true }).click();
+  await page
+    .locator('[data-session-id="root"]')
+    .getByRole('button', { name: 'Ver equipo: 3 chats' })
+    .click();
+  assert.equal(await page.locator('.team-popover:popover-open .chat-state-mark').count(), 3);
   await page
     .locator('.team-popover:popover-open')
     .getByRole('button', { name: /Alinear reservas/ })
     .click();
   assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 'c2');
   await page.locator('.project-chat').filter({ hasText: 'Chat independiente' }).click();
-  assert.equal(await header.locator('.team-indicator').count(), 0);
+  assert.equal(await page.locator('.team-popover:popover-open').count(), 0);
   await page.locator('.project-chat').filter({ hasText: 'Coordinador Medel' }).click();
   for (let i = 0; i < 6; i++)
     await page.evaluate(
@@ -139,12 +154,11 @@ try {
         }),
       i,
     );
-  await header.getByRole('button', { name: 'Ver equipo: 9 chats' }).waitFor();
   const height = await page
     .locator('.project-subchats .project-chat')
     .first()
     .evaluate((el) => el.getBoundingClientRect().height);
-  assert.ok(height >= 28 && height <= 36, `Altura cómoda de navegación: ${height}`);
+  assert.ok(height >= 26 && height <= 30, `Altura compacta de navegación: ${height}`);
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/team-check.png' });
   await page.getByRole('button', { name: 'Multichat', exact: true }).click();
@@ -275,9 +289,10 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    'Equipo UI: filas compactas, indicador superior dinámico, sin bloque vacío, navegación y popover en grid correctos.',
+    'Equipo UI: filas compactas, estados coherentes, navegación, subchats y popover en grid correctos.',
   );
 } finally {
   await browser?.close();
   await server.close();
+  if (testBuild) await fs.rm(testBuild, { recursive: true, force: true });
 }

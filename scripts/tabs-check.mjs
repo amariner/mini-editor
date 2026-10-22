@@ -49,7 +49,7 @@ const settle = async () => {
 const chatButton = (id) => page.locator(`.project-chat-row[data-session-id="${id}"] .project-chat`);
 const expandSidebar = async () => {
   if (await page.locator('.sidebar.collapsed').count()) {
-    await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).dblclick();
+    await page.keyboard.press('Meta+b');
     await page.locator('.sidebar:not(.collapsed)').waitFor();
   }
 };
@@ -147,7 +147,7 @@ try {
     await page.getByRole('button', { name: 'Plegar proyectos', exact: true }).count(),
     0,
   );
-  await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).dblclick();
+  await page.keyboard.press('Meta+b');
   await page.locator('.sidebar.collapsed').waitFor();
   await page.setViewportSize({ width: 900, height: 620 });
   const foldedSettings = await page

@@ -118,10 +118,10 @@ try {
     window.fixture.state.sessions[0].title = 'Chat actualizado';
     window.fixture.publish();
   });
-  await page.getByRole('tab', { name: 'Chat actualizado', exact: true }).waitFor();
+  await page.locator('.project-chat').filter({ hasText: 'Chat actualizado' }).waitFor();
   await page.evaluate(() => window.fixture.releaseSnapshot());
   await page.waitForTimeout(100);
-  assert.equal(await page.getByRole('tab', { name: 'Chat original', exact: true }).count(), 0);
+  assert.equal(await page.locator('.project-chat').filter({ hasText: 'Chat original' }).count(), 0);
 
   const composer = page.getByRole('textbox', { name: 'Mensaje', exact: true });
   await composer.fill('Enviar una sola vez');

@@ -35,7 +35,7 @@ async function launch() {
     args: ['.'],
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: path.join(root, 'data'),
       AGENT_DESK_PROFILES_DIR: '',
     },
@@ -179,8 +179,8 @@ try {
   );
   await call({ type: 'select', ...first });
   assert.ok((await snap()).browsers.length >= 5);
-  await page.getByRole('button', { name: 'Plegar proyectos' }).click();
-  assert.equal((await page.locator('.sidebar').boundingBox()).width, 56);
+  await page.keyboard.press('ControlOrMeta+b');
+  assert.equal(await page.locator('.sidebar.collapsed').count(), 1);
   await fs.mkdir('artifacts', { recursive: true });
   const screenshot = await app.evaluate(async ({ BrowserWindow }) =>
     (await BrowserWindow.getAllWindows()[0].capturePage()).toPNG().toString('base64'),

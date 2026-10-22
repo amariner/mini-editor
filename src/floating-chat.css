@@ -123,8 +123,9 @@ html.floating-chat-document,
 .floating-chat-app .messages {
   padding: calc(var(--floating-gutter, 12px) + 6px) calc(var(--floating-gutter, 12px) + 6px);
 }
-.floating-chat-app .desk-input {
-  margin: 0 var(--floating-gutter, 12px) var(--floating-gutter, 12px);
+.app.floating-chat-app .conversation .desk-input {
+  width: calc(100% - var(--floating-gutter, 12px) * 2);
+  margin: 0 auto var(--floating-gutter, 12px);
   border-radius: var(--floating-composer-radius, 12px);
   /* The writing area keeps its own near-solid layer at any transparency. */
   background: color-mix(
@@ -206,24 +207,6 @@ html.floating-chat-document,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.floating-chat-status {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  background: var(--muted);
-}
-.floating-chat-status.working,
-.floating-chat-status.starting {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 12%, transparent);
-}
-.floating-chat-status.waiting {
-  background: var(--warn);
-}
-.floating-chat-status.error {
-  background: var(--danger);
-}
 .floating-chat-controls {
   display: flex;
   gap: 2px;
@@ -236,6 +219,7 @@ html.floating-chat-document,
   display: grid;
   place-items: center;
   border-radius: 7px;
+  background: transparent;
   color: var(--muted);
 }
 .floating-chat-controls button:hover,

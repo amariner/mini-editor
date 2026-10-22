@@ -1,21 +1,34 @@
 // Cross-provider review queue: isolated fixture, no accounts, agents or remote requests.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { build, preview } from 'vite';
 
 const protocol = Number(
   (await fs.readFile(new URL('../src/runtime.ts', import.meta.url), 'utf8')).match(
     /IPC_VERSION = (\d+)/,
   )[1],
 );
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+const testBuild = process.env.SOURCE_BUILD
+  ? await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-attention-'))
+  : undefined;
+if (testBuild) await build({ build: { outDir: testBuild, emptyOutDir: true }, logLevel: 'silent' });
+const server = await preview({
+  build: { outDir: testBuild ?? 'dist' },
+  preview: { host: '127.0.0.1', port: 0 },
+  logLevel: 'silent',
+});
 let browser;
 try {
   browser = await chromium.launch({ headless: true, channel: 'chrome' });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
-  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('pageerror', (error) => {
+    errors.push(error.message);
+    console.error('Attention fixture page error:', error.message);
+  });
   await page.addInitScript((protocol) => {
     const titles = [
       'Conversación actual',
@@ -98,6 +111,8 @@ try {
           return {
             repository: true,
             branch: 'main',
+            branches: ['main'],
+            commits: [],
             files: [],
             lines: { added: 0, removed: 0 },
             counts: { conflicts: 0 },
@@ -131,7 +146,9 @@ try {
       {
         id: 'question',
         method: 'item/tool/requestUserInput',
-        params: { questions: [{ id: 'env', question: '¿En qué entorno seguimos?' }] },
+        params: {
+          questions: [{ id: 'env', question: '¿En qué entorno seguimos?', options: [] }],
+        },
       },
     ];
     state.sessions[3].status = 'error';
@@ -244,5 +261,6 @@ try {
   );
 } finally {
   await browser?.close();
-  await server.httpServer?.close();
+  await server.close();
+  if (testBuild) await fs.rm(testBuild, { recursive: true, force: true });
 }

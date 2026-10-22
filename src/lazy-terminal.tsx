@@ -9,7 +9,7 @@ export function TerminalView(props: React.ComponentProps<typeof Terminal>) {
   return (
     <Suspense
       fallback={
-        <div role="status" className="muted">
+        <div role="status" className={`terminal-wrap muted ${props.visible ? '' : 'hidden'}`}>
           Abriendo terminal…
         </div>
       }

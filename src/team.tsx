@@ -1,5 +1,5 @@
 import React, { useId, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Users, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Users, X } from 'lucide-react';
 import type { Action, Session, Snapshot } from './shared';
 import { cardStatus } from './supervision';
 import { chatDetachHint, useChatDetachDrag } from './chat-detach-drag';
@@ -460,7 +460,7 @@ export function TeamIndicator({
                   {cardStatus(s)[1]}
                 </small>
               </span>
-              <Circle size={6} fill="currentColor" className={cardStatus(s)[0]} />
+              <ChatStateMark tone={cardStatus(s)[0]} status={cardStatus(s)[1]} />
             </button>
           ))}
         {agents.map((agent) => (
@@ -473,7 +473,7 @@ export function TeamIndicator({
                   : 'Trabajando'}
               </small>
             </span>
-            <i className="team-active" />
+            <ChatStateMark tone="working" status="Trabajando" />
           </div>
         ))}
       </div>

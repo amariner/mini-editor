@@ -8,7 +8,9 @@ Los cambios de ese ordenador podrían seguir sin subir. Esta rama no presupone q
 
 Antes de integrar, guarda el trabajo del otro ordenador en su propia rama con commits y conserva cualquier archivo local que Git ignore. Después trae ambas ramas al mismo repositorio. Crea una rama de integración desde el desarrollo más reciente y combina `codex/app-quality-review` mediante un merge normal; resuelve cada conflicto conservando las funcionalidades de ambos lados. Evita reemplazar carpetas completas por esta copia.
 
-La rama queda local, sin publicar. El archivo `artifacts/agent-desk-quality.bundle` permite trasladar los commits sin copiar carpetas de desarrollo ni datos privados. El repositorio de destino debe contener la base `fd8040d` (si falta, actualiza sus referencias desde GitHub). Desde ese repositorio puedes importar la rama con:
+La rama de entrega es [`codex/app-quality-review`](https://github.com/amariner/mini-editor/tree/codex/app-quality-review). Se publica por separado de `main` para poder combinar el trabajo del otro ordenador. Al preparar la entrega, `origin/main` seguía en `fd8040d`; no había nuevas ramas remotas. Desde el otro ordenador puedes traerla con `git fetch origin` y revisar `origin/codex/app-quality-review` antes de integrarla.
+
+El archivo `artifacts/agent-desk-quality.bundle` ofrece además una copia de los commits para trasladarlos sin copiar carpetas de desarrollo ni datos privados. El repositorio de destino debe contener la base `fd8040d` (si falta, actualiza sus referencias desde GitHub). Desde ese repositorio puedes importar la rama con:
 
 ```bash
 git fetch /ruta/agent-desk-quality.bundle codex/app-quality-review:codex/app-quality-review
@@ -104,3 +106,29 @@ Verificación: **275/275 pruebas de lógica**, TypeScript y compilación de prod
 Tras añadir el acordeón por proyecto pasan TypeScript, compilación y **50 comprobaciones de interfaz** (26 de navegación y 24 del lateral). Se verifica plegado independiente, persistencia, teclado, contenido oculto fuera del foco, conservación de borradores y orden, movimiento reducido, doble clic del panel y creación de chat desde un proyecto plegado. Capturas: `artifacts/sidebar-refinement/dark-project-accordion.png` y `light-project-accordion.png`.
 
 La separación posterior de gestos pasa TypeScript, compilación y las **26 comprobaciones de navegación**: solo el doble clic en la zona libre pliega el panel; en el nombre del proyecto renombra, conserva el acordeón y permite guardar o cancelar. F2 sigue disponible.
+
+## Último repaso de componentes
+
+La revisión final mantiene la estética acordada: iconos de proyecto rellenos, estados de contorno fino, color suave al completar, acciones visibles al pasar por cada bloque y escritura con un máximo de 780 px. Se ha revisado el lateral, conversación, multichat, ventanas flotantes, Git/worktrees, búsqueda, avisos, bienvenida, ajustes, cuentas, temas, navegador, terminal y divisores.
+
+Correcciones de esta pasada:
+
+- Multichat, ventanas flotantes y equipos reutilizan los mismos indicadores de estado que el lateral. Se eliminan las antiguas bolitas y sus reglas CSS.
+- Las ventanas flotantes recuperan sus márgenes laterales de 12 px; los botones de su cabecera quedan discretos. El menú de ventana se cierra cuando el foco sale de él.
+- El compositor de multichat comparte los 780 px de superficie de escritura y su indicación vacía no se parte en una segunda línea recortada.
+- Renombrar un proyecto devuelve el foco a su botón sin quitárselo a otro control elegido por el usuario. Enter durante composición de texto no confirma el nombre prematuramente.
+- Git ajusta textos largos al panel, usa el color neutro de la interfaz para el aislamiento y corrige los contadores singulares. El cierre anuncia el atajo Escape.
+- Escape cierra las opciones del navegador desde toda su barra. El estado de carga del terminal respeta su visibilidad y mantiene el contenedor.
+- Los mensajes largos anuncian su estado expandido. El editor de estilos incluye todos los CSS nuevos y conserva su carga bajo demanda.
+
+Se actualizaron las pruebas que todavía buscaban pestañas superiores o botones de plegado retirados. Las fixtures de Git incluyen el estado completo, ya que su panel permanece montado para conservar operaciones y borradores. Las pruebas nativas finales usan la compilación estable, evitando que una recarga de desarrollo interrumpa el recorrido.
+
+La compilación completa (`npm run build`), **275/275 pruebas de lógica** y los **24 recorridos de interfaz** enumerados abajo pasan. El bundle JavaScript principal final ocupa **475,88 kB**, **151,92 kB gzip**; sigue por debajo de los 543,06 kB iniciales, sin añadir dependencias. No se ha medido la memoria total del proceso Electron en esta pasada.
+
+Para repetir los recorridos de interfaz con datos temporales, después de compilar:
+
+```bash
+SOURCE_BUILD=1 node scripts/ui-regression.mjs project-navigation sidebar-refinement design-audit ui-polish state-sync onboarding settings-polish interface attention chat-design chat-interactions multichat team compact-chat floating-chat attachments response-actions browser browser-ux browser-tabs workspace worktree-ui navigation tabs
+```
+
+La cobertura incluye claro y oscuro, alto contraste, movimiento reducido, teclado, nombres largos, ventanas estrechas, arrastre, renombrado, foco, confirmaciones, conservación de borradores, Git y procesos de terminal. Las capturas quedan en `artifacts/` y los recorridos ejecutados con el coordinador escriben sus logs en `artifacts/v20/`. Las cuentas y respuestas de proveedor usadas por estas pruebas son simuladas; los cambios no publicados del otro ordenador quedan pendientes de integración.

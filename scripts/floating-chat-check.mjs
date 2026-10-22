@@ -170,6 +170,13 @@ try {
     exact: true,
   });
   await optionsButton.click();
+  await one.getByRole('button', { name: 'Volver al editor', exact: true }).focus();
+  assert.equal(
+    await one.getByRole('dialog', { name: 'Opciones de ventana flotante', exact: true }).count(),
+    0,
+    'the floating options close when keyboard focus returns to the header',
+  );
+  await optionsButton.click();
   await optionsButton.click();
   assert.equal(
     await one.getByRole('dialog', { name: 'Opciones de ventana flotante', exact: true }).count(),
@@ -260,16 +267,20 @@ try {
   await one.waitForTimeout(200);
   const layout = await one.evaluate(() => {
     const composer = document.querySelector('.composer textarea').getBoundingClientRect();
+    const writing = document.querySelector('.desk-input').getBoundingClientRect();
     return {
       right: composer.right,
       bottom: composer.bottom,
       width: innerWidth,
       height: innerHeight,
       overflow: document.documentElement.scrollWidth > innerWidth,
+      insetLeft: writing.left,
+      insetRight: innerWidth - writing.right,
     };
   });
   assert.ok(layout.right <= layout.width && layout.bottom <= layout.height, JSON.stringify(layout));
   assert.equal(layout.overflow, false);
+  assert.ok(layout.insetLeft >= 12 && layout.insetRight >= 12, JSON.stringify(layout));
   await fs.mkdir('artifacts', { recursive: true });
   // Render streamed backend snapshots in the actual native renderer, without model calls.
   const fixture = await snapshot(page);
@@ -324,6 +335,7 @@ try {
     await one.screenshot({ path: 'artifacts/floating-chat-options.png', animations: 'disabled' });
     await one.keyboard.press('Escape');
     await one.emulateMedia({ colorScheme: 'light' });
+    await one.waitForTimeout(300);
     await one.screenshot({ path: 'artifacts/floating-chat-light.png' });
     await one.emulateMedia({ colorScheme: 'dark' });
   } finally {

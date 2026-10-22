@@ -507,16 +507,20 @@ try {
     await assertStableProject(projectExpandedBeforeRename, 'Double-click rename');
     await name.fill('Nombre que se cancela');
     await name.press('Escape');
+    await page.waitForFunction(() => document.activeElement?.matches('.project-name'));
     assert.equal(await projectName.getAttribute('aria-label'), 'Estudio');
     await assertStableProject(projectExpandedBeforeRename, 'Cancelling rename');
 
     await projectName.dblclick();
     await name.fill('Estudio de interfaz');
+    await name.dispatchEvent('keydown', { key: 'Enter', isComposing: true });
+    assert.equal(await name.isVisible(), true, 'IME confirmation must not save the project name');
     await name.press('Enter');
     await page.waitForFunction(
       () => window.fixture.state.projects[0].name === 'Estudio de interfaz',
     );
     await assertStableProject(projectExpandedBeforeRename, 'Saving rename');
+    await page.waitForFunction(() => document.activeElement?.matches('.project-name'));
     await projectName.focus();
     await projectName.press('F2');
     await name.fill('Estudio de navegación');

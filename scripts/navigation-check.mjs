@@ -55,7 +55,7 @@ try {
   await page.keyboard.press('Meta+k');
   await page.getByPlaceholder('Buscar proyecto o sesión…').waitFor();
   await page.keyboard.press('Escape');
-  // F2 renames a project without changing the double-click folding gesture.
+  // F2 and double-click rename; only free sidebar space folds the whole panel.
   await page.getByRole('button', { name: 'Proyecto uno', exact: true }).focus();
   await page.keyboard.press('F2');
   let input = page.getByRole('textbox', { name: 'Nombre del proyecto', exact: true });
@@ -76,6 +76,9 @@ try {
   await input.press('Enter');
   assert.equal((await snap()).projects.find((p) => p.id === original.id).name, 'Landing');
   await page.getByRole('button', { name: 'Landing', exact: true }).dblclick();
+  await input.waitFor();
+  await input.press('Escape');
+  await page.locator('.sidebar').dblclick({ position: { x: 2, y: 300 } });
   await page.locator('.sidebar.collapsed').waitFor();
   assert.equal(await search.count(), 0);
   await page.getByRole('button', { name: 'Landing', exact: true }).focus();
@@ -85,21 +88,21 @@ try {
   await until(
     async () => (await snap()).projects.find((p) => p.id === original.id).name === 'Landing web',
   );
-  await page.getByRole('button', { name: 'Landing web', exact: true }).click();
+  const project = page.getByRole('button', { name: 'Landing web', exact: true });
+  if ((await project.getAttribute('aria-expanded')) !== 'true') await project.click();
   const first = (await snap()).selectedSession;
+  await project.hover();
   await page.getByRole('button', { name: 'Nuevo chat en Landing web', exact: true }).click();
-  await page.getByRole('button', { name: 'Cambiar de chat: Sesión 2', exact: true }).click();
-  await page.getByRole('menuitemradio', { name: /Sesión 1/ }).click();
-  await page.getByRole('button', { name: 'Cambiar de chat: Sesión 1', exact: true }).press('F2');
+  const firstChat = page.locator('.project-chat').filter({ hasText: 'Sesión 1' }).first();
+  await firstChat.click();
+  await firstChat.press('F2');
   const title = page.getByRole('textbox', { name: 'Nombre del chat', exact: true });
   await title.fill('Revisar estilos');
   await title.press('Enter');
   await until(
     async () => (await snap()).sessions.find((s) => s.id === first).title === 'Revisar estilos',
   );
-  await page
-    .getByRole('button', { name: 'Cambiar de chat: Revisar estilos', exact: true })
-    .press('F2');
+  await page.locator('.project-chat').filter({ hasText: 'Revisar estilos' }).press('F2');
   await title.fill('Cancelar chat');
   await title.press('Escape');
   assert.equal((await snap()).sessions.find((s) => s.id === first).title, 'Revisar estilos');
@@ -146,11 +149,7 @@ try {
     ),
   );
   assert.equal((await snap()).terminals.length, 1);
-  assert.ok(
-    await page
-      .getByRole('button', { name: 'Cambiar de chat: Revisar estilos', exact: true })
-      .isVisible(),
-  );
+  assert.ok(await page.locator('.project-chat').filter({ hasText: 'Revisar estilos' }).isVisible());
   assert.ok(
     await page.locator('.work-area').evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
   );
@@ -174,4 +173,5 @@ try {
   );
 } finally {
   await app?.close();
+  await fs.rm(root, { recursive: true, force: true });
 }

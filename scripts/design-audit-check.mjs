@@ -86,7 +86,7 @@ try {
     await page.goto(server.resolvedUrls.local[0]);
     await page.locator('.workspace .composer').waitFor();
     await page.locator('.project-chat:not(.selected)').first().click();
-    await page.locator('.session-tab:not(.selected)').waitFor();
+    await page.locator('.project-chat.selected').waitFor();
     await page.keyboard.press('Tab');
     const settingsButton = page.getByRole('button', { name: 'Ajustes', exact: true });
     await settingsButton.focus();
@@ -105,14 +105,12 @@ try {
         return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
       };
       const background = luminance(getComputedStyle(document.documentElement).backgroundColor);
-      const ratios = ['.project-chat:not(.selected)', '.session-tab:not(.selected)'].map(
-        (selector) => {
-          const foreground = luminance(getComputedStyle(document.querySelector(selector)).color);
-          return (
-            (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
-          );
-        },
-      );
+      const ratios = ['.project-chat:not(.selected)', '.project-name'].map((selector) => {
+        const foreground = luminance(getComputedStyle(document.querySelector(selector)).color);
+        return (
+          (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
+        );
+      });
       const codeBackground = luminance(
         getComputedStyle(document.querySelector('.workspace .md-code')).backgroundColor,
       );
@@ -127,7 +125,7 @@ try {
       `${colorScheme} navigation contrast: ${contrast}`,
     );
     console.log(
-      `${colorScheme} contrast (sidebar, tabs, code comments): ${contrast.map((value) => value.toFixed(2)).join(', ')}`,
+      `${colorScheme} contrast (chats, projects, code comments): ${contrast.map((value) => value.toFixed(2)).join(', ')}`,
     );
     await page.screenshot({ path: `artifacts/design-audit/workspace-${colorScheme}.png` });
     await page.keyboard.press('Meta+k');
@@ -194,7 +192,7 @@ try {
     await page.emulateMedia({ forcedColors: 'active' });
     for (const control of [
       settingsButton,
-      page.getByRole('tab', { name: 'Revisar el proyecto 1', exact: true }),
+      page.locator('.project-chat').filter({ hasText: 'Revisar el proyecto 1' }),
     ]) {
       await control.focus();
       const focus = await control.evaluate((el) => {

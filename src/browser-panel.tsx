@@ -218,7 +218,16 @@ export function BrowserPanel({
     }
   };
   return (
-    <section className="tool-pane browser-pane" aria-label="Navegador integrado">
+    <section
+      className="tool-pane browser-pane"
+      aria-label="Navegador integrado"
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !optionsOpen) return;
+        event.stopPropagation();
+        setOptionsOpen(false);
+        optionsButton.current?.focus();
+      }}
+    >
       <form
         className="browser-toolbar"
         onSubmit={(e) => {
@@ -317,12 +326,6 @@ export function BrowserPanel({
         className={`browser-options ${optionsOpen ? 'is-open' : ''}`}
         inert={!optionsOpen}
         aria-hidden={!optionsOpen}
-        onKeyDown={(event) => {
-          if (event.key !== 'Escape') return;
-          event.stopPropagation();
-          setOptionsOpen(false);
-          optionsButton.current?.focus();
-        }}
       >
         <div className="browser-options-clip">
           <div

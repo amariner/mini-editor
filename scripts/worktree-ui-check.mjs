@@ -1,15 +1,23 @@
 // Renderer-only fixture for worktree isolation: no accounts, provider processes or model calls.
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { build, preview } from 'vite';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 const protocol = Number(
   (await fs.readFile('src/runtime.ts', 'utf8')).match(/IPC_VERSION = (\d+)/)[1],
 );
 await fs.mkdir('artifacts', { recursive: true });
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
-let browser;
+const output = await fs.mkdtemp(path.join(os.tmpdir(), 'desk-worktree-ui-'));
+let browser, server;
 try {
+  await build({ build: { outDir: output, emptyOutDir: true }, logLevel: 'silent' });
+  server = await preview({
+    build: { outDir: output },
+    preview: { host: '127.0.0.1', port: 0 },
+    logLevel: 'silent',
+  });
   browser = await chromium.launch({ headless: true, channel: 'chrome' });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const errors = [];
@@ -145,13 +153,13 @@ try {
     };
   }, protocol);
   await page.goto(server.resolvedUrls.local[0]);
-  // Isolated chat: branch strip, duplicate action and the worktree panel of the Git bar.
-  const strip = page.locator('.isolation-bar');
-  await strip.getByText('agent-desk/arreglar-login-s0').waitFor();
-  assert.ok(await strip.getByRole('button', { name: 'Duplicar chat' }).isVisible());
+  // Isolation and worktree actions share the compact Git popover below the composer.
   const gitToggle = page.getByRole('button', { name: 'Gestionar ramas y Git' });
   await gitToggle.getByText('Worktree · agent-desk/arreglar-login-s0').waitFor();
   await gitToggle.click();
+  const strip = page.locator('.isolation-bar');
+  await strip.getByText('agent-desk/arreglar-login-s0').waitFor();
+  assert.ok(await strip.getByRole('button', { name: 'Duplicar chat' }).isVisible());
   const panel = page.locator('.worktree-panel');
   await panel.getByText('1 archivos sin commit · 1 commits por fusionar').waitFor();
   await page.screenshot({ path: 'artifacts/worktree-panel.png' });
@@ -164,6 +172,7 @@ try {
   await panel.getByRole('alertdialog', { name: 'Confirmar descarte' }).waitFor();
   await page.screenshot({ path: 'artifacts/worktree-merge-conflict.png' });
   await panel.getByRole('button', { name: 'Cancelar' }).click();
+  await page.keyboard.press('Escape');
   // Per-turn undo: dry run preview, then confirm.
   const userRow = page.locator('.row.user:visible').first();
   await userRow.hover();
@@ -186,12 +195,16 @@ try {
     ],
   );
   // Duplicate opens the copy with the same history.
+  await gitToggle.click();
   await strip.getByRole('button', { name: 'Duplicar chat' }).click();
+  await page.waitForFunction(() => window.fixture.state.selectedSession === 's3');
+  await gitToggle.click();
   await page.locator('.isolation-bar').getByText('agent-desk/arreglar-login-copia-s3').waitFor();
   await page.locator('.row.user:visible', { hasText: 'Arregla el login' }).waitFor();
   // A new chat defaults to isolation because another agent is running.
   await page.evaluate(() => sessionStorage.setItem('fixture-selected', 's2'));
   await page.reload();
+  await gitToggle.click();
   const toggle = page.getByRole('checkbox', { name: /Aislar en worktree/ });
   await toggle.waitFor();
   assert.equal(await toggle.isChecked(), true);
@@ -208,6 +221,7 @@ try {
     (await page.evaluate(() => window.fixture.actions)).find((a) => a.type === 'setIsolation'),
     { type: 'setIsolation', sessionId: 's2', isolation: 'shared' },
   );
+  await page.keyboard.press('Escape');
   // Multichat card shows the worktree branch and a duplicate action.
   await page.getByRole('button', { name: 'Multichat', exact: true }).click();
   await page
@@ -229,5 +243,6 @@ try {
   );
 } finally {
   await browser?.close();
-  await server.httpServer.close();
+  await server?.close();
+  await fs.rm(output, { recursive: true, force: true });
 }

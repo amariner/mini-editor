@@ -33,7 +33,7 @@ try {
     args: ['.'],
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: path.join(root, 'data'),
       AGENT_DESK_PROFILES_DIR: '',
     },
@@ -46,10 +46,11 @@ try {
   await app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
   }, folder);
+  await page.locator('.sidebar').hover();
   await page.getByRole('button', { name: 'Añadir proyecto', exact: true }).first().click();
   await page.locator('.chat-watermark').waitFor();
   assert.equal(await page.locator('.search-trigger').count(), 0);
-  assert.equal(await page.getByRole('button', { name: 'Buscar proyectos y sesiones' }).count(), 1);
+  assert.equal(await page.getByRole('button', { name: 'Buscar proyectos y sesiones' }).count(), 0);
   assert.equal(await page.locator('.composer-hint, .conv-foot, .crumb > strong').count(), 0);
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundImage), 'none');
   assert.equal(await page.getByRole('button', { name: 'Navegador', exact: true }).count(), 0);
@@ -168,15 +169,15 @@ try {
     Buffer.from(unseenShot.image, 'base64'),
   );
   // Resize across a native browser surface: pointer capture must survive until release.
-  await page.getByRole('button', { name: 'Plegar proyectos' }).click();
+  await page.keyboard.press('ControlOrMeta+b');
   const mark = await page.locator('.project-mark').first().innerHTML();
-  const rail = await page.locator('.sidebar').boundingBox();
-  assert.equal(rail.width, 56);
+  assert.equal(await page.locator('.sidebar.collapsed').count(), 1);
   assert.equal(await page.locator('.project-initial').count(), 0);
   const divider = page.getByRole('separator', { name: 'Ancho del chat' });
   await page.waitForTimeout(250);
   const bounds = await divider.boundingBox();
   const workspace = await page.locator('.workspace').boundingBox();
+  await page.bringToFront();
   await page.mouse.move(bounds.x + 4, bounds.y + 80);
   await page.mouse.down();
   await page.mouse.move(workspace.x + 220, bounds.y + 80, { steps: 12 });

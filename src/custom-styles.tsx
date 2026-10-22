@@ -251,6 +251,10 @@ export function StyleEditor() {
     let alive = true;
     // Loaded on demand: the editor's source CSS is only needed while this panel is open.
     void Promise.all([
+      import('./chat-state-mark.css?raw'),
+      import('./chat-detach-drag.css?raw'),
+      import('./chat-navigation.css?raw'),
+      import('./git-dock.css?raw'),
       import('@xterm/xterm/css/xterm.css?raw'),
       import('./style.css?raw'),
       import('./shell-polish.css?raw'),
@@ -262,6 +266,8 @@ export function StyleEditor() {
       import('./motion.css?raw'),
       import('./floating-chat.css?raw'),
       import('./onboarding.css?raw'),
+      import('./project-navigation.css?raw'),
+      import('./composer-dock.css?raw'),
     ]).then((styles) => alive && setBase(styles.map((style) => style.default).join('\n\n')));
     const sync = () => {
       documentVersion.current++;

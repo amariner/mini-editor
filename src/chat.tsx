@@ -613,7 +613,11 @@ function UserMessage({ m }: { m: Message }) {
         ) : null}
         {long ? <div className={`bubble-text ${expanded ? '' : 'clamped'}`}>{m.text}</div> : m.text}
         {long && (
-          <button className="bubble-more" onClick={() => setExpanded((v) => !v)}>
+          <button
+            className="bubble-more"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+          >
             {expanded ? 'Mostrar menos' : 'Mostrar todo'}
           </button>
         )}

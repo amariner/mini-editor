@@ -580,6 +580,7 @@ try {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'artifacts/multichat-16-dark.png' });
+  assert.equal(await grid.locator('.multichat-card-head > .chat-state-mark').count(), 16);
   await page.evaluate(() => {
     window.fixture.state.sessions[0].messages[1].blocks.find((b) => b.type === 'tool_use').done =
       true;
