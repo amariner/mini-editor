@@ -20,15 +20,16 @@ const until = async (fn) => {
 };
 async function launch() {
   app = await electron.launch({
+    timeout: 25000,
     args: ['.'],
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: path.join(root, 'data'),
       AGENT_DESK_PROFILES_DIR: '',
     },
   });
-  page = await app.firstWindow();
+  page = await app.firstWindow({ timeout: 25000 });
   page.on('pageerror', (e) => errors.push(e.message));
   await page.waitForFunction(() => !!window.desk);
   await createTestAccounts(page);
@@ -43,17 +44,20 @@ try {
     await call({ type: 'addProject' });
   }
   await page.getByRole('button', { name: 'Proyecto uno', exact: true }).waitFor();
+  await page.locator('.sidebar').hover();
   const plus = await page
     .getByRole('button', { name: 'Añadir proyecto', exact: true })
     .boundingBox();
+  const mark = await page.locator('.project-name .project-mark').first().boundingBox();
+  assert.ok(Math.abs(plus.x + plus.width / 2 - mark.x - mark.width / 2) < 2);
   const search = page.getByRole('button', { name: 'Buscar proyectos y sesiones' });
-  const sb = await search.boundingBox();
-  assert.ok(plus.x < sb.x && Math.abs(plus.y - sb.y) < 1 && plus.x < 35);
-  await search.click();
+  assert.equal(await search.count(), 0, 'Search is hidden while projects fit without scrolling');
+  await page.keyboard.press('Meta+k');
   await page.getByPlaceholder('Buscar proyecto o sesión…').waitFor();
   await page.keyboard.press('Escape');
-  // Double click an inactive project; selection must not swallow the second click.
-  await page.getByRole('button', { name: 'Proyecto uno', exact: true }).dblclick();
+  // F2 renames a project without changing the double-click folding gesture.
+  await page.getByRole('button', { name: 'Proyecto uno', exact: true }).focus();
+  await page.keyboard.press('F2');
   let input = page.getByRole('textbox', { name: 'Nombre del proyecto', exact: true });
   await input.fill('Landing');
   await input.press('Enter');
@@ -61,33 +65,41 @@ try {
   const original = (await snap()).projects.find((p) => p.name === 'Landing');
   assert.equal(original.path, folders[0]);
   assert.equal((await fs.stat(folders[0])).isDirectory(), true);
-  await page.getByRole('button', { name: 'Landing', exact: true }).dblclick();
+  await page.getByRole('button', { name: 'Landing', exact: true }).focus();
+  await page.keyboard.press('F2');
   await input.fill('Cancelar');
   await input.press('Escape');
   assert.equal((await snap()).projects.find((p) => p.id === original.id).name, 'Landing');
-  await page.getByRole('button', { name: 'Landing', exact: true }).dblclick();
+  await page.getByRole('button', { name: 'Landing', exact: true }).focus();
+  await page.keyboard.press('F2');
   await input.fill('   ');
   await input.press('Enter');
   assert.equal((await snap()).projects.find((p) => p.id === original.id).name, 'Landing');
-  await page.getByRole('button', { name: 'Plegar proyectos' }).click();
-  assert.equal(await search.count(), 0);
   await page.getByRole('button', { name: 'Landing', exact: true }).dblclick();
+  await page.locator('.sidebar.collapsed').waitFor();
+  assert.equal(await search.count(), 0);
+  await page.getByRole('button', { name: 'Landing', exact: true }).focus();
+  await page.keyboard.press('F2');
   await input.fill('Landing web');
-  await page.getByRole('button', { name: 'Plegar proyectos', exact: true }).click();
+  await page.locator('.sidebar .section-label').click({ position: { x: 1, y: 1 } });
   await until(
     async () => (await snap()).projects.find((p) => p.id === original.id).name === 'Landing web',
   );
+  await page.getByRole('button', { name: 'Landing web', exact: true }).click();
   const first = (await snap()).selectedSession;
-  await page.getByRole('button', { name: 'Nueva conversación', exact: true }).click();
-  await page.getByRole('tab', { name: 'Sesión 2', exact: true }).waitFor();
-  await page.getByRole('tab', { name: 'Sesión 1', exact: true }).dblclick();
+  await page.getByRole('button', { name: 'Nuevo chat en Landing web', exact: true }).click();
+  await page.getByRole('button', { name: 'Cambiar de chat: Sesión 2', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: /Sesión 1/ }).click();
+  await page.getByRole('button', { name: 'Cambiar de chat: Sesión 1', exact: true }).press('F2');
   const title = page.getByRole('textbox', { name: 'Nombre del chat', exact: true });
   await title.fill('Revisar estilos');
   await title.press('Enter');
   await until(
     async () => (await snap()).sessions.find((s) => s.id === first).title === 'Revisar estilos',
   );
-  await page.getByRole('tab', { name: 'Revisar estilos', exact: true }).dblclick();
+  await page
+    .getByRole('button', { name: 'Cambiar de chat: Revisar estilos', exact: true })
+    .press('F2');
   await title.fill('Cancelar chat');
   await title.press('Escape');
   assert.equal((await snap()).sessions.find((s) => s.id === first).title, 'Revisar estilos');
@@ -134,7 +146,11 @@ try {
     ),
   );
   assert.equal((await snap()).terminals.length, 1);
-  assert.ok(await page.getByRole('tab', { name: 'Revisar estilos', exact: true }).isVisible());
+  assert.ok(
+    await page
+      .getByRole('button', { name: 'Cambiar de chat: Revisar estilos', exact: true })
+      .isVisible(),
+  );
   assert.ok(
     await page.locator('.work-area').evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
   );
@@ -154,7 +170,7 @@ try {
   for (const folder of folders) assert.deepEqual(await fs.readdir(folder), []);
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: left +/search, collapsed search hidden, inline project/chat rename including inactive selection, Enter/Escape/blur/empty behavior, persistent metadata only, bottom PTY/cwd/buffer retention; project folders unchanged.',
+    'PASS: aligned hover add, overflow-only search, double-click folding, F2 project/chat rename including inactive selection, Enter/Escape/blur/empty behavior, persistent metadata only, bottom PTY/cwd/buffer retention; project folders unchanged.',
   );
 } finally {
   await app?.close();

@@ -220,8 +220,11 @@ try {
       'Closing a resolved queue must restore a usable control when its trigger disappears',
     );
 
-    const search = page.getByRole('button', { name: 'Buscar proyectos y sesiones', exact: true });
-    await search.click();
+    assert.equal(
+      await page.getByRole('button', { name: 'Buscar proyectos y sesiones', exact: true }).count(),
+      0,
+    );
+    await page.keyboard.press('Meta+k');
     await page
       .getByRole('combobox', { name: 'Buscar proyecto o sesión', exact: true })
       .fill('tokens');
@@ -262,7 +265,7 @@ try {
     });
 
     // Project rail state survives reload; native window controls retain a clear drag area.
-    await page.getByRole('button', { name: 'Plegar proyectos' }).click();
+    await page.locator('.project-name').first().dblclick();
     await page.reload();
     await page.locator('.sidebar.collapsed').waitFor();
     await page.getByRole('button', { name: 'Multichat', exact: true }).click();

@@ -1,0 +1,195 @@
+.git-summary .chat-switcher {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 48px;
+  max-width: 28%;
+}
+.git-summary .git-current-chat {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 32%;
+  padding: 3px 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.git-summary .chat-switcher-trigger {
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-2);
+  font-size: 11px;
+  touch-action: none;
+}
+.chat-switcher-trigger > span,
+.chat-switcher-heading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-switcher-trigger > svg {
+  flex: none;
+}
+.chat-switcher-dragging .chat-switcher-trigger {
+  opacity: 0.45;
+}
+.chat-switcher .inline-name {
+  min-width: 0;
+  width: 180px;
+  max-width: 100%;
+  height: 26px;
+  font-size: 11px;
+}
+.chat-switcher-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 5px;
+  width: min(340px, calc(100vw - 16px));
+  max-height: min(420px, calc(100vh - 16px));
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 12px 36px #0003;
+  overflow: hidden;
+}
+.chat-switcher-menu:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+.chat-switcher-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  gap: 12px;
+  padding: 7px 8px 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.chat-switcher-heading small {
+  flex: none;
+  font-size: inherit;
+}
+.chat-switcher-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.chat-switcher-menu .chat-switcher-option,
+.chat-switcher-menu .chat-switcher-rename {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 8px;
+  gap: 9px;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  font-size: 12px;
+}
+.chat-switcher-menu .chat-switcher-option:hover,
+.chat-switcher-menu .chat-switcher-option:focus-visible,
+.chat-switcher-menu .chat-switcher-rename:hover,
+.chat-switcher-menu .chat-switcher-rename:focus-visible {
+  background: var(--tile-hover);
+  color: var(--text);
+}
+.chat-switcher-menu .chat-switcher-option[aria-checked='true'] {
+  background: var(--tile);
+  color: var(--text);
+}
+.chat-switcher-option > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+.chat-switcher-option strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+.chat-switcher-option small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.chat-switcher-option svg,
+.chat-switcher-rename svg {
+  flex: none;
+}
+.chat-switcher-status {
+  color: var(--muted);
+}
+.chat-switcher-status.working {
+  color: var(--accent);
+}
+.chat-switcher-status.attention,
+.chat-switcher-status.error {
+  color: var(--danger);
+}
+.chat-switcher-status.done {
+  color: var(--success, #78ae86);
+}
+.chat-switcher-menu .chat-switcher-rename {
+  flex: none;
+  margin-top: 5px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+  font-size: 11px;
+}
+.chat-switcher-rename kbd {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+.git-summary:has(.chat-switcher) .git-branch-toggle {
+  max-width: 35%;
+}
+.git-summary:has(.chat-switcher) .team-indicator {
+  flex: none;
+}
+.git-workflow .isolation-bar {
+  padding: 0 0 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.git-workflow .isolation-toggle {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+.git-workflow .isolation-toggle .muted {
+  white-space: normal;
+}
+.git-summary .git-branch-toggle.worktree-pending {
+  color: var(--text-2);
+}
+@media (max-width: 700px) {
+  .git-summary:has(.chat-switcher) .git-summary-project {
+    max-width: 24%;
+  }
+  .git-summary .chat-switcher {
+    max-width: 32%;
+  }
+  .git-summary:has(.chat-switcher) .git-branch-toggle {
+    max-width: 30%;
+  }
+  .git-summary:has(.chat-switcher) .git-state-label,
+  .git-summary:has(.chat-switcher) .git-sync-counts,
+  .git-summary:has(.chat-switcher) .git-summary-lines {
+    display: none;
+  }
+}

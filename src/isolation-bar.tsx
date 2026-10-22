@@ -72,7 +72,7 @@ export function IsolationBar({
         <button
           className="quiet isolation-fork"
           disabled={disabled}
-          title="Abre una pestaña nueva con el mismo historial en otro worktree para probar otro enfoque en paralelo"
+          title="Abre un chat nuevo con el mismo historial en otro worktree para probar otro enfoque en paralelo"
           onClick={() => void run({ type: 'forkSession', sessionId: session.id, isolate: true })}
         >
           <Copy size={12} /> Duplicar chat

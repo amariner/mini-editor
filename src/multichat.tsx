@@ -1,4 +1,4 @@
-import { FloatChatButton } from './floating-chat';
+import { chatDetachHint, useChatDetachDrag } from './chat-detach-drag';
 import { TeamIndicator } from './team';
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -570,12 +570,10 @@ function Card({
   unseen,
   seen,
   controls,
-  dragging,
   dropTarget,
-  dragStart,
   dragEnd,
-  dragOver,
-  drop,
+  dragMove,
+  dropInside,
   move,
 }: {
   session: Session;
@@ -604,17 +602,29 @@ function Card({
   unseen: boolean;
   seen: () => void;
   controls: ChatControls;
-  dragging: boolean;
   dropTarget: boolean;
-  dragStart: (e: React.DragEvent) => void;
   dragEnd: () => void;
-  dragOver: (e: React.DragEvent) => void;
-  drop: (e: React.DragEvent) => void;
+  dragMove: (x: number, y: number, outside: boolean) => void;
+  dropInside: (x: number, y: number) => void;
   move: (direction: number) => void;
 }) {
   const [tone, label] = status(session);
   const [limit, setLimit] = useState(20);
   const [editingTitle, setEditingTitle] = useState(false);
+  const {
+    handleProps: detachHandle,
+    preview: detachPreview,
+    dragging,
+  } = useChatDetachDrag({
+    session,
+    run: controls.run,
+    floating,
+    disabled: disabled || !compatible || !!controls.busy[session.id] || editingTitle,
+    sourceZone: '.multichat-scroll',
+    onDropInside: dropInside,
+    onDragMove: dragMove,
+    onDragEnd: dragEnd,
+  });
   const [sending, setSending] = useState(false);
   const [picking, setPicking] = useState(false);
   const [showLatest, setShowLatest] = useState(false);
@@ -743,29 +753,18 @@ function Card({
           if (Array.from(e.dataTransfer.types).includes('Files')) {
             e.preventDefault();
             e.dataTransfer.dropEffect = enabled && !floating ? 'copy' : 'none';
-          } else dragOver(e);
+          }
         }}
         onDrop={(e) => {
-          if (!Array.from(e.dataTransfer.types).includes('Files')) return drop(e);
+          if (!Array.from(e.dataTransfer.types).includes('Files')) return;
           e.preventDefault();
           e.stopPropagation();
           if (enabled && !floating) void attach(Array.from(e.dataTransfer.files));
           else setLocalError('Espera a que el chat esté disponible para adjuntar archivos.');
         }}
       >
-        {/* The whole header is the drag handle; the title keeps rename and keyboard moves. */}
-        <div
-          className="multichat-card-head"
-          draggable={!editingTitle}
-          onDragStart={(e) => {
-            if ((e.target as HTMLElement).closest('button:not(.multichat-title)')) {
-              e.preventDefault();
-              return;
-            }
-            dragStart(e);
-          }}
-          onDragEnd={dragEnd}
-        >
+        {/* The title drags within the grid to reorder, or outside it to detach. */}
+        <div className="multichat-card-head">
           <i className="multichat-dot" title={unseen ? 'Terminado sin revisar' : label} />
           {editingTitle ? (
             <EditableName
@@ -776,12 +775,15 @@ function Card({
             />
           ) : (
             <button
+              {...detachHandle}
               className="multichat-title"
               onDoubleClick={() => setEditingTitle(true)}
               onClick={(e) => {
                 if (e.detail === 0) setEditingTitle(true);
               }}
               onKeyDown={(e) => {
+                detachHandle.onKeyDown?.(e);
+                if (e.defaultPrevented) return;
                 if (e.key === 'F2') {
                   e.preventDefault();
                   setEditingTitle(true);
@@ -794,9 +796,9 @@ function Card({
                 }
               }}
               disabled={disabled || !compatible}
-              title={`${session.title}\nDoble clic para renombrar · Arrastra para ordenar`}
+              title={`${session.title}\nDoble clic para renombrar · Arrastra para ordenar\n${chatDetachHint}`}
               aria-label={`Renombrar ${session.title}`}
-              aria-keyshortcuts="F2 Alt+ArrowLeft Alt+ArrowRight"
+              aria-keyshortcuts="F2 Alt+ArrowLeft Alt+ArrowRight Alt+Shift+F"
             >
               <strong>{session.title}</strong>
             </button>
@@ -808,12 +810,6 @@ function Card({
               {index + 1}
             </kbd>
           )}
-          <FloatChatButton
-            session={session}
-            floating={floating}
-            run={controls.run}
-            disabled={disabled || !compatible || !!controls.busy[session.id]}
-          />
           <button
             className="multichat-expand"
             aria-label={`Ampliar ${session.title}`}
@@ -1142,6 +1138,7 @@ function Card({
           </form>
         )}
       </article>
+      {detachPreview}
     </ChatActionsContext.Provider>
   );
 }
@@ -1225,10 +1222,8 @@ export function Multichat({
   const [fit, setFit] = useState(4);
   const [showKeys, setShowKeys] = useState(false);
   useEffect(() => store(layoutKey, layout), [layout]);
-  const [dragged, setDragged] = useState<string>();
   const [target, setTarget] = useState<string>();
   const [announcement, setAnnouncement] = useState('');
-  const dragId = useRef<string | undefined>(undefined);
   const wasPending = useRef(new Map<string, boolean>());
   // Last card clicked or focused: its own finish is already in view.
   const touched = useRef<string | undefined>(undefined);
@@ -1375,8 +1370,6 @@ export function Multichat({
     setAnnouncement('Orden de los chats actualizado');
   };
   const endDrag = () => {
-    dragId.current = undefined;
-    setDragged(undefined);
     setTarget(undefined);
   };
   const focusNext = useRef<string | undefined>(undefined);
@@ -1529,28 +1522,20 @@ export function Multichat({
                   setShowHidden(false);
                   close(s);
                 }}
-                dragging={dragged === s.id}
                 dropTarget={target === s.id}
-                dragStart={(e) => {
-                  dragId.current = s.id;
-                  setDragged(s.id);
-                  e.dataTransfer.effectAllowed = 'move';
-                  e.dataTransfer.setData('application/x-agent-desk-chat', s.id);
-                }}
                 dragEnd={endDrag}
-                dragOver={(e) => {
-                  if (dragId.current && dragId.current !== s.id) {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    setTarget(s.id);
-                  }
+                dragMove={(x, y, outside) => {
+                  const destination = outside
+                    ? undefined
+                    : document.elementFromPoint(x, y)?.closest<HTMLElement>('.multichat-card')
+                        ?.dataset.sessionId;
+                  setTarget(destination === s.id ? undefined : destination);
                 }}
-                drop={(e) => {
-                  if (!dragId.current) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  reorder(dragId.current, s.id);
-                  endDrag();
+                dropInside={(x, y) => {
+                  const destination = document
+                    .elementFromPoint(x, y)
+                    ?.closest<HTMLElement>('.multichat-card')?.dataset.sessionId;
+                  if (destination) reorder(s.id, destination);
                 }}
                 move={(direction) => {
                   const destination = sessions[i + direction];

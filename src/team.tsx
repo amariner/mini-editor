@@ -1,7 +1,64 @@
 import React, { useId, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Trash2, Users } from 'lucide-react';
-import type { Session, Snapshot } from './shared';
+import { ChevronDown, ChevronRight, Circle, Users, X } from 'lucide-react';
+import type { Action, Session, Snapshot } from './shared';
 import { cardStatus } from './supervision';
+import { chatDetachHint, useChatDetachDrag } from './chat-detach-drag';
+
+function ProjectChatRow({
+  session,
+  selected,
+  project,
+  floating,
+  open,
+  remove,
+  run,
+}: {
+  session: Session;
+  selected: boolean;
+  project?: string;
+  floating: boolean;
+  open: (session: Session) => void;
+  remove: (session: Session) => void;
+  run: (action: Action) => Promise<unknown>;
+}) {
+  const [tone, status] = cardStatus(session);
+  const { handleProps, preview, dragging } = useChatDetachDrag({
+    session,
+    run,
+    floating,
+    sourceZone: '.sidebar',
+  });
+  return (
+    <>
+      <div className={`project-chat-target ${dragging ? 'detaching' : ''}`}>
+        <button
+          type="button"
+          {...handleProps}
+          className={`project-chat ${selected ? 'selected' : ''}`}
+          onClick={() => open(session)}
+          aria-current={selected ? 'true' : undefined}
+          title={`${session.title} · ${status}\n${chatDetachHint}`}
+        >
+          <span>{session.title}</span>
+          {project && <small>{project}</small>}
+        </button>
+        <span className={`project-chat-status ${tone}`} aria-hidden="true">
+          <Circle size={7} fill="currentColor" />
+        </span>
+        <button
+          type="button"
+          className="project-chat-delete"
+          aria-label={`Eliminar chat ${session.title}`}
+          title={`Eliminar definitivamente «${session.title}»`}
+          onClick={() => remove(session)}
+        >
+          <X size={13} />
+        </button>
+      </div>
+      {preview}
+    </>
+  );
+}
 
 export function ProjectChats({
   state,
@@ -9,12 +66,14 @@ export function ProjectChats({
   hiddenChats,
   open,
   remove,
+  run,
 }: {
   state: Snapshot;
   projectId: string;
   hiddenChats: string[];
   open: (s: Session) => void;
   remove: (s: Session) => void;
+  run: (action: Action) => Promise<unknown>;
 }) {
   const [folded, setFolded] = useState<string[]>([]);
   const visibleSessions = state.sessions.filter((s) => !hiddenChats.includes(s.id));
@@ -24,28 +83,19 @@ export function ProjectChats({
       (!s.parentId || !visibleSessions.some((p) => p.id === s.parentId)),
   );
   const row = (s: Session, child = false) => (
-    <button
-      className={`project-chat ${state.selectedSession === s.id ? 'selected' : ''}`}
-      onClick={() => open(s)}
-      title={`${s.title} · ${cardStatus(s)[1]}`}
-    >
-      <span>{s.title}</span>
-      {child && s.projectId !== projectId && (
-        <small>{state.projects.find((p) => p.id === s.projectId)?.name}</small>
-      )}
-      <Circle size={7} className={cardStatus(s)[0]} fill="currentColor" />
-    </button>
-  );
-  const deleteButton = (s: Session) => (
-    <button
-      type="button"
-      className="project-chat-delete"
-      aria-label={`Eliminar chat ${s.title}`}
-      title={`Eliminar definitivamente «${s.title}»`}
-      onClick={() => remove(s)}
-    >
-      <Trash2 size={12} />
-    </button>
+    <ProjectChatRow
+      session={s}
+      selected={state.selectedSession === s.id}
+      project={
+        child && s.projectId !== projectId
+          ? state.projects.find((p) => p.id === s.projectId)?.name
+          : undefined
+      }
+      floating={!!state.floatingChats?.some((chat) => chat.sessionId === s.id)}
+      open={open}
+      remove={remove}
+      run={run}
+    />
   );
   return (
     <div className="project-chats">
@@ -70,14 +120,12 @@ export function ProjectChats({
                 </button>
               )}
               {row(s)}
-              {deleteButton(s)}
             </div>
             {!!children.length && !collapsed && (
               <div className="project-subchats">
                 {children.map((c) => (
                   <div key={c.id} className="project-chat-row">
                     {row(c, true)}
-                    {deleteButton(c)}
                   </div>
                 ))}
               </div>

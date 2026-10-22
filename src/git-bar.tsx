@@ -12,6 +12,11 @@ import {
 import type { GitOperation, GitSnapshot, WorktreeMergeResult } from './git-types';
 import { actionError } from './runtime';
 import { ProjectMark } from './project-mark';
+import type { Action, Session } from './shared';
+import { ChatSwitcher } from './chat-switcher';
+import { TeamIndicator } from './team';
+import { IsolationBar } from './isolation-bar';
+import { wantsWorktree } from './isolation';
 
 export function GitBar({
   project,
@@ -24,6 +29,12 @@ export function GitBar({
   locked,
   sessionId,
   agentBusy,
+  session,
+  sessions = [],
+  onSelectSession,
+  run: runAction,
+  navigationDisabled = false,
+  floating = false,
 }: {
   project: { id: string; name: string; path: string };
   state?: GitSnapshot;
@@ -36,6 +47,12 @@ export function GitBar({
   /** Chat whose worktree the snapshot describes (`state.worktree`). */
   sessionId?: string;
   agentBusy?: boolean;
+  session?: Session;
+  sessions?: Session[];
+  onSelectSession?: (session: Session) => void | Promise<unknown>;
+  run?: (action: Action) => Promise<unknown>;
+  navigationDisabled?: boolean;
+  floating?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [branch, setBranch] = useState('');
@@ -99,6 +116,7 @@ export function GitBar({
   const dirty = !!state?.files?.length;
   const counts = state?.counts;
   const worktree = sessionId ? state?.worktree : undefined;
+  const pendingWorktree = !!session && !session.worktree && wantsWorktree(session, sessions);
   return (
     <div className="git-context">
       <div className="git-summary" aria-label="Resumen de cambios del proyecto">
@@ -112,11 +130,42 @@ export function GitBar({
           <ProjectMark identity={project.path} />
           <span>{project.name}</span>
         </button>
+        {session && floating && (
+          <span className="git-current-chat" title={session.title}>
+            {session.title}
+          </span>
+        )}
+        {session && !floating && onSelectSession && runAction && (
+          <ChatSwitcher
+            key={session.id}
+            session={session}
+            sessions={sessions}
+            projectName={project.name}
+            select={onSelectSession}
+            run={runAction}
+            disabled={navigationDisabled}
+            floating={floating}
+          />
+        )}
+        {session && !floating && onSelectSession && (
+          <TeamIndicator
+            key={`team-${session.id}`}
+            session={session}
+            sessions={sessions}
+            open={onSelectSession}
+            compact
+          />
+        )}
         <button
-          className="git-branch-toggle"
+          className={`git-branch-toggle ${pendingWorktree ? 'worktree-pending' : ''}`}
           aria-label="Gestionar ramas y Git"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
+          title={
+            pendingWorktree
+              ? 'Worktree al iniciar · Configurar aislamiento y Git'
+              : 'Ramas, worktrees y cambios de Git'
+          }
         >
           <GitBranch size={13} />
           <span>
@@ -128,7 +177,9 @@ export function GitBar({
                   ? 'Sin repositorio Git'
                   : worktree
                     ? `Worktree · ${worktree.branch}`
-                    : state.branch}
+                    : pendingWorktree
+                      ? `Worktree pendiente · ${state.branch}`
+                      : state.branch}
           </span>
           <ChevronDown size={12} />
         </button>
@@ -180,6 +231,14 @@ export function GitBar({
       </div>
       {open && (
         <section className="git-workflow" aria-label="Flujo de Git">
+          {session && runAction && (
+            <IsolationBar
+              session={session}
+              sessions={sessions}
+              run={runAction}
+              disabled={navigationDisabled || !compatible || !!busy}
+            />
+          )}
           {error ? (
             <p role="alert">{error}</p>
           ) : !state ? (

@@ -1,15 +1,13 @@
-import { FloatChatButton, FloatingChatHeader, DetachedChat } from './floating-chat';
+import { FloatingChatHeader, DetachedChat } from './floating-chat';
 import { floatingChatId } from './floating-chat-state';
 import { useTextDrafts, useImageDrafts, initializeDraftLifetime } from './chat-drafts';
-import { ProjectChats, TeamIndicator } from './team';
+import { ProjectChats } from './team';
 import { Multichat } from './multichat';
 import { GitBar } from './git-bar';
-import { IsolationBar } from './isolation-bar';
 import type { GitSnapshot } from './git-types';
 import { providerKind, providerNames, isCodex } from './shared';
 import { useInterfacePreferences } from './interface-settings';
 import { useModalFocus } from './modal-focus';
-import { navigateTabs } from './tab-keyboard';
 import React, {
   useDeferredValue,
   useEffect,
@@ -36,8 +34,7 @@ import {
   ExternalLink,
   RefreshCw,
   Check,
-  PanelLeftClose,
-  PanelLeftOpen,
+  SquarePen,
   PanelRightOpen,
   PanelBottomOpen,
   ArrowDown,
@@ -51,7 +48,7 @@ import { actionError, assertCompatibleAction, compatibleRuntime, RESTART_NOTICE 
 import { antigravityPermissionNeeded } from './antigravity-permissions';
 import { TerminalView } from './lazy-terminal';
 import { sessionIsLive as live } from './session-tabs';
-import { openSessionTab, sessionGroup, sessionAccountLocked } from './session-tabs';
+import { sessionAccountLocked } from './session-tabs';
 import {
   ClaudeApproval,
   ProviderApproval,
@@ -88,6 +85,9 @@ import './attention.css';
 import './motion.css';
 import './floating-chat.css';
 import './onboarding.css';
+import './project-navigation.css';
+import './chat-navigation.css';
+import { useScrollOverflow } from './scroll-overflow';
 const AccountsSettings = React.lazy(() =>
   import('./accounts-settings').then((module) => ({ default: module.AccountsSettings })),
 );
@@ -110,6 +110,7 @@ function App() {
   const [drafts, setDrafts] = useTextDrafts();
   const [imageDrafts, setImageDrafts] = useImageDrafts();
   const split = useWorkspaceSplit();
+  const projectOverflow = useScrollOverflow();
   const terminalSplit = useWorkspaceSplit({
     storageKey: 'agent-desk.terminal-chat-width',
     cssVariable: '--terminal-chat-width',
@@ -147,7 +148,6 @@ function App() {
     [draggedProject, setDraggedProject] = useState<string>(),
     [projectDrop, setProjectDrop] = useState<string>(),
     [navigating, setNavigating] = useState(false),
-    [tabs, setTabs] = useState<Record<string, string[]>>({}),
     [closedSelection, setClosedSelection] = useState<string>(),
     [confirmClose, setConfirmClose] = useState<{ session: Session; remove: boolean }>(),
     [showDiff, setShowDiff] = useState(false),
@@ -288,24 +288,6 @@ function App() {
     if (!canBrowse) setShowBrowser(false);
   }, [canBrowse, project?.id]);
   useEffect(() => {
-    if (!selectedSession || selectedSession.id === closedSelection) return;
-    setTabs((v) => ({
-      ...v,
-      [sessionGroup(selectedSession)]: openSessionTab(
-        v[sessionGroup(selectedSession)] ?? [],
-        selectedSession,
-        stateRef.current!.sessions,
-      ),
-    }));
-  }, [selectedSession?.id, closedSelection, hiddenChats]);
-  const openTabs = selectedSession
-    ? (tabs[sessionGroup(selectedSession)] ?? [])
-        .map((id) => state?.sessions.find((s) => s.id === id))
-        .filter((s): s is Session => !!s)
-    : [];
-  // Session creation order keeps tabs stationary when navigating; MRU only controls eviction.
-  openTabs.sort((a, b) => state!.sessions.indexOf(a) - state!.sessions.indexOf(b));
-  useEffect(() => {
     try {
       localStorage.setItem('agent-desk.multichat-dismissed.v1', JSON.stringify(hiddenChats));
     } catch {}
@@ -336,8 +318,9 @@ function App() {
       setImageDrafts(withoutDeleted);
       setHiddenChats((ids) => ids.filter((id) => id !== s.id));
     }
-    const remaining = (tabs[sessionGroup(s)] ?? []).filter((id) => id !== s.id);
-    setTabs((v) => ({ ...v, [sessionGroup(s)]: remaining }));
+    const remaining = (stateRef.current?.sessions ?? [])
+      .filter((candidate) => candidate.projectId === s.projectId && candidate.id !== s.id)
+      .map((candidate) => candidate.id);
     if (wasSelected || recentSessions.current[s.projectId] === s.id)
       recentSessions.current[s.projectId] = remaining.at(-1) ?? null;
     if (wasSelected) {
@@ -624,16 +607,8 @@ function App() {
     };
     setDrafts(prune);
     setImageDrafts(prune);
-    setTabs((v) =>
-      Object.fromEntries(
-        Object.entries(v)
-          .filter(([id]) => projects.has(id))
-          .map(([id, tabs]) => [id, tabs.filter((tab) => ids.has(tab))]),
-      ),
-    );
     for (const id of Object.keys(recentSessions.current))
       if (!projects.has(id)) delete recentSessions.current[id];
-    setDiff(undefined);
   }, [sessionIds]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -671,9 +646,13 @@ function App() {
       } else if (attentionShortcut) {
         e.preventDefault();
         setAttentionOpen((open) => !open);
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && !floatingSessionId) {
+        e.preventDefault();
+        setSidebarCollapsed((value) => !value);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
-        if (s) void run({ type: 'newSession', projectId: s.projectId });
+        const projectId = s?.projectId ?? stateRef.current?.selectedProject;
+        if (projectId) void run({ type: 'newSession', projectId });
       } else if (
         e.key === 'Tab' &&
         e.shiftKey &&
@@ -851,16 +830,6 @@ function App() {
     void run({ type: 'select', projectId: r.projectId, sessionId: r.sessionId });
     setSearch(false);
   };
-  const tabState = (s: Session) =>
-    s.approvals.length || s.status === 'waiting'
-      ? 'waiting'
-      : s.status === 'working' || s.status === 'starting'
-        ? 'working'
-        : s.status === 'error' || s.error
-          ? 'error'
-          : s.id !== session?.id && (seen[s.id] ?? s.messages.length) < s.messages.length
-            ? 'unread'
-            : 'idle';
   const terminalMode = !isCodex(session?.profile) && session?.mode === 'terminal';
   const antigravityChat =
     providerKind(session?.profile) === 'gemini' &&
@@ -1092,6 +1061,19 @@ function App() {
       {hasAccounts && (
         <aside
           className={`sidebar compact ${sidebarCollapsed ? 'collapsed' : ''} ${!hasProjects ? 'onboarding-sidebar' : ''}`}
+          aria-label="Panel de proyectos"
+          title="Doble clic para plegar o expandir proyectos · ⌘B"
+          onDoubleClick={(event) => {
+            const target = event.target as HTMLElement;
+            if (
+              target.closest(
+                'input, .project-chat-row, .project-tools, .sidebar-bottom, .team-fold',
+              )
+            )
+              return;
+            if (target.closest('button') && !target.closest('.project-name')) return;
+            if (!suppressProjectClick.current) setSidebarCollapsed((value) => !value);
+          }}
         >
           {hasProjects && (
             <>
@@ -1099,14 +1081,16 @@ function App() {
               <div className="section-label">
                 <div className="project-tools">
                   <button
+                    className="add-project"
                     aria-label="Añadir proyecto"
                     title="Añadir carpeta"
                     onClick={() => run({ type: 'addProject' })}
                   >
                     <Plus size={15} />
                   </button>
-                  {!sidebarCollapsed && (
+                  {projectOverflow.overflow && (
                     <button
+                      className="search-projects"
                       aria-label="Buscar proyectos y sesiones"
                       title="Buscar (⌘K)"
                       onClick={() => {
@@ -1120,134 +1104,142 @@ function App() {
                   )}
                 </div>
               </div>
-              <nav className="projects" aria-label="Proyectos">
-                {state.projects.map((p) => (
-                  <div
-                    key={p.id}
-                    className={`project-block ${p.id === project?.id ? 'selected' : ''} ${draggedProject === p.id ? 'dragging' : ''} ${projectDrop === p.id ? 'drop-target' : ''}`}
-                    data-project-id={p.id}
-                    onDragOver={(e) => {
-                      if (!projectDrag.current || projectDrag.current === p.id) return;
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      setProjectDrop(p.id);
-                    }}
-                    onDrop={(e) => {
-                      const source = projectDrag.current;
-                      if (!source || source === p.id) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      finishProjectDrag();
-                      void run({ type: 'moveProject', projectId: source, targetProjectId: p.id });
-                    }}
-                  >
-                    <div className="project-row">
-                      {editingName?.kind === 'project' && editingName.id === p.id ? (
-                        <EditableName
-                          value={p.name}
-                          label="Nombre del proyecto"
-                          close={() => setEditingName(undefined)}
-                          save={(name) =>
-                            void run({ type: 'renameProject', projectId: p.id, name })
-                          }
-                        />
-                      ) : (
-                        <button
-                          className="project-name"
-                          draggable={compatibleRuntime(state) && !navigating && !busy.moveProject}
-                          onDragStart={(e) => {
-                            projectDrag.current = p.id;
-                            suppressProjectClick.current = true;
-                            setDraggedProject(p.id);
-                            e.dataTransfer.effectAllowed = 'move';
-                            e.dataTransfer.setData('application/x-agent-desk-project', p.id);
-                          }}
-                          onDragEnd={finishProjectDrag}
-                          onKeyDown={(e) => {
-                            if (
-                              !compatibleRuntime(state) ||
-                              busy.moveProject ||
-                              !e.altKey ||
-                              !['ArrowUp', 'ArrowDown'].includes(e.key)
-                            )
-                              return;
-                            e.preventDefault();
-                            const projects = stateRef.current?.projects ?? [];
-                            const index = projects.findIndex((x) => x.id === p.id);
-                            const target = projects[index + (e.key === 'ArrowUp' ? -1 : 1)];
-                            if (target)
-                              void run({
-                                type: 'moveProject',
-                                projectId: p.id,
-                                targetProjectId: target.id,
-                              }).then(() =>
-                                requestAnimationFrame(() =>
-                                  document
-                                    .querySelector<HTMLButtonElement>(
-                                      `[data-project-id="${CSS.escape(p.id)}"] .project-name`,
-                                    )
-                                    ?.focus(),
-                                ),
-                              );
-                          }}
-                          title={`${p.path} · Arrastra para ordenar · Alt + ↑/↓ para mover`}
-                          aria-disabled={navigating}
-                          aria-label={p.name}
-                          aria-current={p.id === project?.id ? 'page' : undefined}
-                          onClick={(e) => {
-                            if (e.detail < 2 && !suppressProjectClick.current) {
-                              void switchProject(p.id);
+              <nav ref={projectOverflow.viewportRef} className="projects" aria-label="Proyectos">
+                <div ref={projectOverflow.contentRef} className="project-list">
+                  {state.projects.map((p) => (
+                    <div
+                      key={p.id}
+                      className={`project-block ${p.id === project?.id ? 'selected' : ''} ${draggedProject === p.id ? 'dragging' : ''} ${projectDrop === p.id ? 'drop-target' : ''}`}
+                      data-project-id={p.id}
+                      onDragOver={(e) => {
+                        if (!projectDrag.current || projectDrag.current === p.id) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        setProjectDrop(p.id);
+                      }}
+                      onDrop={(e) => {
+                        const source = projectDrag.current;
+                        if (!source || source === p.id) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        finishProjectDrag();
+                        void run({ type: 'moveProject', projectId: source, targetProjectId: p.id });
+                      }}
+                    >
+                      <div className="project-row">
+                        {editingName?.kind === 'project' && editingName.id === p.id ? (
+                          <EditableName
+                            value={p.name}
+                            label="Nombre del proyecto"
+                            close={() => setEditingName(undefined)}
+                            save={(name) =>
+                              void run({ type: 'renameProject', projectId: p.id, name })
                             }
-                          }}
-                          onDoubleClick={() => {
-                            if (suppressProjectClick.current) return;
-                            setSidebarCollapsed(false);
-                            setEditingName({ kind: 'project', id: p.id });
+                          />
+                        ) : (
+                          <button
+                            className="project-name"
+                            draggable={compatibleRuntime(state) && !navigating && !busy.moveProject}
+                            onDragStart={(e) => {
+                              projectDrag.current = p.id;
+                              suppressProjectClick.current = true;
+                              setDraggedProject(p.id);
+                              e.dataTransfer.effectAllowed = 'move';
+                              e.dataTransfer.setData('application/x-agent-desk-project', p.id);
+                            }}
+                            onDragEnd={finishProjectDrag}
+                            onKeyDown={(e) => {
+                              if (e.key === 'F2' && compatibleRuntime(state)) {
+                                e.preventDefault();
+                                setSidebarCollapsed(false);
+                                setEditingName({ kind: 'project', id: p.id });
+                                return;
+                              }
+                              if (
+                                !compatibleRuntime(state) ||
+                                busy.moveProject ||
+                                !e.altKey ||
+                                !['ArrowUp', 'ArrowDown'].includes(e.key)
+                              )
+                                return;
+                              e.preventDefault();
+                              const projects = stateRef.current?.projects ?? [];
+                              const index = projects.findIndex((x) => x.id === p.id);
+                              const target = projects[index + (e.key === 'ArrowUp' ? -1 : 1)];
+                              if (target)
+                                void run({
+                                  type: 'moveProject',
+                                  projectId: p.id,
+                                  targetProjectId: target.id,
+                                }).then(() =>
+                                  requestAnimationFrame(() =>
+                                    document
+                                      .querySelector<HTMLButtonElement>(
+                                        `[data-project-id="${CSS.escape(p.id)}"] .project-name`,
+                                      )
+                                      ?.focus(),
+                                  ),
+                                );
+                            }}
+                            title={`${p.path} · Doble clic: plegar/expandir · F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
+                            aria-disabled={navigating}
+                            aria-label={p.name}
+                            aria-current={p.id === project?.id ? 'page' : undefined}
+                            onClick={(e) => {
+                              if (e.detail < 2 && !suppressProjectClick.current) {
+                                void switchProject(p.id);
+                              }
+                            }}
+                          >
+                            <ProjectMark identity={p.path} />
+                            <span className="project-label">{p.name}</span>
+                            {state.sessions.some((s) => s.projectId === p.id && live(s)) && (
+                              <i
+                                className={`live-dot ${state.sessions.some((s) => s.projectId === p.id && s.approvals.length) ? 'waiting' : ''}`}
+                              />
+                            )}
+                          </button>
+                        )}
+                        <button
+                          className="icon-btn ghost project-remove"
+                          title="Quitar de la lista"
+                          aria-label={`Quitar ${p.name}`}
+                          onClick={() => setRemoveId(p.id)}
+                        >
+                          <X size={13} />
+                        </button>
+                        <button
+                          className="icon-btn ghost project-new-chat"
+                          aria-label={`Nuevo chat en ${p.name}`}
+                          title="Nuevo chat (⌘N)"
+                          disabled={navigating || !profile || !compatibleRuntime(state)}
+                          onClick={() => {
+                            setMultichat('off');
+                            void run({ type: 'newSession', projectId: p.id });
                           }}
                         >
-                          <ProjectMark identity={p.path} />
-                          <span className="project-label">{p.name}</span>
-                          {state.sessions.some((s) => s.projectId === p.id && live(s)) && (
-                            <i
-                              className={`live-dot ${state.sessions.some((s) => s.projectId === p.id && s.approvals.length) ? 'waiting' : ''}`}
-                            />
-                          )}
+                          <SquarePen size={14} />
                         </button>
-                      )}
-                      <button
-                        className="icon-btn ghost"
-                        title="Quitar de la lista"
-                        aria-label={`Quitar ${p.name}`}
-                        onClick={() => setRemoveId(p.id)}
-                      >
-                        <X size={13} />
-                      </button>
+                      </div>
+                      <ProjectChats
+                        state={state}
+                        projectId={p.id}
+                        hiddenChats={[]}
+                        run={run}
+                        remove={(s) => void closeTab(s, true)}
+                        open={(s) => {
+                          setClosedSelection(undefined);
+                          setMultichat('off');
+                          void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
+                        }}
+                      />
                     </div>
-                    <ProjectChats
-                      state={state}
-                      projectId={p.id}
-                      hiddenChats={[]}
-                      remove={(s) => void closeTab(s, true)}
-                      open={(s) => {
-                        setClosedSelection(undefined);
-                        setMultichat('off');
-                        void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
-                      }}
-                    />
-                  </div>
-                ))}
+                  ))}
+                </div>
               </nav>
             </>
           )}
           <div className="sidebar-bottom sidebar-controls">
-            <button
-              aria-label={sidebarCollapsed ? 'Expandir proyectos' : 'Plegar proyectos'}
-              title={sidebarCollapsed ? 'Expandir proyectos' : 'Plegar proyectos'}
-              aria-expanded={!sidebarCollapsed}
-              onClick={() => setSidebarCollapsed((v) => !v)}
-            >
-              {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-            </button>
             <button aria-label="Ajustes" title="Ajustes (⌘,)" onClick={() => setSettings(true)}>
               <Settings2 size={15} />
             </button>
@@ -1459,93 +1451,13 @@ function App() {
             >
               <ChatActionsContext.Provider value={chatActions}>
                 <section className="conversation">
-                  {floatingSessionId && session ? (
+                  {floatingSessionId && session && (
                     <FloatingChatHeader
                       session={session}
                       project={project.name}
                       preferences={floatingPreferences}
                       run={run}
                     />
-                  ) : (
-                    <div className="session-tabs-bar">
-                      <div className="session-tabs" role="tablist" aria-label="Conversaciones">
-                        {openTabs.map((s) => (
-                          <div
-                            className={`session-tab ${live(s) ? 'running' : ''} ${s.id === session?.id ? 'selected' : ''}`}
-                            key={s.id}
-                          >
-                            {editingName?.kind === 'session' && editingName.id === s.id ? (
-                              <EditableName
-                                value={s.title}
-                                label="Nombre del chat"
-                                close={() => setEditingName(undefined)}
-                                save={(title) =>
-                                  void run({ type: 'rename', sessionId: s.id, title })
-                                }
-                              />
-                            ) : (
-                              <button
-                                role="tab"
-                                className={`tab-${tabState(s)}`}
-                                aria-selected={s.id === session?.id}
-                                tabIndex={s.id === session?.id ? 0 : -1}
-                                onKeyDown={navigateTabs}
-                                aria-controls="conversation-content"
-                                aria-disabled={navigating}
-                                title={`${s.title} · ${live(s) ? 'Proceso abierto' : 'Proceso parado'}`}
-                                aria-description={live(s) ? 'Proceso abierto' : 'Proceso parado'}
-                                onClick={() =>
-                                  run({ type: 'select', projectId: project.id, sessionId: s.id })
-                                }
-                                onDoubleClick={() => setEditingName({ kind: 'session', id: s.id })}
-                              >
-                                <i className="tab-state" aria-hidden="true" />
-                                <span>{s.title}</span>
-                              </button>
-                            )}
-                            <button
-                              className="tab-close"
-                              aria-label={`Cerrar ${s.title}`}
-                              title="Cerrar pestaña"
-                              disabled={navigating || busy[s.id]}
-                              onClick={() => void closeTab(s)}
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      {session && (
-                        <FloatChatButton
-                          session={session}
-                          floating={detached}
-                          run={run}
-                          disabled={!!busy[session.id] || !compatibleRuntime(state)}
-                        />
-                      )}
-                      {session && (
-                        <TeamIndicator
-                          key={session.id}
-                          session={session}
-                          sessions={state.sessions}
-                          open={(s) => {
-                            setClosedSelection(undefined);
-                            void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
-                          }}
-                        />
-                      )}
-                      <button
-                        className="icon-btn ghost new-tab"
-                        title="Nueva conversación (⌘N)"
-                        disabled={navigating || !profile}
-                        aria-label="Nueva conversación"
-                        onClick={() =>
-                          profile && run({ type: 'newSession', projectId: project.id })
-                        }
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </div>
                   )}
                   {!session && (
                     <div className="empty no-session">
@@ -1577,12 +1489,6 @@ function App() {
                   {session && detached && <DetachedChat session={session} run={run} />}
                   {session && !detached && (
                     <>
-                      <IsolationBar
-                        session={session}
-                        sessions={state.sessions}
-                        run={run}
-                        disabled={navigating || !!busy[session.id] || !compatibleRuntime(state)}
-                      />
                       {(state.coordination?.filter((a) => a.projectId === project.id).length ?? 0) >
                         1 && (
                         <div className="conv-head">
@@ -1653,7 +1559,7 @@ function App() {
                       <div
                         className="messages compact-conversation"
                         id="conversation-content"
-                        role="tabpanel"
+                        role="region"
                         aria-label={session.title}
                         ref={list}
                         onScroll={(e) => {
@@ -1802,8 +1708,24 @@ function App() {
                       )}
                       <div className={`desk-input ${terminalMode ? 'solo' : ''}`}>
                         <GitBar
-                          key={project.id}
+                          key={`${project.id}:${session.worktree?.path ?? 'shared'}`}
                           project={project}
+                          session={session}
+                          sessions={state.sessions}
+                          run={run}
+                          floating={!!floatingSessionId}
+                          navigationDisabled={
+                            navigating || !!busy[session.id] || !compatibleRuntime(state)
+                          }
+                          onSelectSession={(next) => {
+                            setClosedSelection(undefined);
+                            setMultichat('off');
+                            return run({
+                              type: 'select',
+                              projectId: next.projectId,
+                              sessionId: next.id,
+                            });
+                          }}
                           state={diff}
                           error={diffError}
                           expandedDiff={showDiff}

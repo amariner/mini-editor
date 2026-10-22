@@ -1,0 +1,103 @@
+/* A shared right-hand slot keeps project actions and chat states on one axis. */
+.app .sidebar {
+  --project-action-size: 24px;
+}
+.app .sidebar .section-label {
+  padding-inline: 0;
+}
+.app .sidebar .project-tools {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 4px;
+}
+.app .sidebar .section-label .add-project {
+  width: calc(var(--project-icon-size, 20px) + 12px);
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.app .sidebar:is(:hover, :focus-within) .add-project {
+  opacity: 1;
+  pointer-events: auto;
+}
+.app .sidebar .section-label .search-projects {
+  margin-left: auto;
+}
+.app .sidebar .project-row {
+  padding-right: 2px;
+  gap: 0;
+}
+.app .sidebar .project-name {
+  padding-left: 6px;
+  padding-right: 2px;
+}
+.app .sidebar .project-row > .project-new-chat,
+.app .sidebar .project-row > .project-remove {
+  flex: 0 0 var(--project-action-size);
+  width: var(--project-action-size);
+  min-width: var(--project-action-size);
+  height: var(--project-action-size);
+  min-height: var(--project-action-size);
+  padding: 0;
+  visibility: visible;
+  opacity: 0;
+  pointer-events: none;
+}
+.app .sidebar .project-block:is(:hover, :focus-within) .project-new-chat,
+.app .sidebar .project-block:is(:hover, :focus-within) .project-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+.app .sidebar .project-remove {
+  color: var(--muted);
+}
+.app .sidebar .project-remove:hover {
+  color: var(--danger);
+}
+.app .sidebar.compact.collapsed {
+  width: calc(var(--project-icon-size, 20px) + 32px);
+  min-width: calc(var(--project-icon-size, 20px) + 32px);
+  padding-inline: 6px;
+}
+.app .sidebar.collapsed .project-row {
+  padding-right: 0;
+}
+.app .sidebar.collapsed .project-name {
+  padding-inline: 6px;
+  justify-content: center;
+}
+.app .sidebar.collapsed .project-tools {
+  position: relative;
+  justify-content: center;
+  gap: 0;
+}
+.app .sidebar.collapsed .section-label .add-project {
+  width: 100%;
+}
+.app .sidebar.collapsed .search-projects {
+  position: absolute;
+  top: 100%;
+  margin: 0;
+}
+.app .sidebar.collapsed .section-label:has(.search-projects) {
+  padding-bottom: 30px;
+  height: 72px;
+  min-height: 72px;
+  flex-basis: 72px;
+}
+.app .sidebar.collapsed .project-row > .project-remove,
+.app .sidebar.collapsed .project-row > .project-new-chat {
+  display: none;
+}
+.app .sidebar .sidebar-bottom {
+  justify-content: flex-start;
+}
+@media (hover: none) {
+  .app .sidebar .section-label .add-project,
+  .app .sidebar .project-row > .project-new-chat,
+  .app .sidebar .project-row > .project-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

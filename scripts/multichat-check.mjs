@@ -496,7 +496,7 @@ try {
   assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 's7');
   assert.equal(
     await page
-      .locator('.session-tab.selected')
+      .locator('.chat-switcher-trigger')
       .innerText()
       .then((s) => s.trim()),
     'Tarea 8',
@@ -541,14 +541,14 @@ try {
   await page.waitForFunction(
     () => window.fixture.state.projects.map((p) => p.id).join(',') === 'p1,p0,p2,p3',
   );
-  await page.getByRole('button', { name: 'Plegar proyectos', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+b');
   await sidebar
     .getByRole('button', { name: 'Proyecto 4', exact: true })
     .dragTo(sidebar.locator('[data-project-id="p1"]'));
   await page.waitForFunction(
     () => window.fixture.state.projects.map((p) => p.id).join(',') === 'p3,p1,p0,p2',
   );
-  await page.getByRole('button', { name: 'Expandir proyectos', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+b');
   assert.equal(await grid.isVisible(), true);
   assert.equal(await columns(), 4);
   assert.ok(

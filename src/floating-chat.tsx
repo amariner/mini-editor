@@ -3,37 +3,6 @@ import { Maximize2, Pin, PinOff, PictureInPicture2, Settings2, X } from 'lucide-
 import type { Action, Session } from './shared';
 import { MIN_FLOATING_OPACITY, type FloatingChatState } from './floating-chat-state';
 
-export function FloatChatButton({
-  session,
-  floating,
-  run,
-  disabled,
-}: {
-  session: Session;
-  floating?: boolean;
-  run: (action: Action) => Promise<any>;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className={`icon-btn ghost float-chat-button ${floating ? 'on' : ''}`}
-      title={floating ? 'Mostrar ventana flotante' : 'Sacar chat · ventana flotante'}
-      aria-label={`${floating ? 'Mostrar ventana flotante de' : 'Sacar chat'} ${session.title}`}
-      disabled={disabled}
-      onClick={() =>
-        void run({
-          type: 'floatingChat',
-          sessionId: session.id,
-          operation: floating ? 'focus' : 'open',
-        })
-      }
-    >
-      <PictureInPicture2 size={15} />
-    </button>
-  );
-}
-
 export function FloatingChatHeader({
   session,
   project,

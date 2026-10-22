@@ -45,7 +45,8 @@ const focusEditor = async () =>
   app.evaluate(({ BrowserWindow }) => {
     const editor = BrowserWindow.getAllWindows().find(
       (w) =>
-        w.webContents.getURL().includes('/dist/index.html') &&
+        (w.webContents.getURL().includes('/dist/index.html') ||
+          w.webContents.getURL().startsWith('http://127.0.0.1:')) &&
         !w.webContents.getURL().includes('#chat='),
     );
     editor.show();
@@ -54,14 +55,16 @@ const focusEditor = async () =>
 try {
   app = await electron.launch({
     args: ['.'],
+    timeout: 25_000,
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: path.join(root, 'data'),
       AGENT_DESK_PROFILES_DIR: '',
     },
   });
-  let page = await app.firstWindow();
+  let page = await app.firstWindow({ timeout: 25_000 });
+  page.setDefaultTimeout(20_000);
   page.on('pageerror', (e) => errors.push(e.message));
   await page.waitForFunction(() => !!window.desk);
   await createTestAccounts(page);
@@ -84,7 +87,17 @@ try {
   await page.getByRole('button', { name: 'Quitar nota.txt', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Ocultar herramientas', exact: true }).click();
   const opened = app.waitForEvent('window');
-  await page.getByRole('button', { name: `Sacar chat ${first.title}`, exact: true }).click();
+  const chatHandle = page.locator('.project-chat').filter({ hasText: first.title }).first();
+  const chatBounds = await chatHandle.boundingBox();
+  const sidebarBounds = await page.locator('.sidebar').boundingBox();
+  assert.ok(chatBounds && sidebarBounds);
+  await page.mouse.move(chatBounds.x + 20, chatBounds.y + chatBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sidebarBounds.x + sidebarBounds.width + 140, chatBounds.y + 30, {
+    steps: 10,
+  });
+  await page.locator('.chat-detach-preview[data-detach-ready="true"]').waitFor();
+  await page.mouse.up();
   const one = await opened;
   one.on('pageerror', (e) => errors.push(e.message));
   await one.locator('.floating-chat-header').waitFor();

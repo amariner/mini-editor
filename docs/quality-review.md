@@ -23,6 +23,7 @@ Puntos que conviene revisar si también se han editado allí:
 - `src/floating-chat-protocol.ts`: mantiene sus exports; los valores sin validadores están ahora en `floating-chat-state.ts`.
 - `src/style.css`, `src/shell-polish.css` y `src/motion.css`: ajustes puntuales de contraste, foco y buscador.
 - `electron/store.ts`, `electron/attachments.ts` y `electron/rpc.ts`: guardado, adjuntos y cierre de procesos.
+- `src/team.tsx`, `src/git-bar.tsx` y los nuevos componentes de navegación: las conversaciones pasan del antiguo tabulador superior al panel de proyectos y al selector del compositor. Los gestos de ventana flotante reutilizan la acción IPC existente.
 
 ## Cambios comprobados
 
@@ -41,7 +42,7 @@ La compilación de producción del JavaScript principal baja de 543,06 a 456,10 
 
 ## Verificación después de integrar
 
-Resultado local: **269/269 pruebas**, compilación de producción correcta y **20 recorridos de interfaz correctos**. El último recorrido de chat se repitió tras ajustar la espera de la búsqueda diferida; el registro consolidado conserva la referencia de cada ejecución en `artifacts/quality-review-results.json`.
+Resultado de la revisión inicial: **269/269 pruebas**, compilación de producción correcta y **20 recorridos de interfaz correctos**. El último recorrido de chat se repitió tras ajustar la espera de la búsqueda diferida; el registro consolidado conserva la referencia de cada ejecución en `artifacts/quality-review-results.json`.
 
 ```bash
 npm test
@@ -50,3 +51,23 @@ node scripts/ui-regression.mjs onboarding design-audit state-sync chat-interacti
 ```
 
 Estas comprobaciones usan datos temporales, proveedores simulados y servidores locales. Los logs de interfaz están en `artifacts/v20/`; las capturas de contraste y ventanas pequeñas, en `artifacts/design-audit/`. No constituyen una prueba de los cambios que aún estén únicamente en el otro ordenador ni una validación de todos los proveedores con cuentas reales.
+
+## Navegación simplificada a partir de las capturas
+
+- Añadir proyecto aparece al pasar por el panel o enfocarlo con teclado y comparte el eje de los iconos. Buscar solo aparece cuando la lista requiere scroll; ⌘K sigue disponible.
+- Doble clic en el panel o en el nombre/icono del proyecto pliega o expande la barra. ⌘B ofrece el mismo control por teclado y F2 permite renombrar. En el panel plegado el icono queda libre para seleccionar y expandir; ⌘N crea un chat.
+- El lápiz del proyecto crea conversaciones y se alinea con el estado de sus chats. Al pasar por un chat, la X de eliminación sustituye la bolita en su misma posición; conserva la confirmación antes de borrar.
+- Se retiran las pestañas superiores. El nombre del chat aparece junto al proyecto en el compositor, con un menú que permite navegar por todas las conversaciones del proyecto y renombrar. El aislamiento se configura dentro del panel de Git/worktree inferior.
+- Crear o eliminar conversaciones no borra el estado de Git del mismo repositorio ni deja la barra en «Consultando…» hasta el siguiente sondeo.
+- Los chats de la misma carpeta comparten el estado de las operaciones Git y su borrador de commit. El selector devuelve el foco al nuevo chat cuando está disponible; cualquier interacción posterior cancela esa devolución para respetar la intención del usuario.
+- Arrastrar un chat fuera del panel, del selector inferior o de la cuadrícula muestra una tarjeta elevada y permite abrir una ventana flotante al soltar. Escape, perder el foco o soltar dentro cancelan la separación; Alt+Mayús+F ofrece acceso por teclado. La cuadrícula conserva su ordenación interna.
+
+Verificación de esta iteración: **269/269 pruebas de lógica** y **28 comprobaciones nuevas de navegación**, en claro y oscuro y con anchos de 1280, 760 y 480 píxeles. Incluyen geometría, hover, foco, borradores, creación/eliminación, worktree, desbordamiento y cancelación del arrastre. Registro y capturas: `artifacts/project-navigation/`.
+
+```bash
+SOURCE_BUILD=1 node scripts/project-navigation-check.mjs
+```
+
+La comprobación compila el renderer en una carpeta temporal para no interferir con la aplicación de desarrollo abierta.
+
+También pasan los recorridos de multichat, estilo/foco en claro y oscuro, navegación nativa, ventanas flotantes nativas y ciclo de vida de chats (`tabs-check.mjs`, adaptado al nuevo selector). Este último comprueba foco por teclado, cancelación al interactuar, borradores, procesos activos, terminal y eliminación confirmada. Para los recorridos de Electron mientras `npm run dev` está abierto, usa `SOURCE_DEV_URL=http://127.0.0.1:5173`; sus perfiles y datos siguen siendo temporales. La aplicación valida ese origen, por lo que un servidor de preview en un puerto aleatorio no sirve para esas pruebas nativas.

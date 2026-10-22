@@ -1,5 +1,5 @@
 import { createTestAccounts } from './test-accounts.mjs';
-// Isolated Electron UI/lifecycle check. No prompts or existing credentials are used.
+// Isolated Electron chat navigation/lifecycle check. No prompts or existing credentials are used.
 import { _electron as electron } from 'playwright';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -8,25 +8,63 @@ import assert from 'node:assert/strict';
 const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-tabs-')));
 const folder = path.join(root, 'Proyecto temporal');
 await fs.mkdir(folder);
+// Exercise the real RPC process lifecycle without relying on an installed Codex release.
+const codex = path.join(root, 'codex-fixture');
+await fs.writeFile(
+  codex,
+  `#!${process.execPath}
+require('readline').createInterface({ input: process.stdin }).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.id === undefined) return;
+  let result = {};
+  if (message.method === 'account/read') result = { account: { type: 'chatgpt', email: 'fixture@example.test', planType: 'plus' } };
+  if (message.method === 'model/list') result = { data: [{ model: 'fixture-model', displayName: 'Fixture', isDefault: true }], nextCursor: null };
+  if (message.method === 'thread/start' || message.method === 'thread/resume') result = { thread: { id: 'fixture-thread', turns: [] } };
+  console.log(JSON.stringify({ id: message.id, result }));
+});
+`,
+  { mode: 0o700 },
+);
+await fs.mkdir(path.join(root, 'data'));
+await fs.writeFile(
+  path.join(root, 'data', 'state.json'),
+  JSON.stringify({ profiles: [], projects: [], sessions: [], tools: { codex } }),
+);
 let app, page;
 const errors = [];
 const call = (a) => page.evaluate((a) => window.desk.invoke(a), a);
 const snap = () => call({ type: 'snapshot' });
 const settle = async () => {
-  await page.waitForFunction(() => !document.querySelector('.new-tab')?.disabled);
-  await page.waitForTimeout(150);
+  const selected = (await snap()).selectedSession;
+  await page.waitForFunction((id) => {
+    const trigger = document.querySelector('.chat-switcher-trigger');
+    return trigger?.dataset.sessionId === id && !trigger.disabled;
+  }, selected);
+};
+const choose = async (title) => {
+  await page.locator('.chat-switcher-trigger').click();
+  await page
+    .getByRole('menuitemradio')
+    .filter({ has: page.getByText(title, { exact: true }) })
+    .click();
+  await settle();
+};
+const newChat = async () => {
+  await page.keyboard.press('Meta+n');
+  await settle();
 };
 try {
   app = await electron.launch({
+    timeout: 25000,
     args: ['.'],
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: path.join(root, 'data'),
       AGENT_DESK_PROFILES_DIR: '',
     },
   });
-  page = await app.firstWindow();
+  page = await app.firstWindow({ timeout: 25000 });
   await page.waitForFunction(() => !!window.desk);
   await createTestAccounts(page);
   page.on('pageerror', (e) => errors.push(e.message));
@@ -36,11 +74,11 @@ try {
   }, folder);
   await page.getByRole('button', { name: 'Añadir proyecto', exact: true }).first().click();
   await settle();
+  assert.equal(await page.locator('.session-tabs-bar').count(), 0);
+  const first = (await snap()).selectedSession;
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Borrador conservado');
-  await page.getByRole('button', { name: 'Nueva conversación', exact: true }).click();
-  await settle();
-  await page.getByRole('tab', { name: 'Sesión 1', exact: true }).click();
-  await settle();
+  await newChat();
+  await choose('Sesión 1');
   assert.equal(
     await page.getByRole('textbox', { name: 'Mensaje', exact: true }).inputValue(),
     'Borrador conservado',
@@ -50,24 +88,27 @@ try {
     () => document.querySelector('.account-switcher select')?.value === 'codex',
   );
   await settle();
-  const first = (await snap()).selectedSession;
-  await call({ type: 'start', sessionId: (await snap()).selectedSession });
-  for (let i = 0; i < 100; i++) {
-    if ((await snap()).sessions.find((s) => s.id === first)?.status === 'ready') break;
-    await page.waitForTimeout(100);
-  }
-  assert.equal((await snap()).sessions.find((s) => s.id === first).status, 'ready');
+  await call({ type: 'start', sessionId: first });
+  await page.waitForFunction(
+    async (id) =>
+      (await window.desk.invoke({ type: 'snapshot' })).sessions.find((s) => s.id === id)?.status ===
+      'ready',
+    first,
+  );
   await call({ type: 'setDefaultAccount', profile: 'codex' });
-  for (let i = 0; i < 6; i++) {
-    await page.getByRole('button', { name: 'Nueva conversación', exact: true }).click();
-    await settle();
-  }
-  assert.equal(await page.getByRole('tab').count(), 5);
+  for (let i = 0; i < 6; i++) await newChat();
   assert.equal((await snap()).sessions.filter((s) => s.profile === 'codex').length, 7);
-  await page.getByRole('tab', { name: 'Sesión 1', exact: true }).click();
-  await settle();
+  await page.locator('.chat-switcher-trigger').click();
+  assert.equal(
+    await page.getByRole('menuitemradio').count(),
+    8,
+    'All project chats remain reachable without tab eviction',
+  );
+  await page.keyboard.press('Escape');
+  await choose('Sesión 1');
   assert.equal((await snap()).sessions.find((s) => s.id === first).status, 'ready');
-  await page.getByRole('button', { name: 'Cerrar Sesión 1', exact: true }).click();
+  await page.getByRole('button', { name: 'Eliminar chat Sesión 1', exact: true }).focus();
+  await page.keyboard.press('Enter');
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
   assert.equal((await snap()).sessions.find((s) => s.id === first).status, 'ready');
   await call({
@@ -76,104 +117,141 @@ try {
     profile: 'claude-2',
   });
   await settle();
-  assert.equal(await page.getByRole('tab').count(), 5);
-  await page.getByRole('tab', { name: 'Sesión 1', exact: true }).click();
-  await settle();
-  assert.equal(await page.getByRole('tab').count(), 5);
+  await choose('Sesión 1');
   await fs.mkdir('artifacts', { recursive: true });
-  await page.screenshot({ path: 'artifacts/28-selector-pestanas.png', animations: 'disabled' });
+  await page.screenshot({ path: 'artifacts/28-selector-chats.png', animations: 'disabled' });
   assert.equal(await page.locator('.brand,.brand-mark').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Ajustes', exact: true }).innerText(), '');
-  const collapse = await page.getByRole('button', { name: 'Plegar proyectos' }).boundingBox();
-  const settings = await page.getByRole('button', { name: 'Ajustes', exact: true }).boundingBox();
-  assert.ok(
-    settings.y + settings.height <= collapse.y && Math.abs(collapse.x - settings.x) < 1,
-    'Settings remain above the fold control on the same sidebar axis',
+  assert.equal(
+    await page.getByRole('button', { name: 'Plegar proyectos', exact: true }).count(),
+    0,
   );
-  assert.ok(collapse.height >= 28 && settings.height >= 28);
-  await page.getByRole('button', { name: 'Plegar proyectos' }).click();
+  await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).dblclick();
+  await page.locator('.sidebar.collapsed').waitFor();
   await page.setViewportSize({ width: 900, height: 620 });
   const foldedSettings = await page
     .getByRole('button', { name: 'Ajustes', exact: true })
     .boundingBox();
-  const expand = await page
-    .getByRole('button', { name: 'Expandir proyectos', exact: true })
-    .boundingBox();
+  const foldedRail = await page.locator('.sidebar.collapsed').boundingBox();
   assert.ok(
-    foldedSettings.y + foldedSettings.height <= expand.y &&
-      Math.abs(foldedSettings.x - settings.x) < 1 &&
-      Math.abs(foldedSettings.x - expand.x) < 1,
-    'Folding keeps both controls anchored and reachable',
+    foldedSettings.x >= foldedRail.x &&
+      foldedSettings.x + foldedSettings.width <= foldedRail.x + foldedRail.width &&
+      foldedSettings.height >= 28,
+    `Settings stays reachable within the compact rail: ${JSON.stringify({ foldedSettings, foldedRail })}`,
   );
-  await page.screenshot({ path: 'artifacts/29-pestanas-compactas.png', animations: 'disabled' });
-  await page.getByRole('button', { name: 'Cerrar Sesión 1', exact: true }).click();
-  await page.getByRole('button', { name: 'Detener y cerrar', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Cerrar conversación' }).waitFor({ state: 'hidden' });
-  await settle();
-  assert.equal((await snap()).sessions.find((s) => s.id === first).status, 'stopped');
-  assert.equal(await page.getByRole('tab').count(), 4);
-  while (await page.getByRole('tab').count()) {
-    await page.locator('.tab-close').last().click();
-    await settle();
-  }
-  await page.getByRole('heading', { name: 'Todo listo', exact: true }).waitFor();
-  // Project navigation must respect an explicitly empty tab set. Closed chats
-  // remain recoverable with their history and draft, without reopening on return.
-  const closedProject = (await snap()).selectedProject;
-  const historyOf = (state) =>
-    state.sessions
-      .filter((session) => session.projectId === closedProject)
-      .map(({ id, messages, reference }) => ({ id, messages, reference }));
-  const closedHistory = historyOf(await snap());
-  const secondFolder = path.join(root, 'Otro proyecto');
-  await fs.mkdir(secondFolder);
-  await app.evaluate(({ dialog }, folder) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
-  }, secondFolder);
-  await page.getByRole('button', { name: 'Añadir proyecto', exact: true }).first().click();
-  await settle();
-  assert.notEqual((await snap()).selectedProject, closedProject);
-  await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).click();
-  await settle();
-  assert.equal((await snap()).selectedProject, closedProject);
-  assert.equal(
-    await page.getByRole('tab').count(),
-    0,
-    'Returning to a project must not reopen its explicitly closed tabs',
+  assert.ok(
+    await page
+      .locator('.work-area')
+      .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
   );
-  await page.getByRole('heading', { name: 'Todo listo', exact: true }).waitFor();
-  assert.deepEqual(historyOf(await snap()), closedHistory);
+  await page.screenshot({ path: 'artifacts/29-chats-compactos.png', animations: 'disabled' });
   await page.keyboard.press('Meta+k');
   await page.getByPlaceholder('Buscar proyecto o sesión…').fill('Sesión 1');
   await page
     .locator('.palette-results button')
+    .filter({ has: page.getByText('Sesión 1', { exact: true }) })
     .filter({ hasText: 'Codex' })
     .filter({ hasText: 'Proyecto temporal' })
     .click();
   await settle();
-  assert.equal(await page.getByRole('tab').count(), 1);
   assert.equal((await snap()).selectedSession, first);
   assert.equal(
     await page.getByRole('textbox', { name: 'Mensaje', exact: true }).inputValue(),
     'Borrador conservado',
   );
-  // Tab arrows activate the neighboring conversation without leaving focus in stale content.
+  // Menu arrows activate another conversation and return focus to its new trigger.
   await call({
     type: 'newSession',
     projectId: (await snap()).selectedProject,
     profile: 'claude-2',
   });
   await settle();
-  await page.locator('.session-tabs [role="tab"][aria-selected="true"]').focus();
+  await page.evaluate(() => {
+    window.chatFocusTrace = [];
+    const capture = () => {
+      const active = document.activeElement;
+      const trigger = document.querySelector('.chat-switcher-trigger');
+      window.chatFocusTrace.push({
+        active: `${active?.tagName}.${active?.className}`,
+        target: trigger?.dataset.sessionId,
+        disabled: trigger?.disabled,
+        open: !!document.querySelector('.chat-switcher-menu:popover-open'),
+      });
+      if (window.chatFocusTrace.length > 40) window.chatFocusTrace.shift();
+    };
+    document.addEventListener('focusin', capture);
+    const observer = new MutationObserver(capture);
+    observer.observe(document.querySelector('.git-summary'), {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['disabled'],
+    });
+    window.stopChatFocusTrace = () => {
+      document.removeEventListener('focusin', capture);
+      observer.disconnect();
+    };
+  });
+  await page.locator('.chat-switcher-trigger').focus();
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => document.activeElement?.matches('.chat-switcher-menu button'));
   await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(
+    async (id) => (await window.desk.invoke({ type: 'snapshot' })).selectedSession === id,
+    first,
+  );
   await settle();
   assert.equal((await snap()).selectedSession, first);
-  assert.ok(
+  try {
+    await page.waitForFunction(
+      () => document.activeElement?.matches('.chat-switcher-trigger'),
+      undefined,
+      { timeout: 5000 },
+    );
+  } catch (error) {
+    console.error('Chat focus diagnostic:', await page.evaluate(() => window.chatFocusTrace));
+    throw error;
+  } finally {
+    await page.evaluate(() => window.stopChatFocusTrace());
+  }
+  // A newer keyboard or pointer interaction cancels the pending focus restoration.
+  for (const [title, interaction] of [
+    ['Sesión 2', 'keydown'],
+    ['Sesión 1', 'pointerdown'],
+  ]) {
+    const target = (await snap()).sessions.find((session) => session.title === title).id;
+    await page.locator('.chat-switcher-trigger').click();
     await page
-      .locator('.session-tabs [role="tab"][aria-selected="true"]')
-      .evaluate((element) => element === document.activeElement),
-  );
-  // A real Claude PTY remains alive while a different chat is selected.
+      .getByRole('menuitemradio')
+      .filter({ has: page.getByText(title, { exact: true }) })
+      .waitFor();
+    await page.evaluate(
+      ({ title, interaction }) => {
+        [...document.querySelectorAll('.chat-switcher-option')]
+          .find((button) => button.querySelector('strong')?.textContent === title)
+          .click();
+        window.dispatchEvent(
+          interaction === 'keydown'
+            ? new KeyboardEvent('keydown', { key: 'Tab' })
+            : new PointerEvent('pointerdown'),
+        );
+        document.querySelector('button[aria-label="Ajustes"]').focus();
+      },
+      { title, interaction },
+    );
+    await page.waitForFunction(
+      async (id) => (await window.desk.invoke({ type: 'snapshot' })).selectedSession === id,
+      target,
+    );
+    await settle();
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+      'Ajustes',
+      'New input keeps focus instead of the previous chat-selection request',
+    );
+  }
+  // A real Claude PTY remains alive while another chat is selected; removal confirms its shutdown.
   await call({
     type: 'newSession',
     projectId: (await snap()).selectedProject,
@@ -183,24 +261,38 @@ try {
   await settle();
   const terminalId = (await snap()).selectedSession;
   const terminalTitle = (await snap()).sessions.find((s) => s.id === terminalId).title;
+  await call({ type: 'setIsolation', sessionId: terminalId, isolation: 'shared' });
   await call({ type: 'start', sessionId: terminalId });
-  const other = await call({
+  await call({
     type: 'newSession',
     projectId: (await snap()).selectedProject,
     profile: 'claude-2',
   });
   await settle();
   assert.equal((await snap()).sessions.find((s) => s.id === terminalId).status, 'terminal');
-  await page.getByRole('tab', { name: terminalTitle, exact: true }).click();
+  await choose(terminalTitle);
   await page.getByRole('button', { name: 'Terminal', exact: true }).click();
   await settle();
+  await page.locator('.xterm').waitFor();
   assert.equal(await page.locator('.xterm').count(), 1);
-  await page.getByRole('button', { name: `Cerrar ${terminalTitle}`, exact: true }).click();
-  await page.getByRole('button', { name: 'Detener y cerrar', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Cerrar conversación' }).waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).dblclick();
+  await page.locator('.sidebar:not(.collapsed)').waitFor();
+  await page.getByRole('button', { name: `Eliminar chat ${terminalTitle}`, exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Detener y eliminar', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Eliminar conversación' }).waitFor({ state: 'hidden' });
+  await page.waitForFunction(
+    async (id) =>
+      !(await window.desk.invoke({ type: 'snapshot' })).sessions.some((s) => s.id === id),
+    terminalId,
+  );
+  assert.ok(
+    (await snap()).sessions.some((s) => s.id === first),
+    'Deleting one chat preserves the other conversations',
+  );
   assert.deepEqual(errors, []);
   console.log(
-    'OK: selector, 5 tabs, running process protected, drafts, mixed-account tabs, close cancellation/confirmed stop, empty state, CmdK recovery, compact layout.',
+    'OK: project chat dropdown, all chats reachable, live processes preserved across navigation, drafts, mixed accounts, deletion cancellation/confirmed stop, CmdK recovery, compact layout and keyboard focus.',
   );
 } finally {
   if (app) await app.close();
