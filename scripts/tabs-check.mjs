@@ -86,10 +86,25 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Ajustes', exact: true }).innerText(), '');
   const collapse = await page.getByRole('button', { name: 'Plegar proyectos' }).boundingBox();
   const settings = await page.getByRole('button', { name: 'Ajustes', exact: true }).boundingBox();
-  assert.ok(collapse.x < settings.x && Math.abs(collapse.y - settings.y) < 1);
+  assert.ok(
+    settings.y + settings.height <= collapse.y && Math.abs(collapse.x - settings.x) < 1,
+    'Settings remain above the fold control on the same sidebar axis',
+  );
   assert.ok(collapse.height >= 28 && settings.height >= 28);
   await page.getByRole('button', { name: 'Plegar proyectos' }).click();
   await page.setViewportSize({ width: 900, height: 620 });
+  const foldedSettings = await page
+    .getByRole('button', { name: 'Ajustes', exact: true })
+    .boundingBox();
+  const expand = await page
+    .getByRole('button', { name: 'Expandir proyectos', exact: true })
+    .boundingBox();
+  assert.ok(
+    foldedSettings.y + foldedSettings.height <= expand.y &&
+      Math.abs(foldedSettings.x - settings.x) < 1 &&
+      Math.abs(foldedSettings.x - expand.x) < 1,
+    'Folding keeps both controls anchored and reachable',
+  );
   await page.screenshot({ path: 'artifacts/29-pestanas-compactas.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'Cerrar Sesión 1', exact: true }).click();
   await page.getByRole('button', { name: 'Detener y cerrar', exact: true }).click();

@@ -7,6 +7,10 @@ const selected = process.argv.slice(2);
 const scripts = selected.length
   ? selected
   : [
+      'onboarding',
+      'design-audit',
+      'state-sync',
+      'chat-interactions',
       'ui-polish',
       'attention',
       'settings-polish',

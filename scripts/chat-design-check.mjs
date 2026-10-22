@@ -278,11 +278,25 @@ try {
       await page.screenshot({ path: 'artifacts/chat-v2-pasos.png' });
       await summary.click();
       // Composer menus retain context, support arrows, and return focus without interrupting.
+      const toolsToggle = chat.locator('.tools-toggle');
+      assert.equal(await toolsToggle.getAttribute('aria-label'), 'Herramientas del chat');
+      assert.equal(await toolsToggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await chat.locator('.composer-chips').isVisible(), false);
+      await toolsToggle.focus();
+      await toolsToggle.press('Enter');
+      assert.equal(await toolsToggle.getAttribute('aria-expanded'), 'true');
+      assert.equal(await toolsToggle.getAttribute('aria-label'), 'Ocultar herramientas');
       const modelMenu = chat.getByRole('button', { name: 'Modelo', exact: true });
       await modelMenu.focus();
       await modelMenu.press('ArrowDown');
       const menu = chat.getByRole('dialog', { name: 'Modelo', exact: true });
       await menu.waitFor();
+      // Opening a menu transfers focus on the next animation frame.
+      await page.waitForFunction(
+        (el) => el === document.activeElement,
+        await menu.getByRole('button').first().elementHandle(),
+        { timeout: 3000 },
+      );
       assert.equal(
         await menu
           .getByRole('button')
@@ -318,7 +332,9 @@ try {
       await modelMenu.click();
       await chat.getByRole('textbox', { name: 'Mensaje', exact: true }).click();
       assert.equal(await menu.count(), 0);
+      assert.equal(await toolsToggle.getAttribute('aria-expanded'), 'false');
       await page.setViewportSize({ width: 480, height: 620 });
+      await toolsToggle.click();
       await chat.getByRole('button', { name: 'Esfuerzo de razonamiento', exact: true }).click();
       const effortBounds = await chat
         .getByRole('dialog', { name: 'Esfuerzo de razonamiento', exact: true })
@@ -332,6 +348,14 @@ try {
       assert.ok(effortBounds.y >= chatBounds.y, 'El menú debe caber en un chat de poca altura');
       await page.screenshot({ path: 'artifacts/chat-v20-menu-estrecho.png' });
       await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      assert.equal(await chat.locator('.composer-chips').isVisible(), false);
+      assert.equal(
+        await chat
+          .getByRole('button', { name: 'Herramientas del chat', exact: true })
+          .evaluate((el) => el === document.activeElement),
+        true,
+      );
       await page.setViewportSize({ width: 1180, height: 860 });
       // Working state: dock, plan strip and a permission card.
       await page.evaluate(() => {
@@ -444,7 +468,13 @@ try {
       // ⌘K also finds text inside conversations.
       await page.keyboard.press('Meta+k');
       await page.getByPlaceholder('Buscar proyecto o sesión…').fill('reloj-virtual');
-      assert.match(await page.locator('.palette-results').innerText(), /reloj-virtual/);
+      const searchResults = page.locator('.palette-results[aria-busy="false"]');
+      await searchResults
+        .getByRole('option')
+        .filter({ hasText: 'reloj-virtual' })
+        .first()
+        .waitFor();
+      assert.match(await searchResults.innerText(), /reloj-virtual/);
       await page.keyboard.press('Escape');
     }
     assert.deepEqual(errors, []);

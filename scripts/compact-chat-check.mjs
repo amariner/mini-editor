@@ -134,11 +134,23 @@ try {
   assert.ok(context.y - (dock.y + dock.height) < 10);
   assert.ok(context.y + context.height <= composer.y);
   assert.ok(dock.height <= 26);
+  assert.equal(await chat.locator('.task-signature').innerText(), 'Personal');
+  const insight = chat.locator('.footer-insight');
+  const insightCard = chat.locator('.footer-insight-card');
+  assert.equal(await insightCard.isVisible(), false);
+  // Model, tokens and usage remain available from the quiet footer with the keyboard.
+  await page.keyboard.press('Tab');
+  await insight.focus();
+  await insightCard.waitFor({ state: 'visible' });
+  assert.equal(await insightCard.locator('.task-signature-model').innerText(), 'Sonnet 5.5');
+  assert.equal(await insightCard.locator('.task-signature-tokens').innerText(), '↑— ↓—');
+  assert.equal(await insightCard.locator('.usage-window-head').innerText(), 'Franja de 5 h\n—');
   assert.equal(
-    await chat.locator('.task-signature').innerText(),
-    'Personal\n5 h\n—\n·\nSonnet 5.5\n·\n↑— ↓—',
+    await insightCard.locator('.usage-window small').innerText(),
+    'Esperando datos de la suscripción.',
   );
   await progress.click();
+  await insightCard.waitFor({ state: 'hidden' });
   assert.equal(await chat.locator('.activity-log .tool').count(), 2);
   assert.equal(await chat.locator('.activity-log .step-text').count(), 0);
   await chat.locator('.activity-log .tool-head').first().click();
@@ -207,15 +219,20 @@ try {
     f.publish();
   });
   await chat.getByText('El proyecto usa', { exact: false }).waitFor();
+  await page.keyboard.press('Tab');
+  await insight.focus();
+  await insightCard.waitFor({ state: 'visible' });
   assert.equal(await chat.locator('.task-signature-tokens').innerText(), '↑1,2k ↓340');
   assert.match(
-    await chat.locator('.task-signature-tokens').getAttribute('title'),
+    await insightCard.locator('.insight-row:has(.task-signature-tokens)').getAttribute('title'),
     /Entrada: 1234|Entrada: 1.234/,
   );
   const signature = await chat.locator('.task-signature').boundingBox();
   const finishedComposer = await chat.locator('.composer').boundingBox();
   assert.ok(signature.y >= finishedComposer.y + finishedComposer.height);
   await chat.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('Otra tarea');
+  await insight.focus();
+  await insightCard.waitFor({ state: 'visible' });
   assert.equal(await chat.locator('.task-signature-model').innerText(), 'Auto');
   await chat.getByRole('textbox', { name: 'Mensaje', exact: true }).fill('');
   assert.equal(await progress.count(), 0);

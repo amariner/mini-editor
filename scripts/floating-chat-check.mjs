@@ -270,34 +270,56 @@ try {
     { id: 'floating-a', role: 'assistant', text: 'Puedes mover este chat' },
   ];
   fixtureSession.status = 'working';
-  const publish = async () =>
-    app.evaluate(
-      ({ BrowserWindow }, { id, state }) => {
-        BrowserWindow.getAllWindows()
-          .find((w) => w.webContents.getURL().includes(id))
-          .webContents.send('desk:event', { type: 'state', state });
+  // Account polling and focus can publish the real, empty conversation during
+  // these screenshots. Isolate only this renderer's synthetic state stream;
+  // every other event and all native lifecycle IPC keep their real handlers.
+  const fixtureTransport = await app.evaluateHandle(({ BrowserWindow }, id) => {
+    const contents = BrowserWindow.getAllWindows().find((w) =>
+      w.webContents.getURL().includes(id),
+    ).webContents;
+    const send = contents.send;
+    contents.send = function (channel, ...args) {
+      if (channel === 'desk:event' && args[0]?.type === 'state') return;
+      return send.call(this, channel, ...args);
+    };
+    return {
+      publish(state) {
+        send.call(contents, 'desk:event', { type: 'state', state });
       },
-      { id: first.id, state: fixture },
-    );
-  await publish();
-  await one.locator('.messages').getByText('Puedes mover este chat', { exact: true }).waitFor();
-  fixtureSession.messages[1].text =
-    'Puedes mover este chat a cualquier parte de la pantalla. La conversación y tus archivos siguen aquí, mientras trabajas en el editor.';
-  fixtureSession.status = 'ready';
-  await publish();
-  await one
-    .locator('.messages')
-    .getByText(fixtureSession.messages[1].text, { exact: true })
-    .waitFor();
-  await one.screenshot({ path: 'artifacts/floating-chat-dark.png' });
-  // Pin and transparency remain accessible from a right click on the header.
-  await one.locator('.floating-chat-controls').click({ button: 'right' });
-  await one.getByRole('dialog', { name: 'Opciones de ventana flotante', exact: true }).waitFor();
-  await one.screenshot({ path: 'artifacts/floating-chat-options.png', animations: 'disabled' });
-  await one.keyboard.press('Escape');
-  await one.emulateMedia({ colorScheme: 'light' });
-  await one.screenshot({ path: 'artifacts/floating-chat-light.png' });
-  await one.emulateMedia({ colorScheme: 'dark' });
+      restore() {
+        contents.send = send;
+      },
+    };
+  }, first.id);
+  try {
+    const publish = () =>
+      fixtureTransport.evaluate((transport, state) => transport.publish(state), fixture);
+    await publish();
+    await one.locator('.messages').getByText('Puedes mover este chat', { exact: true }).waitFor();
+    fixtureSession.messages[1].text =
+      'Puedes mover este chat a cualquier parte de la pantalla. La conversación y tus archivos siguen aquí, mientras trabajas en el editor.';
+    fixtureSession.status = 'ready';
+    await publish();
+    await one
+      .locator('.messages')
+      .getByText(fixtureSession.messages[1].text, { exact: true })
+      .waitFor();
+    await one.screenshot({ path: 'artifacts/floating-chat-dark.png' });
+    // Pin and transparency remain accessible from a right click on the header.
+    await one.locator('.floating-chat-controls').click({ button: 'right' });
+    await one.getByRole('dialog', { name: 'Opciones de ventana flotante', exact: true }).waitFor();
+    await one.screenshot({ path: 'artifacts/floating-chat-options.png', animations: 'disabled' });
+    await one.keyboard.press('Escape');
+    await one.emulateMedia({ colorScheme: 'light' });
+    await one.screenshot({ path: 'artifacts/floating-chat-light.png' });
+    await one.emulateMedia({ colorScheme: 'dark' });
+  } finally {
+    try {
+      await fixtureTransport.evaluate((transport) => transport.restore());
+    } finally {
+      await fixtureTransport.dispose();
+    }
+  }
 
   const closedOne = one.waitForEvent('close');
   await one.getByRole('button', { name: 'Volver al editor', exact: true }).click();

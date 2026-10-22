@@ -1,10 +1,20 @@
 // Isolated renderer audit: no personal accounts, agent processes, or network calls.
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { build, preview } from 'vite';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'silent' });
+const testBuild = process.env.SOURCE_BUILD
+  ? await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-ui-polish-'))
+  : undefined;
+if (testBuild) await build({ build: { outDir: testBuild, emptyOutDir: true }, logLevel: 'silent' });
+const server = await preview({
+  build: { outDir: testBuild ?? 'dist' },
+  preview: { host: '127.0.0.1', port: 0 },
+  logLevel: 'silent',
+});
 const protocol = Number(
   (await fs.readFile(new URL('../src/runtime.ts', import.meta.url), 'utf8')).match(
     /IPC_VERSION = (\d+)/,
@@ -243,7 +253,7 @@ try {
     const listBox = await page.getByRole('listbox', { name: 'Proyectos y sesiones' }).boundingBox();
     assert.ok(
       optionBox.y >= listBox.y && optionBox.y + optionBox.height <= listBox.y + listBox.height + 1,
-      'Keyboard search must scroll the highlighted result into view',
+      `Keyboard search must scroll the highlighted result into view: ${JSON.stringify({ optionBox, listBox })}`,
     );
     await page.keyboard.press('Escape');
     await page.evaluate(() => {
@@ -306,5 +316,6 @@ try {
   );
 } finally {
   await browser?.close();
-  await new Promise((resolve) => server.httpServer.close(resolve));
+  await server.close();
+  if (testBuild) await fs.rm(testBuild, { recursive: true, force: true });
 }
