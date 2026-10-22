@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   GitBranch,
   GitMerge,
@@ -8,6 +9,7 @@ import {
   Upload,
   Download,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { GitOperation, GitSnapshot, WorktreeMergeResult } from './git-types';
 import { actionError } from './runtime';
@@ -17,6 +19,7 @@ import { ChatSwitcher } from './chat-switcher';
 import { TeamIndicator } from './team';
 import { IsolationBar } from './isolation-bar';
 import { wantsWorktree } from './isolation';
+import './git-dock.css';
 
 export function GitBar({
   project,
@@ -35,6 +38,8 @@ export function GitBar({
   run: runAction,
   navigationDisabled = false,
   floating = false,
+  compact = false,
+  mount,
 }: {
   project: { id: string; name: string; path: string };
   state?: GitSnapshot;
@@ -53,7 +58,13 @@ export function GitBar({
   run?: (action: Action) => Promise<unknown>;
   navigationDisabled?: boolean;
   floating?: boolean;
+  compact?: boolean;
+  /** Keep this component stable while placing the compact control in the composer's footer. */
+  mount?: HTMLElement | null;
 }) {
+  const id = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [branch, setBranch] = useState('');
   const [message, setMessage] = useState('');
@@ -62,12 +73,49 @@ export function GitBar({
   const [failure, setFailure] = useState('');
   const inFlight = useRef(false);
   const mounted = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
       mounted.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (!compact || !open || !popup.current || !trigger.current) return;
+    const panel = popup.current;
+    const anchor = trigger.current;
+    if (!panel.matches(':popover-open')) {
+      setOpen(false);
+      return;
+    }
+    const position = () => {
+      const rect = anchor.getBoundingClientRect();
+      const margin = 8;
+      const gap = 6;
+      const above = Math.max(0, rect.top - margin - gap);
+      const below = Math.max(0, innerHeight - rect.bottom - margin - gap);
+      const useAbove = above >= 160 || above >= below;
+      panel.style.maxHeight = `${Math.min(520, useAbove ? above : below)}px`;
+      const bounds = panel.getBoundingClientRect();
+      panel.style.left = `${Math.max(margin, Math.min(rect.left, innerWidth - bounds.width - margin))}px`;
+      panel.style.top = `${Math.max(margin, Math.min(useAbove ? rect.top - gap - bounds.height : rect.bottom + gap, innerHeight - bounds.height - margin))}px`;
+    };
+    position();
+    panel.focus({ preventScroll: true });
+    const observer = new ResizeObserver(position);
+    observer.observe(anchor);
+    observer.observe(panel);
+    window.addEventListener('resize', position);
+    document.addEventListener('scroll', position, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', position);
+      document.removeEventListener('scroll', position, true);
+    };
+  }, [compact, open, mount]);
+  const closePopup = (restoreFocus = false) => {
+    popup.current?.hidePopover();
+    if (restoreFocus) trigger.current?.focus({ preventScroll: true });
+  };
   const run = async (operation: GitOperation, value?: string) => {
     if (inFlight.current || !compatible) return;
     inFlight.current = true;
@@ -117,120 +165,243 @@ export function GitBar({
   const counts = state?.counts;
   const worktree = sessionId ? state?.worktree : undefined;
   const pendingWorktree = !!session && !session.worktree && wantsWorktree(session, sessions);
-  return (
-    <div className="git-context">
-      <div className="git-summary" aria-label="Resumen de cambios del proyecto">
+  const branchLabel = error
+    ? 'Error de Git'
+    : !state || !state.repository
+      ? 'Git'
+      : worktree
+        ? `Worktree · ${worktree.branch}`
+        : pendingWorktree
+          ? `Worktree pendiente · ${state.branch}`
+          : state.branch;
+  const viewDiff = () => {
+    if (compact) closePopup(true);
+    onDiff();
+  };
+  const content = (
+    <div className={`git-context${compact ? ' git-compact' : ''}`}>
+      {compact ? (
         <button
-          className="git-summary-project"
-          aria-label="Cambios de Git"
-          onClick={onDiff}
-          aria-expanded={expandedDiff}
-          title="Ver archivos y diferencias"
-        >
-          <ProjectMark identity={project.path} />
-          <span>{project.name}</span>
-        </button>
-        {session && floating && (
-          <span className="git-current-chat" title={session.title}>
-            {session.title}
-          </span>
-        )}
-        {session && !floating && onSelectSession && runAction && (
-          <ChatSwitcher
-            key={session.id}
-            session={session}
-            sessions={sessions}
-            projectName={project.name}
-            select={onSelectSession}
-            run={runAction}
-            disabled={navigationDisabled}
-            floating={floating}
-          />
-        )}
-        {session && !floating && onSelectSession && (
-          <TeamIndicator
-            key={`team-${session.id}`}
-            session={session}
-            sessions={sessions}
-            open={onSelectSession}
-            compact
-          />
-        )}
-        <button
-          className={`git-branch-toggle ${pendingWorktree ? 'worktree-pending' : ''}`}
+          ref={trigger}
+          type="button"
+          className={`git-dock-trigger${error || counts?.conflicts ? ' has-conflicts' : ''}`}
           aria-label="Gestionar ramas y Git"
-          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="dialog"
+          aria-controls={id}
           aria-expanded={open}
-          title={
-            pendingWorktree
-              ? 'Worktree al iniciar · Configurar aislamiento y Git'
-              : 'Ramas, worktrees y cambios de Git'
+          popoverTarget={id}
+          title={`${branchLabel} · Ramas, worktrees y cambios de Git`}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              popup.current?.showPopover();
+            }
+          }}
+        >
+          <GitBranch size={12} strokeWidth={1.5} aria-hidden="true" />
+          <span className="git-dock-branch">{branchLabel}</span>
+          {!!counts?.conflicts ? (
+            <span className="git-dock-count has-conflicts">{counts.conflicts} conflictos</span>
+          ) : dirty ? (
+            <span className="git-dock-count">{state!.files.length} cambios</span>
+          ) : null}
+        </button>
+      ) : (
+        <div className="git-summary" aria-label="Resumen de cambios del proyecto">
+          <button
+            className="git-summary-project"
+            aria-label="Cambios de Git"
+            onClick={viewDiff}
+            aria-expanded={expandedDiff}
+            title="Ver archivos y diferencias"
+          >
+            <ProjectMark identity={project.path} />
+            <span>{project.name}</span>
+          </button>
+          {session && floating && (
+            <span className="git-current-chat" title={session.title}>
+              {session.title}
+            </span>
+          )}
+          {session && !floating && onSelectSession && runAction && (
+            <ChatSwitcher
+              key={session.id}
+              session={session}
+              sessions={sessions}
+              projectName={project.name}
+              select={onSelectSession}
+              run={runAction}
+              disabled={navigationDisabled}
+              floating={floating}
+            />
+          )}
+          {session && !floating && onSelectSession && (
+            <TeamIndicator
+              key={`team-${session.id}`}
+              session={session}
+              sessions={sessions}
+              open={onSelectSession}
+              compact
+            />
+          )}
+          <button
+            className={`git-branch-toggle ${pendingWorktree ? 'worktree-pending' : ''}`}
+            aria-label="Gestionar ramas y Git"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            title={
+              pendingWorktree
+                ? 'Worktree al iniciar · Configurar aislamiento y Git'
+                : 'Ramas, worktrees y cambios de Git'
+            }
+          >
+            <GitBranch size={13} />
+            <span>
+              {error
+                ? 'Error de Git'
+                : !state
+                  ? 'Consultando…'
+                  : !state.repository
+                    ? 'Sin repositorio Git'
+                    : worktree
+                      ? `Worktree · ${worktree.branch}`
+                      : pendingWorktree
+                        ? `Worktree pendiente · ${state.branch}`
+                        : state.branch}
+            </span>
+            <ChevronDown size={12} />
+          </button>
+          {state?.repository && (
+            <>
+              <span
+                className={`git-state-label ${counts?.conflicts ? 'has-conflicts' : ''}`}
+                title={!dirty ? 'Sin cambios locales' : undefined}
+                aria-label={!dirty ? 'Sin cambios locales' : undefined}
+                role={!dirty ? 'img' : undefined}
+              >
+                {counts?.conflicts ? (
+                  `${counts.conflicts} conflictos`
+                ) : dirty ? (
+                  `${state.files.length} archivos`
+                ) : (
+                  <Check size={11} aria-hidden="true" />
+                )}
+              </span>
+              {state.upstream && (
+                <span
+                  className="git-sync-counts"
+                  title={`${state.upstream} · Según la última consulta del remoto`}
+                >
+                  ↑{state.ahead ?? '—'} ↓{state.behind ?? '—'}
+                </span>
+              )}
+              {state.lines && (state.lines.added > 0 || state.lines.removed > 0) && (
+                <button
+                  className="git-summary-lines"
+                  onClick={viewDiff}
+                  aria-label={`Ver cambios: ${state.lines.added} líneas añadidas y ${state.lines.removed} eliminadas`}
+                  title="Cambios preparados y sin preparar. No incluye archivos sin seguimiento ni binarios."
+                >
+                  <span className="git-added">+{state.lines.added}</span>
+                  <span className="git-removed">−{state.lines.removed}</span>
+                </button>
+              )}
+            </>
+          )}
+          <button
+            aria-label="Actualizar estado de Git"
+            title="Actualizar estado local"
+            disabled={!!busy}
+            onClick={() => void reload()}
+          >
+            <RefreshCw size={13} className={busy ? 'spinner' : ''} />
+          </button>
+        </div>
+      )}
+      {(compact || open) && (
+        <section
+          ref={popup}
+          id={id}
+          className={`git-workflow${compact ? ' git-dock-panel' : ''}`}
+          popover={compact ? 'auto' : undefined}
+          role={compact ? 'dialog' : undefined}
+          tabIndex={compact ? -1 : undefined}
+          aria-label="Flujo de Git"
+          onToggle={compact ? (event) => setOpen(event.newState === 'open') : undefined}
+          onBlur={
+            compact
+              ? (event) => {
+                  if (
+                    event.relatedTarget &&
+                    event.relatedTarget !== trigger.current &&
+                    !event.currentTarget.contains(event.relatedTarget)
+                  )
+                    closePopup();
+                }
+              : undefined
+          }
+          onKeyDown={
+            compact
+              ? (event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closePopup(true);
+                  }
+                }
+              : undefined
           }
         >
-          <GitBranch size={13} />
-          <span>
-            {error
-              ? 'Error de Git'
-              : !state
-                ? 'Consultando…'
-                : !state.repository
-                  ? 'Sin repositorio Git'
-                  : worktree
-                    ? `Worktree · ${worktree.branch}`
-                    : pendingWorktree
-                      ? `Worktree pendiente · ${state.branch}`
-                      : state.branch}
-          </span>
-          <ChevronDown size={12} />
-        </button>
-        {state?.repository && (
-          <>
-            <span
-              className={`git-state-label ${counts?.conflicts ? 'has-conflicts' : ''}`}
-              title={!dirty ? 'Sin cambios locales' : undefined}
-              aria-label={!dirty ? 'Sin cambios locales' : undefined}
-              role={!dirty ? 'img' : undefined}
-            >
-              {counts?.conflicts ? (
-                `${counts.conflicts} conflictos`
-              ) : dirty ? (
-                `${state.files.length} archivos`
-              ) : (
-                <Check size={11} aria-hidden="true" />
+          {compact && (
+            <>
+              <div className="git-dock-heading">
+                <h3>
+                  <GitBranch size={14} strokeWidth={1.5} aria-hidden="true" /> Git y worktree
+                </h3>
+                <button
+                  type="button"
+                  className="icon-btn ghost"
+                  aria-label="Actualizar estado de Git"
+                  title="Actualizar estado local"
+                  disabled={!!busy}
+                  onClick={() => void reload()}
+                >
+                  <RefreshCw size={13} className={busy ? 'spinner' : ''} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn ghost"
+                  aria-label="Cerrar Git"
+                  onClick={() => closePopup(true)}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </div>
+              {state?.repository && (
+                <div className="git-dock-details">
+                  <span title={branchLabel}>{branchLabel}</span>
+                  <span className={counts?.conflicts ? 'has-conflicts' : ''}>
+                    {counts?.conflicts
+                      ? `${counts.conflicts} conflictos`
+                      : dirty
+                        ? `${state.files.length} archivos modificados`
+                        : 'Sin cambios locales'}
+                  </span>
+                  {state.lines && (state.lines.added > 0 || state.lines.removed > 0) && (
+                    <button
+                      className="git-dock-lines"
+                      onClick={viewDiff}
+                      aria-label={`Ver cambios: ${state.lines.added} líneas añadidas y ${state.lines.removed} eliminadas`}
+                      title="Cambios preparados y sin preparar. No incluye archivos sin seguimiento ni binarios."
+                    >
+                      <span className="git-added">+{state.lines.added}</span>
+                      <span className="git-removed">−{state.lines.removed}</span>
+                    </button>
+                  )}
+                </div>
               )}
-            </span>
-            {state.upstream && (
-              <span
-                className="git-sync-counts"
-                title={`${state.upstream} · Según la última consulta del remoto`}
-              >
-                ↑{state.ahead ?? '—'} ↓{state.behind ?? '—'}
-              </span>
-            )}
-            {state.lines && (state.lines.added > 0 || state.lines.removed > 0) && (
-              <button
-                className="git-summary-lines"
-                onClick={onDiff}
-                aria-label={`Ver cambios: ${state.lines.added} líneas añadidas y ${state.lines.removed} eliminadas`}
-                title="Cambios preparados y sin preparar. No incluye archivos sin seguimiento ni binarios."
-              >
-                <span className="git-added">+{state.lines.added}</span>
-                <span className="git-removed">−{state.lines.removed}</span>
-              </button>
-            )}
-          </>
-        )}
-        <button
-          aria-label="Actualizar estado de Git"
-          title="Actualizar estado local"
-          disabled={!!busy}
-          onClick={() => void reload()}
-        >
-          <RefreshCw size={13} className={busy ? 'spinner' : ''} />
-        </button>
-      </div>
-      {open && (
-        <section className="git-workflow" aria-label="Flujo de Git">
+            </>
+          )}
           {session && runAction && (
             <IsolationBar
               session={session}
@@ -254,7 +425,7 @@ export function GitBar({
               state={state}
               compatible={compatible}
               agentBusy={!!agentBusy}
-              onDiff={onDiff}
+              onDiff={viewDiff}
               refresh={refresh}
             />
           ) : (
@@ -320,7 +491,7 @@ export function GitBar({
                   >
                     Retirar preparados
                   </button>
-                  <button onClick={onDiff}>Ver diferencias</button>
+                  <button onClick={viewDiff}>Ver diferencias</button>
                 </div>
                 {!!counts?.conflicts && (
                   <p className="git-error">
@@ -432,6 +603,11 @@ export function GitBar({
       )}
     </div>
   );
+  return compact && mount === null
+    ? null
+    : compact && mount
+      ? createPortal(content, mount)
+      : content;
 }
 
 function WorktreePanel({

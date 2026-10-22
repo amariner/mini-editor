@@ -23,7 +23,7 @@ Puntos que conviene revisar si también se han editado allí:
 - `src/floating-chat-protocol.ts`: mantiene sus exports; los valores sin validadores están ahora en `floating-chat-state.ts`.
 - `src/style.css`, `src/shell-polish.css` y `src/motion.css`: ajustes puntuales de contraste, foco y buscador.
 - `electron/store.ts`, `electron/attachments.ts` y `electron/rpc.ts`: guardado, adjuntos y cierre de procesos.
-- `src/team.tsx`, `src/git-bar.tsx` y los nuevos componentes de navegación: las conversaciones pasan del antiguo tabulador superior al panel de proyectos y al selector del compositor. Los gestos de ventana flotante reutilizan la acción IPC existente.
+- `src/team.tsx`, `src/git-bar.tsx` y los nuevos componentes de navegación: las conversaciones pasan del antiguo tabulador superior al panel de proyectos. Git queda en un control inferior del compositor. Los gestos de ventana flotante reutilizan la acción IPC existente.
 
 ## Cambios comprobados
 
@@ -57,10 +57,10 @@ Estas comprobaciones usan datos temporales, proveedores simulados y servidores l
 - Añadir proyecto aparece al pasar por el panel o enfocarlo con teclado y comparte el eje de los iconos. Buscar solo aparece cuando la lista requiere scroll; ⌘K sigue disponible.
 - Doble clic en el panel o en el nombre/icono del proyecto pliega o expande la barra. ⌘B ofrece el mismo control por teclado y F2 permite renombrar. En el panel plegado el icono queda libre para seleccionar y expandir; ⌘N crea un chat.
 - Crear conversaciones aparece como una línea divisoria con «+» centrado entre el proyecto y su chat más reciente, al pasar por el bloque o enfocarlo con teclado. Su espacio permanece estable para no desplazar los chats. Los estados de proyecto, chats y subchats comparten una columna; al pasar por cada fila, la X sustituye al estado en su misma posición y conserva la confirmación antes de borrar.
-- Se retiran las pestañas superiores. El nombre del chat aparece junto al proyecto en el compositor, con un menú que permite navegar por todas las conversaciones del proyecto y renombrar. El aislamiento se configura dentro del panel de Git/worktree inferior.
+- Se retiran las pestañas superiores y la cabecera de proyecto/chat del compositor. La navegación queda en el panel lateral; F2 o clic derecho sobre un chat permiten renombrarlo. El aislamiento se configura dentro del panel de Git/worktree inferior.
 - Crear o eliminar conversaciones no borra el estado de Git del mismo repositorio ni deja la barra en «Consultando…» hasta el siguiente sondeo.
-- Los chats de la misma carpeta comparten el estado de las operaciones Git y su borrador de commit. El selector devuelve el foco al nuevo chat cuando está disponible; cualquier interacción posterior cancela esa devolución para respetar la intención del usuario.
-- Arrastrar un chat fuera del panel, del selector inferior o de la cuadrícula muestra una tarjeta elevada y permite abrir una ventana flotante al soltar. Escape o perder el foco cancelan el gesto; Alt+Mayús+F ofrece acceso por teclado. Dentro del panel se ordenan chats hermanos y la cuadrícula conserva su ordenación interna.
+- Los chats de la misma carpeta comparten el estado de las operaciones Git y su borrador de commit. El control de Git se muestra en el pie del compositor conservando ese estado al cambiar de conversación.
+- Arrastrar un chat fuera del panel lateral o de la cuadrícula muestra una tarjeta elevada y permite abrir una ventana flotante al soltar. Escape o perder el foco cancelan el gesto; Alt+Mayús+F ofrece acceso por teclado. Dentro del panel se ordenan chats hermanos y la cuadrícula conserva su ordenación interna.
 
 Verificación de esta iteración: **269/269 pruebas de lógica** y **28 comprobaciones nuevas de navegación**, en claro y oscuro y con anchos de 1280, 760 y 480 píxeles. Incluyen geometría, hover, foco, borradores, creación/eliminación, worktree, desbordamiento y cancelación del arrastre. Registro y capturas: `artifacts/project-navigation/`.
 
@@ -70,16 +70,16 @@ SOURCE_BUILD=1 node scripts/project-navigation-check.mjs
 
 La comprobación compila el renderer en una carpeta temporal para no interferir con la aplicación de desarrollo abierta.
 
-También pasan los recorridos de multichat, estilo/foco en claro y oscuro, navegación nativa, ventanas flotantes nativas y ciclo de vida de chats (`tabs-check.mjs`, adaptado al nuevo selector). Este último comprueba foco por teclado, cancelación al interactuar, borradores, procesos activos, terminal y eliminación confirmada. Para los recorridos de Electron mientras `npm run dev` está abierto, usa `SOURCE_DEV_URL=http://127.0.0.1:5173`; sus perfiles y datos siguen siendo temporales. La aplicación valida ese origen, por lo que un servidor de preview en un puerto aleatorio no sirve para esas pruebas nativas.
+También pasan los recorridos de multichat, estilo/foco en claro y oscuro, navegación nativa, ventanas flotantes nativas y ciclo de vida de chats (`tabs-check.mjs`, adaptado a la navegación lateral y el control inferior de Git). Este último comprueba foco por teclado, renombrado, borradores, procesos activos, terminal y eliminación confirmada. Para los recorridos de Electron mientras `npm run dev` está abierto, usa `SOURCE_DEV_URL=http://127.0.0.1:5173`; sus perfiles y datos siguen siendo temporales. La aplicación valida ese origen, por lo que un servidor de preview en un puerto aleatorio no sirve para esas pruebas nativas.
 
 ## Refinamiento del panel de chats
 
 - El estado del proyecto queda alineado con el de todos sus chats, incluidos los anidados. La X ocupa exactamente ese lugar al pasar por la fila. El divisor con «+» mantiene libre el icono del proyecto para seleccionar y plegar con doble clic.
 - Los chats nuevos aparecen primero dentro de su grupo. Se pueden seleccionar y ordenar verticalmente con arrastre o Alt+↑/↓; los hijos acompañan al padre y no cambian de relación. Al arrastrar cerca de los bordes, la lista se desplaza automáticamente.
-- El orden manual se conserva al recargar y se comparte con el selector inferior. Se guarda por grupo en el almacenamiento local de esta instalación, sin modificar el protocolo IPC ni el formato de los proyectos. Los chats creados después se anteponen al orden guardado.
+- El orden manual se conserva al recargar. Se guarda por grupo en el almacenamiento local de esta instalación, sin modificar el protocolo IPC ni el formato de los proyectos. Los chats creados después se anteponen al orden guardado.
 - Durante la ejecución se animan las cuatro formas de Agent Desk mediante CSS, sin temporizadores de JavaScript. Se respeta la preferencia de movimiento reducido. Al completar, aparece una marca verde suave y una ligera coloración de la fila, más visible mientras queda pendiente de leer; se mantienen las notificaciones existentes.
 - La barra lateral pasa a 216 px en escritorio y 184 px en ventanas estrechas; las filas de chat tienen 26 px de alto mínimo. Los iconos y controles permanecen en posiciones estables al aparecer y desaparecer.
-- Los iconos del panel usan contornos finos, tamaños contenidos y colores atenuados. El verde de finalización y los fondos se suavizan; las conversaciones pendientes de leer conservan mayor énfasis. El divisor de creación funciona también con Enter o Espacio y desaparece al plegar el panel.
+- Los iconos de estado usan contornos finos, tamaños contenidos y colores atenuados. Los iconos de identidad del proyecto conservan sus formas rellenas originales. El verde de finalización y los fondos se suavizan; las conversaciones pendientes de leer conservan mayor énfasis. El divisor de creación funciona también con Enter o Espacio y desaparece al plegar el panel.
 
 Comprobaciones específicas y capturas en `artifacts/sidebar-refinement/`. Para repetirlas con datos temporales:
 
@@ -90,3 +90,12 @@ SOURCE_BUILD=1 node scripts/sidebar-refinement-check.mjs
 Resultado final de este refinamiento: **275/275 pruebas de lógica**, TypeScript y compilación del renderer correctos, **20 comprobaciones específicas** y **28 comprobaciones de navegación** en claro y oscuro. Se verifica también autoscroll con 40 chats, cancelación sin escrituras ni ventanas flotantes, y ordenación por teclado sin perder el foco. El JavaScript principal de producción queda en 470,03 kB (150,44 kB gzip); no se han añadido dependencias.
 
 Tras suavizar los iconos y sustituir el lápiz por el divisor con «+», se repiten correctamente TypeScript, la compilación y las **48 comprobaciones de interfaz**. Incluyen simetría de las líneas, centrado, ausencia de saltos al mostrar el control, creación por teclado y panel plegado. Capturas del control visible: `artifacts/sidebar-refinement/dark-creation-divider.png` y `light-creation-divider.png`. El bundle principal queda en 469,66 kB (150,31 kB gzip).
+
+## Compositor centrado y Git bajo demanda
+
+- El campo de escritura tiene un ancho máximo de 960 px, centrado en el área de conversación. Conserva el ancho disponible en ventanas pequeñas y cuando se abren herramientas al lado.
+- Se elimina la cabecera que repetía proyecto y chat. El lateral conserva selección, orden, arrastre y renombrado con F2 o clic derecho; Enter guarda y Escape cancela.
+- Git aparece abajo a la izquierda como un único control de rama, con indicador de cambios o conflictos cuando procede. El panel que abre reúne ramas, diferencias, commit, sincronización, actualización y aislamiento/worktree. Se ajusta a la ventana y se cierra con Escape o al hacer clic fuera.
+- El estado de Git permanece en un componente estable por repositorio/worktree. Colocar su interfaz en el pie del compositor mediante un portal evita perder operaciones o el borrador de commit cuando se sustituye el compositor al cambiar de chat.
+
+Verificación: **275/275 pruebas de lógica**, TypeScript y compilación de producción correctos, **46 comprobaciones específicas de interfaz** (26 de navegación y 20 del lateral), y recorridos de chat compacto, multichat, chats nativos y terminal/Git nativos correctos. Se prueban tamaños de 2200, 760 y 480 px, panel de Git con cambios y conflictos, foco, renombrado y conservación del estado de Git entre chats. Capturas: `artifacts/project-navigation/dark-2200.png`, `light-2200.png` y las variantes `*-git.png`. El JavaScript principal queda en 474,05 kB (151,45 kB gzip).

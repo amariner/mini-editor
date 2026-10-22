@@ -195,14 +195,14 @@ try {
       ['Subchat tercero', 'Subchat segundo', 'Subchat primero'],
       'Newest child first',
     );
-    await page.locator('.chat-switcher-trigger').click();
-    await ordered(
-      page.locator('.chat-switcher-option strong'),
-      ['Tercero', 'Segundo', 'Primero', 'Subchat tercero', 'Subchat segundo', 'Subchat primero'],
-      'Dropdown starts newest first',
+    assert.equal(
+      await page.locator('.chat-switcher-trigger').count(),
+      0,
+      'Sidebar is the chat navigation surface',
     );
-    await page.keyboard.press('Escape');
-    check(`${colorScheme}: roots, subchats and dropdown start newest first`);
+    check(
+      `${colorScheme}: roots and subchats start newest first without a duplicate composer selector`,
+    );
 
     await page.mouse.move(1000, 100);
     const projectStatus = project.locator('.project-status');
@@ -243,9 +243,6 @@ try {
     await chat(page, 'c1').click();
     await selected(page, 'c1');
     assert.equal(await chat(page, 'c1').getAttribute('aria-current'), 'true');
-    await page.waitForFunction(() =>
-      document.querySelector('.chat-switcher-trigger')?.textContent.includes('Subchat primero'),
-    );
     await composer.fill('Borrador de subchat');
     await chat(page, 's3').click();
     await selected(page, 's3');

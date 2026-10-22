@@ -1,0 +1,46 @@
+/* The writing surface stays comfortable on large windows; tools live below it. */
+.app .conversation .desk-input {
+  width: 100%;
+  max-width: 976px; /* 960 px writing surface plus its existing 8 px side gutters. */
+  margin-inline: auto;
+}
+.app .desk-input .composer-area .composer,
+.app .desk-input .composer-area .composer.enabled:focus-within {
+  border-radius: var(--desk-radius);
+}
+.app .desk-input .composer-footer {
+  padding-top: 4px;
+  gap: 8px;
+}
+.app .desk-input .composer-footer-start {
+  display: flex;
+  align-items: center;
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: min(360px, 45%);
+  margin-right: auto;
+}
+.app .desk-input .composer-footer .task-signature {
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.app .desk-input .composer-footer .usage-switcher {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.app .desk-input .composer-footer .usage-account {
+  min-width: 0;
+}
+.app .desk-input .composer-footer .usage-account select {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.app .desk-input .composer-footer .footer-insight {
+  flex-shrink: 0;
+}
+.app .desk-input.solo > .git-context.git-compact {
+  margin: 4px 12px;
+  max-width: calc(100% - 24px);
+}

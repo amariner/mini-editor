@@ -128,11 +128,11 @@ try {
     'Revisando la estructura del proyecto',
   );
   const composer = await chat.locator('.composer').boundingBox();
-  const context = await chat.locator('.git-summary').boundingBox();
+  const context = await chat.locator('.git-dock-trigger').boundingBox();
   const dock = await progress.boundingBox();
-  assert.ok(dock.y + dock.height <= context.y);
-  assert.ok(context.y - (dock.y + dock.height) < 10);
-  assert.ok(context.y + context.height <= composer.y);
+  assert.ok(dock.y + dock.height <= composer.y);
+  assert.ok(composer.y - (dock.y + dock.height) < 10);
+  assert.ok(context.y >= composer.y + composer.height);
   assert.ok(dock.height <= 26);
   assert.equal(await chat.locator('.task-signature').innerText(), 'Personal');
   const insight = chat.locator('.footer-insight');

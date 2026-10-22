@@ -496,7 +496,7 @@ try {
   assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 's7');
   assert.equal(
     await page
-      .locator('.chat-switcher-trigger')
+      .locator('.project-chat[aria-current="true"]')
       .innerText()
       .then((s) => s.trim()),
     'Tarea 8',

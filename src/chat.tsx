@@ -1708,6 +1708,7 @@ export function Composer({
   setImages,
   onLocalCommand,
   footerControl,
+  footerStartRef,
   usageDetail,
 }: {
   session: Session;
@@ -1723,6 +1724,8 @@ export function Composer({
   onSend: (text: string, images: Attachment[]) => Promise<boolean>;
   onLocalCommand: (name: string, arg: string) => boolean;
   footerControl?: React.ReactNode;
+  /** Stable host for the repository control, whose state survives chat changes. */
+  footerStartRef?: React.Ref<HTMLDivElement>;
   /** Consumption window shown in the context hover card. */
   usageDetail?: React.ReactNode;
 }) {
@@ -2576,6 +2579,7 @@ export function Composer({
         </div>
       </div>
       <div className="composer-footer">
+        {footerStartRef && <div className="composer-footer-start" ref={footerStartRef} />}
         <div className="task-signature" aria-label="Cuenta y contexto">
           {accountControl ?? (
             <span className="task-signature-account" title={`Cuenta: ${accountName}`}>

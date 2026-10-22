@@ -6,6 +6,7 @@ import { chatDetachHint, useChatDetachDrag } from './chat-detach-drag';
 import { ChatStateMark } from './chat-state-mark';
 import { chatOrderGroup, orderSiblingChats, type ChatOrderEdge } from './chat-order';
 import { useChatOrder } from './use-chat-order';
+import { EditableName } from './editable-name';
 
 type DropTarget = { sessionId: string; edge: ChatOrderEdge };
 
@@ -37,52 +38,87 @@ function ProjectChatRow({
   moveBy: (session: Session, direction: -1 | 1) => void;
 }) {
   const [tone, status] = cardStatus(session);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [renaming, setRenaming] = useState(false);
   const { handleProps, preview, dragging } = useChatDetachDrag({
     session,
     run,
     floating,
+    disabled: renaming,
     sourceZone: '.sidebar',
     onDragMove: (x, y, outside) => dragMove(session, x, y, outside),
     onDragEnd: dragEnd,
     onDropInside: (x, y) => dropInside(session, x, y),
   });
+  const finishRename = () => {
+    const from = document.activeElement;
+    setRenaming(false);
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body || document.activeElement === from)
+        trigger.current?.focus({ preventScroll: true });
+    });
+  };
   return (
     <>
       <div
         className={`project-chat-target ${dragging ? 'detaching reordering' : ''} ${tone === 'done' ? 'chat-completed' : ''} ${tone === 'done' && unread ? 'completion-unread' : ''}`}
       >
-        <button
-          type="button"
-          {...handleProps}
-          className={`project-chat ${selected ? 'selected' : ''}`}
-          onClick={() => open(session)}
-          onKeyDown={(event) => {
-            handleProps.onKeyDown?.(event);
-            if (event.defaultPrevented || !event.altKey || event.shiftKey) return;
-            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-            event.preventDefault();
-            event.stopPropagation();
-            moveBy(session, event.key === 'ArrowUp' ? -1 : 1);
-          }}
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+Shift+F"
-          aria-current={selected ? 'true' : undefined}
-          title={`${session.title} · ${status}\nArrastra para ordenar · Alt + ↑/↓ para mover · ${chatDetachHint}`}
-        >
-          <span>{session.title}</span>
-          {project && <small>{project}</small>}
-        </button>
-        <span className={`project-chat-status ${tone}`} aria-hidden="true">
-          <ChatStateMark tone={tone} status={status} unread={unread} />
-        </span>
-        <button
-          type="button"
-          className="project-chat-delete"
-          aria-label={`Eliminar chat ${session.title}`}
-          title={`Eliminar definitivamente «${session.title}»`}
-          onClick={() => remove(session)}
-        >
-          <X size={13} />
-        </button>
+        {renaming ? (
+          <EditableName
+            value={session.title}
+            label="Nombre del chat"
+            save={(title) => void run({ type: 'rename', sessionId: session.id, title })}
+            close={finishRename}
+          />
+        ) : (
+          <>
+            <button
+              ref={trigger}
+              type="button"
+              {...handleProps}
+              className={`project-chat ${selected ? 'selected' : ''}`}
+              onClick={() => open(session)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setRenaming(true);
+              }}
+              onKeyDown={(event) => {
+                handleProps.onKeyDown?.(event);
+                if (event.defaultPrevented) return;
+                if (event.key === 'F2') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setRenaming(true);
+                  return;
+                }
+                if (!event.altKey || event.shiftKey) return;
+                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                event.preventDefault();
+                event.stopPropagation();
+                moveBy(session, event.key === 'ArrowUp' ? -1 : 1);
+              }}
+              aria-keyshortcuts="F2 Alt+ArrowUp Alt+ArrowDown Alt+Shift+F"
+              aria-current={selected ? 'true' : undefined}
+              title={`${session.title} · ${status}\nF2 o clic derecho para renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover · ${chatDetachHint}`}
+            >
+              <span>{session.title}</span>
+              {project && <small>{project}</small>}
+            </button>
+            <span className={`project-chat-status ${tone}`} aria-hidden="true">
+              <ChatStateMark tone={tone} status={status} unread={unread} />
+            </span>
+            <button
+              type="button"
+              className="project-chat-delete"
+              aria-label={`Eliminar chat ${session.title}`}
+              title={`Eliminar definitivamente «${session.title}»`}
+              onClick={() => remove(session)}
+            >
+              <X size={13} />
+            </button>
+          </>
+        )}
       </div>
       {preview}
     </>

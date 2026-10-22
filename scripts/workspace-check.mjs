@@ -29,7 +29,7 @@ try {
     args: ['.'],
     env: {
       ...process.env,
-      AGENT_DESK_DEV_URL: '',
+      AGENT_DESK_DEV_URL: process.env.SOURCE_DEV_URL ?? '',
       AGENT_DESK_DATA_DIR: path.join(root, 'data'),
       AGENT_DESK_PROFILES_DIR: '',
     },
@@ -42,6 +42,7 @@ try {
   await app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
   }, folder);
+  await page.locator('.sidebar').hover();
   await page.getByRole('button', { name: 'Añadir proyecto', exact: true }).first().click();
   await page.locator('.chat-watermark').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Abrir agente', exact: true }).count(), 0);
@@ -62,15 +63,20 @@ try {
   await until(async () =>
     (await call({ type: 'terminalBuffer', sessionId: terminalId })).data.includes(folder),
   );
-  await page.getByRole('button', { name: 'Cambios de Git', exact: true }).click();
-  await page.getByText('nota.txt', { exact: false }).first().waitFor();
+  const git = page.getByRole('button', { name: 'Gestionar ramas y Git', exact: true });
+  await git.click();
+  await page.getByRole('button', { name: 'Ver diferencias', exact: true }).click();
+  await page.locator('.diff-panel').getByText('nota.txt', { exact: false }).first().waitFor();
   // Opening a side panel from inside the chat must preserve Chromium's layout tree.
   assert.ok(await page.locator('.composer').boundingBox());
-  assert.ok(await page.locator('.session-tabs-bar').boundingBox());
+  assert.ok(await git.boundingBox());
+  assert.equal(await page.locator('.session-tabs-bar').count(), 0);
   const counters = page.getByRole('button', { name: /^Ver cambios:/ });
+  await git.click();
   await counters.waitFor();
   await counters.click();
   assert.equal(await page.locator('.diff-panel').count(), 0);
+  await git.click();
   await counters.click();
   await page.locator('.diff-panel').waitFor();
   assert.ok(await page.locator('.composer').boundingBox());
@@ -79,7 +85,7 @@ try {
   const diff = await page.locator('.diff-panel').boundingBox();
   assert.ok(term.y >= diff.y + diff.height && term.width > diff.width);
   await page.screenshot({ path: 'artifacts/31-terminal-git-dividido.png', animations: 'disabled' });
-  await page.getByRole('button', { name: 'Plegar proyectos' }).click();
+  await page.keyboard.press('ControlOrMeta+b');
   await page.setViewportSize({ width: 900, height: 620 });
   await page.screenshot({ path: 'artifacts/32-terminal-git-compacto.png', animations: 'disabled' });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

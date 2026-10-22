@@ -87,6 +87,7 @@ import './floating-chat.css';
 import './onboarding.css';
 import './project-navigation.css';
 import './chat-navigation.css';
+import './composer-dock.css';
 import { useScrollOverflow } from './scroll-overflow';
 const AccountsSettings = React.lazy(() =>
   import('./accounts-settings').then((module) => ({ default: module.AccountsSettings })),
@@ -132,6 +133,7 @@ function App() {
       }
     }),
     [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null),
+    [gitFooterSlot, setGitFooterSlot] = useState<HTMLDivElement | null>(null),
     [search, setSearch] = useState(false),
     [query, setQuery] = useState(''),
     [searchIndex, setSearchIndex] = useState(0),
@@ -1730,6 +1732,8 @@ function App() {
                       <div className={`desk-input ${terminalMode ? 'solo' : ''}`}>
                         <GitBar
                           key={`${project.id}:${session.worktree?.path ?? 'shared'}`}
+                          compact
+                          mount={terminalMode ? undefined : gitFooterSlot}
                           project={project}
                           session={session}
                           sessions={state.sessions}
@@ -1806,6 +1810,7 @@ function App() {
                                 />
                               }
                               footerControl={terminalButton}
+                              footerStartRef={setGitFooterSlot}
                               usageDetail={
                                 <UsageWindowDetail
                                   profile={session.profile}

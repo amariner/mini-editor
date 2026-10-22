@@ -1,0 +1,105 @@
+.git-context.git-compact {
+  min-width: 0;
+  max-width: 100%;
+}
+.git-context.git-compact .git-dock-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+.git-context.git-compact .git-dock-trigger:hover,
+.git-context.git-compact .git-dock-trigger[aria-expanded='true'] {
+  color: var(--text-2);
+  background: var(--tile);
+}
+.git-dock-trigger > svg,
+.git-dock-count {
+  flex: none;
+}
+.git-dock-trigger .git-dock-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-dock-trigger .git-dock-count {
+  color: var(--text-2);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.git-context.git-compact .has-conflicts {
+  color: var(--danger);
+}
+.git-context.git-compact .git-workflow.git-dock-panel {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  width: min(500px, calc(100vw - 16px));
+  max-height: min(520px, calc(100vh - 16px));
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 12px 36px #0003;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.git-dock-panel:focus {
+  outline: none;
+}
+.git-dock-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.git-dock-heading h3 {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.git-dock-heading button {
+  flex: none;
+}
+.git-dock-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.git-dock-details > span:first-child {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-dock-details .git-dock-lines {
+  display: inline-flex;
+  gap: 6px;
+  padding: 0 3px;
+  min-height: 22px;
+  border: 0;
+  background: transparent;
+  font-size: 10px;
+}

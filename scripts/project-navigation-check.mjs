@@ -113,10 +113,17 @@ async function fixture(page) {
             counts: { conflicts: 0, staged: 0, unstaged: 0 },
             lines: { added: 0, removed: 0 },
             upstream: 'origin/main',
+            remote: 'origin',
             ahead: 0,
             behind: 0,
+            ...(window.fixture.gitPatch || {}),
           };
         if (action.type === 'listFiles') return [];
+        if (action.type === 'gitOperation' && window.fixture.holdGit) {
+          return new Promise((resolve) => {
+            window.fixture.releaseGit = resolve;
+          });
+        }
         if (
           [
             'refreshUsage',
@@ -309,47 +316,33 @@ try {
       `${colorScheme}: deletion replaces status; centered creation divider appears on hover and focus without layout shift`,
     );
 
-    const switcher = page.locator('.chat-switcher-trigger');
-    await switcher.waitFor();
-    const projectBounds = await page.locator('.git-summary-project').boundingBox();
-    const switcherBounds = await switcher.boundingBox();
-    assert.ok(
-      switcherBounds.x >= projectBounds.x + projectBounds.width - 1,
-      'Chat title follows the project name',
+    assert.equal(
+      await page.locator('.chat-switcher-trigger').count(),
+      0,
+      'The main composer relies on sidebar navigation',
     );
-    assert.ok(
-      Math.abs(
-        switcherBounds.y + switcherBounds.height / 2 - (projectBounds.y + projectBounds.height / 2),
-      ) <= 2,
-      'Project and chat share the same line',
+    assert.equal(
+      await page.locator('.desk-input .git-summary-project').count(),
+      0,
+      'The composer does not repeat the project name',
     );
     await composer.fill('Borrador que debe conservarse');
-    await switcher.click();
-    const menu = page.getByRole('menu', { name: 'Chats de Estudio', exact: true });
-    await menu.waitFor();
-    await menu.getByRole('menuitemradio').filter({ hasText: 'Preparar pruebas' }).click();
-    await selected(page, 's2');
-    await page.waitForFunction(() =>
-      document.querySelector('.chat-switcher-trigger')?.textContent.includes('Preparar pruebas'),
+    const originalChat = firstProject.locator(
+      '.project-chat-row[data-session-id="s1"] .project-chat',
     );
+    const nextChat = firstProject.locator('.project-chat-row[data-session-id="s2"] .project-chat');
+    await nextChat.focus();
+    await nextChat.press('Enter');
+    await selected(page, 's2');
+    assert.equal(await nextChat.getAttribute('aria-current'), 'true');
     assert.equal(await composer.inputValue(), '');
-    await firstProject.locator('.project-chat').filter({ hasText: 'Revisar interfaz' }).click();
+    await originalChat.click();
     await selected(page, 's1');
     await page.waitForFunction(
       () => document.querySelector('.composer textarea')?.value === 'Borrador que debe conservarse',
     );
-    await switcher.focus();
-    await switcher.press('ArrowDown');
-    await menu.waitFor();
-    await page.waitForFunction(() =>
-      document.querySelector('.chat-switcher-menu')?.contains(document.activeElement),
-    );
-    await page.keyboard.press('Escape');
-    await page.waitForFunction(
-      () => document.querySelector('.chat-switcher-trigger') === document.activeElement,
-    );
     check(
-      `${colorScheme}: bottom chat selector and sidebar navigate without losing drafts, keyboard focus retained`,
+      `${colorScheme}: sidebar mouse and keyboard navigation preserves separate drafts without redundant composer navigation`,
     );
 
     await page.getByRole('button', { name: 'Gestionar ramas y Git', exact: true }).click();
@@ -360,27 +353,82 @@ try {
       1,
       'Worktree isolation is inside bottom Git workflow',
     );
+    const commitDraft = page.getByRole('textbox', { name: 'Mensaje del commit', exact: true });
+    await commitDraft.fill('Borrador de commit entre chats');
     await worktree.check();
     await page.waitForFunction(
       () => window.fixture.state.sessions.find((s) => s.id === 's1').isolation === 'worktree',
     );
-    await page.getByRole('button', { name: 'Gestionar ramas y Git', exact: true }).click();
-    check(`${colorScheme}: worktree isolation is actionable in the bottom Git panel`);
+    const gitControl = page.getByRole('button', { name: 'Gestionar ramas y Git', exact: true });
+    await page.waitForFunction(() =>
+      document.querySelector('.git-dock-trigger')?.textContent.includes('Worktree pendiente'),
+    );
+    await gitControl.click();
+    await nextChat.click();
+    await selected(page, 's2');
+    await gitControl.click();
+    assert.equal(
+      await commitDraft.inputValue(),
+      'Borrador de commit entre chats',
+      'Switching shared chats preserves the Git commit draft',
+    );
+    await page.evaluate(() => {
+      window.fixture.holdGit = true;
+    });
+    await page.getByRole('button', { name: 'Consultar remoto', exact: true }).click();
+    await page.waitForFunction(() => typeof window.fixture.releaseGit === 'function');
+    await originalChat.click();
+    await selected(page, 's1');
+    if ((await gitControl.getAttribute('aria-expanded')) !== 'true') await gitControl.click();
+    assert.equal(
+      await commitDraft.isDisabled(),
+      true,
+      'A Git operation stays in flight across chat navigation',
+    );
+    assert.equal(
+      await page.getByRole('button', { name: 'Consultar remoto', exact: true }).isDisabled(),
+      true,
+    );
+    await page.evaluate(() => {
+      window.fixture.holdGit = false;
+      window.fixture.releaseGit(true);
+    });
+    await page.waitForFunction(
+      () => !document.querySelector('input[aria-label="Mensaje del commit"]')?.disabled,
+    );
+    assert.equal(await commitDraft.inputValue(), 'Borrador de commit entre chats');
+    await page.keyboard.press('Escape');
+    await page.locator('.git-workflow:visible').waitFor({ state: 'hidden' });
+    check(
+      `${colorScheme}: bottom Git panel preserves worktree controls, commit draft and in-flight operations across shared chats`,
+    );
 
-    await switcher.focus();
-    await switcher.press('F2');
+    await originalChat.focus();
+    await originalChat.press('F2');
     const chatName = page.getByRole('textbox', { name: 'Nombre del chat', exact: true });
     await chatName.fill('Interfaz revisada');
     await chatName.press('Enter');
     await page.waitForFunction(
       () => window.fixture.state.sessions[0].title === 'Interfaz revisada',
     );
-    await switcher.click();
-    await menu.getByRole('menuitem', { name: 'Cambiar nombre del chat', exact: false }).click();
+    await originalChat.focus();
+    await originalChat.press('F2');
     await chatName.fill('Revisar interfaz');
     await chatName.press('Enter');
     await page.waitForFunction(() => window.fixture.state.sessions[0].title === 'Revisar interfaz');
-    check(`${colorScheme}: chat names remain editable from the selector menu and F2`);
+    await originalChat.click({ button: 'right' });
+    await chatName.fill('Este nombre se cancela');
+    await chatName.press('Escape');
+    assert.equal(
+      await page.evaluate(() => window.fixture.state.sessions[0].title),
+      'Revisar interfaz',
+    );
+    await page.waitForFunction(() =>
+      document.activeElement?.matches('[data-session-id="s1"] .project-chat'),
+    );
+    check(
+      `${colorScheme}: sidebar F2/right-click edits names, Escape cancels and restores row focus`,
+    );
 
     // Lifting a chat gives feedback; only a completed drop outside its source area floats it.
     const drag = async (outside = true) => {
@@ -436,37 +484,6 @@ try {
     );
     check(
       `${colorScheme}: lift preview, inside/Escape/blur cancellation, one floating action per drop, draft retained`,
-    );
-
-    const floatingBeforeTitleDrag = await actionCount(page, 'floatingChat');
-    const dragTitle = async (outside = true) => {
-      const from = await center(switcher);
-      await page.mouse.move(from.x, from.y);
-      await page.mouse.down();
-      await page.mouse.move(from.x + 12, from.y + (outside ? -100 : 0), { steps: 5 });
-      await preview.waitFor();
-    };
-    await dragTitle(false);
-    assert.equal(await preview.getAttribute('data-detach-ready'), 'false');
-    await page.mouse.up();
-    await preview.waitFor({ state: 'detached' });
-    assert.equal(await switcher.getAttribute('aria-expanded'), 'false');
-    assert.equal(await actionCount(page, 'floatingChat'), floatingBeforeTitleDrag);
-    await dragTitle();
-    assert.equal(await preview.getAttribute('data-detach-ready'), 'true');
-    await page.keyboard.press('Escape');
-    await page.mouse.up();
-    await preview.waitFor({ state: 'detached' });
-    assert.equal(await switcher.getAttribute('aria-expanded'), 'false');
-    assert.equal(await actionCount(page, 'floatingChat'), floatingBeforeTitleDrag);
-    await dragTitle();
-    await page.mouse.up();
-    await preview.waitFor({ state: 'detached' });
-    assert.equal(await switcher.getAttribute('aria-expanded'), 'false');
-    assert.equal(await actionCount(page, 'floatingChat'), floatingBeforeTitleDrag + 1);
-    assert.equal(await composer.inputValue(), 'Borrador que debe conservarse');
-    check(
-      `${colorScheme}: composer title drag cancels without opening its menu and floats once on drop`,
     );
 
     // Project rename remains reachable without conflicting with the new double-click gesture.
@@ -583,8 +600,12 @@ try {
       window.fixture.state.selectedSession = 's1';
       window.fixture.publish();
     });
-    await page.waitForFunction(() =>
-      document.querySelector('.chat-switcher-trigger')?.textContent.includes('Revisar interfaz'),
+    await selected(page, 's1');
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-session-id="s1"] .project-chat')
+          ?.getAttribute('aria-current') === 'true',
     );
     check(`${colorScheme}: an empty project can create its first chat from the project action`);
 
@@ -597,25 +618,20 @@ try {
       );
       window.fixture.publish();
     });
-    await switcher.click();
-    const allChats = page.getByRole('menu', { name: 'Chats de Estudio de interfaz', exact: true });
-    await allChats.waitFor();
-    await page.waitForFunction(() =>
-      document.querySelector('.chat-switcher-menu')?.contains(document.activeElement),
+    const allChats = firstProject.locator('.project-chat');
+    assert.equal(await allChats.count(), 22);
+    assert.ok(
+      await page
+        .locator('.projects')
+        .evaluate((element) => element.scrollHeight > element.clientHeight),
+      'All chats stay in the bounded sidebar scroller',
     );
-    assert.equal(await allChats.getByRole('menuitemradio').count(), 22);
-    await page.keyboard.press('End');
-    await page.keyboard.press('ArrowUp');
-    assert.equal(
-      await allChats
-        .getByRole('menuitemradio')
-        .last()
-        .evaluate((el) => el === document.activeElement),
-      true,
-    );
+    const latestChat = firstProject.locator('[data-session-id="many-19"] .project-chat');
+    await latestChat.scrollIntoViewIfNeeded();
+    await latestChat.focus();
+    await latestChat.press('Enter');
+    await selected(page, 'many-19');
     await page.screenshot({ path: `${artifactRoot}/${colorScheme}-many-chats.png` });
-    await page.keyboard.press('Enter');
-    await selected(page, 's1');
     await firstProject.locator('.project-chat').filter({ hasText: 'Revisar interfaz' }).click();
     await selected(page, 's1');
     await page.evaluate(() => {
@@ -629,60 +645,155 @@ try {
       () => document.querySelector('.composer textarea')?.value === 'Borrador que debe conservarse',
     );
     check(
-      `${colorScheme}: all 22 chats stay reachable with bounded scrolling and keyboard navigation`,
+      `${colorScheme}: all 22 chats stay reachable in the sidebar with bounded scrolling and keyboard navigation`,
     );
 
     for (const [width, height] of [
+      [2200, 1200],
       [760, 620],
       [480, 600],
     ]) {
       await page.setViewportSize({ width, height });
-      await page.waitForFunction(
-        () => !document.querySelector('.git-branch-toggle')?.textContent.includes('Consultando'),
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
       );
-      await page.screenshot({ path: `${artifactRoot}/${colorScheme}-${width}.png` });
+      const gitTrigger = page.getByRole('button', { name: 'Gestionar ramas y Git', exact: true });
+      await gitTrigger.waitFor();
+      await page.waitForFunction(
+        () => !document.querySelector('.git-dock-trigger')?.textContent.includes('Consultando'),
+      );
       assert.ok(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         `No horizontal document overflow at ${width}`,
       );
-      const composerBounds = await composer.boundingBox();
+      const composerBounds = await page.locator('.composer').boundingBox();
+      const conversationBounds = await page.locator('.conversation').boundingBox();
+      assert.ok(
+        composerBounds.width <= 960.5,
+        `Composer limited to 960px at ${width}: ${composerBounds.width}`,
+      );
       assert.ok(
         composerBounds.x >= 0 && composerBounds.x + composerBounds.width <= width + 1,
         'Composer remains inside viewport',
       );
-      await switcher.click();
-      const responsiveMenu = page.getByRole('menu', {
-        name: 'Chats de Estudio de interfaz',
-        exact: true,
-      });
-      await responsiveMenu.waitFor();
-      // Native popover visibility precedes its onToggle/layout positioning.
-      await page.waitForFunction(
-        () => {
-          const menu = document.querySelector('.chat-switcher-menu:popover-open');
-          if (!menu) return false;
-          const bounds = menu.getBoundingClientRect();
-          return (
-            bounds.x >= 0 &&
-            bounds.y >= 0 &&
-            bounds.right <= innerWidth + 1 &&
-            bounds.bottom <= innerHeight + 1
-          );
-        },
-        undefined,
-        { timeout: 5000 },
+      assert.ok(
+        Math.abs(
+          composerBounds.x +
+            composerBounds.width / 2 -
+            conversationBounds.x -
+            conversationBounds.width / 2,
+        ) <= 1,
+        `Composer centered in conversation at ${width}`,
       );
-      const bounds = await responsiveMenu.boundingBox();
+      const footer = page.locator('.composer-footer');
+      assert.equal(
+        await footer.locator('.git-dock-trigger').count(),
+        1,
+        'Git control belongs to the composer footer',
+      );
+      const gitBounds = await gitTrigger.boundingBox();
+      const accountBounds = await footer.locator('.task-signature').boundingBox();
+      const terminalBounds = await footer
+        .getByRole('button', { name: 'Terminal', exact: true })
+        .boundingBox();
+      assert.ok(
+        gitBounds.y >= composerBounds.y + composerBounds.height - 1,
+        'Git sits below the writing surface',
+      );
+      assert.ok(
+        gitBounds.x + gitBounds.width <= accountBounds.x + 1,
+        `Git and account controls do not overlap at ${width}`,
+      );
+      assert.ok(
+        accountBounds.x + accountBounds.width <= terminalBounds.x + 1,
+        `Account and terminal controls do not overlap at ${width}`,
+      );
+      assert.ok(
+        terminalBounds.x + terminalBounds.width <= composerBounds.x + composerBounds.width + 1,
+        'Footer remains inside the writing column',
+      );
+      await page.screenshot({ path: `${artifactRoot}/${colorScheme}-${width}.png` });
+      await gitTrigger.focus();
+      await gitTrigger.press('Enter');
+      const workflow = page.locator('.git-workflow:visible');
+      await workflow.waitFor();
+      await page.waitForFunction(() => {
+        const popup = document.querySelector('.git-workflow:popover-open');
+        if (!popup) return false;
+        const bounds = popup.getBoundingClientRect();
+        return (
+          bounds.x >= 0 &&
+          bounds.y >= 0 &&
+          bounds.right <= innerWidth + 1 &&
+          bounds.bottom <= innerHeight + 1
+        );
+      });
+      const bounds = await workflow.boundingBox();
       assert.ok(
         bounds.x >= 0 &&
           bounds.y >= 0 &&
           bounds.x + bounds.width <= width + 1 &&
           bounds.y + bounds.height <= height + 1,
-        `Chat dropdown stays inside ${width}×${height}`,
+        `Git popover stays inside ${width}×${height}`,
       );
+      assert.ok(
+        await workflow.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        `Git workflow content has no horizontal overflow at ${width}`,
+      );
+      for (const conflicts of [0, 2]) {
+        await page.evaluate((conflicts) => {
+          window.fixture.gitPatch = {
+            files: Array.from({ length: 12 }, (_, index) => ({
+              path: `src/example-${index}.tsx`,
+              index: 'M',
+              worktree: ' ',
+              conflict: conflicts > 0 && index < 2,
+            })),
+            counts: { conflicts, staged: 12, unstaged: 0 },
+            lines: { added: 138, removed: 52 },
+          };
+        }, conflicts);
+        await workflow
+          .getByRole('button', { name: 'Actualizar estado de Git', exact: true })
+          .click();
+        await page.waitForFunction((conflicts) => {
+          const count = document.querySelector('.git-dock-count');
+          return !!count && count.classList.contains('has-conflicts') === conflicts > 0;
+        }, conflicts);
+        const metrics = await gitTrigger.evaluate((element) => ({
+          scroll: element.scrollWidth,
+          width: element.clientWidth,
+          text: element.textContent,
+        }));
+        assert.ok(
+          metrics.scroll <= metrics.width + 1,
+          `Git control fits ${width}px with ${conflicts} conflicts: ${JSON.stringify(metrics)}`,
+        );
+        const currentGit = await gitTrigger.boundingBox();
+        const currentAccount = await footer.locator('.task-signature').boundingBox();
+        assert.ok(
+          currentGit.x + currentGit.width <= currentAccount.x + 1,
+          `Changed Git control does not overlap account at ${width}`,
+        );
+        assert.ok(
+          await workflow.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+          `Dirty/conflicted Git workflow content fits at ${width}`,
+        );
+      }
+      await page.screenshot({ path: `${artifactRoot}/${colorScheme}-${width}-git.png` });
       await page.keyboard.press('Escape');
+      await workflow.waitFor({ state: 'hidden' });
+      await page.waitForFunction(
+        () => document.activeElement?.getAttribute('aria-label') === 'Gestionar ramas y Git',
+      );
+      await page.waitForFunction(
+        () =>
+          document.querySelector('.git-dock-trigger')?.getAttribute('aria-expanded') === 'false',
+      );
     }
-    check(`${colorScheme}: 760px and 480px layouts keep composer and chat menu in view`);
+    check(
+      `${colorScheme}: 2200px, 760px and 480px layouts cap and center the composer, separate footer controls and keep keyboard Git popover in view`,
+    );
 
     assert.deepEqual(await page.evaluate(() => window.fixture.unexpected), []);
     assert.deepEqual(errors, []);

@@ -37,20 +37,40 @@ const snap = () => call({ type: 'snapshot' });
 const settle = async () => {
   const selected = (await snap()).selectedSession;
   await page.waitForFunction((id) => {
-    const trigger = document.querySelector('.chat-switcher-trigger');
-    return trigger?.dataset.sessionId === id && !trigger.disabled;
+    const selectedRow = [...document.querySelectorAll('.project-chat-row')].find(
+      (row) => row.dataset.sessionId === id,
+    );
+    return (
+      selectedRow?.querySelector('.project-chat[aria-current="true"]') &&
+      !document.querySelector('.project-new-chat')?.disabled
+    );
   }, selected);
 };
+const chatButton = (id) => page.locator(`.project-chat-row[data-session-id="${id}"] .project-chat`);
+const expandSidebar = async () => {
+  if (await page.locator('.sidebar.collapsed').count()) {
+    await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).dblclick();
+    await page.locator('.sidebar:not(.collapsed)').waitFor();
+  }
+};
 const choose = async (title) => {
-  await page.locator('.chat-switcher-trigger').click();
-  await page
-    .getByRole('menuitemradio')
-    .filter({ has: page.getByText(title, { exact: true }) })
-    .click();
+  await expandSidebar();
+  const target = (await snap()).sessions.find((session) => session.title === title);
+  assert.ok(target, `Chat exists: ${title}`);
+  await chatButton(target.id).click();
+  await page.waitForFunction(
+    async (id) => (await window.desk.invoke({ type: 'snapshot' })).selectedSession === id,
+    target.id,
+  );
   await settle();
 };
 const newChat = async () => {
+  const previous = (await snap()).selectedSession;
   await page.keyboard.press('Meta+n');
+  await page.waitForFunction(
+    async (id) => (await window.desk.invoke({ type: 'snapshot' })).selectedSession !== id,
+    previous,
+  );
   await settle();
 };
 try {
@@ -98,13 +118,11 @@ try {
   await call({ type: 'setDefaultAccount', profile: 'codex' });
   for (let i = 0; i < 6; i++) await newChat();
   assert.equal((await snap()).sessions.filter((s) => s.profile === 'codex').length, 7);
-  await page.locator('.chat-switcher-trigger').click();
   assert.equal(
-    await page.getByRole('menuitemradio').count(),
+    await page.locator('.project-chat').count(),
     8,
     'All project chats remain reachable without tab eviction',
   );
-  await page.keyboard.press('Escape');
   await choose('Sesión 1');
   assert.equal((await snap()).sessions.find((s) => s.id === first).status, 'ready');
   await page.getByRole('button', { name: 'Eliminar chat Sesión 1', exact: true }).focus();
@@ -119,7 +137,10 @@ try {
   await settle();
   await choose('Sesión 1');
   await fs.mkdir('artifacts', { recursive: true });
-  await page.screenshot({ path: 'artifacts/28-selector-chats.png', animations: 'disabled' });
+  await page.screenshot({
+    path: 'artifacts/28-navegacion-lateral-chats.png',
+    animations: 'disabled',
+  });
   assert.equal(await page.locator('.brand,.brand-mark').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Ajustes', exact: true }).innerText(), '');
   assert.equal(
@@ -159,77 +180,76 @@ try {
     await page.getByRole('textbox', { name: 'Mensaje', exact: true }).inputValue(),
     'Borrador conservado',
   );
-  // Menu arrows activate another conversation and return focus to its new trigger.
+  // The sidebar owns navigation and renaming; the composer only exposes a compact Git control.
+  await expandSidebar();
+  assert.equal(await page.locator('.chat-switcher').count(), 0);
+  assert.equal(await page.locator('.desk-input .git-summary').count(), 0);
+  const gitTrigger = page.getByRole('button', { name: 'Gestionar ramas y Git', exact: true });
+  assert.equal(await page.locator('.composer-footer .git-dock-trigger').count(), 1);
+  await gitTrigger.focus();
+  await page.keyboard.press('ArrowUp');
+  await page.getByRole('dialog', { name: 'Flujo de Git', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('dialog', { name: 'Flujo de Git', exact: true })
+    .waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.activeElement?.matches('.git-dock-trigger'));
+
   await call({
     type: 'newSession',
     projectId: (await snap()).selectedProject,
     profile: 'claude-2',
   });
   await settle();
-  await page.evaluate(() => {
-    window.chatFocusTrace = [];
-    const capture = () => {
-      const active = document.activeElement;
-      const trigger = document.querySelector('.chat-switcher-trigger');
-      window.chatFocusTrace.push({
-        active: `${active?.tagName}.${active?.className}`,
-        target: trigger?.dataset.sessionId,
-        disabled: trigger?.disabled,
-        open: !!document.querySelector('.chat-switcher-menu:popover-open'),
-      });
-      if (window.chatFocusTrace.length > 40) window.chatFocusTrace.shift();
-    };
-    document.addEventListener('focusin', capture);
-    const observer = new MutationObserver(capture);
-    observer.observe(document.querySelector('.git-summary'), {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['disabled'],
-    });
-    window.stopChatFocusTrace = () => {
-      document.removeEventListener('focusin', capture);
-      observer.disconnect();
-    };
-  });
-  await page.locator('.chat-switcher-trigger').focus();
-  await page.keyboard.press('ArrowDown');
-  await page.waitForFunction(() => document.activeElement?.matches('.chat-switcher-menu button'));
-  await page.keyboard.press('Home');
+  await chatButton(first).focus();
   await page.keyboard.press('Enter');
   await page.waitForFunction(
     async (id) => (await window.desk.invoke({ type: 'snapshot' })).selectedSession === id,
     first,
   );
   await settle();
-  assert.equal((await snap()).selectedSession, first);
-  try {
-    await page.waitForFunction(
-      () => document.activeElement?.matches('.chat-switcher-trigger'),
-      undefined,
-      { timeout: 5000 },
-    );
-  } catch (error) {
-    console.error('Chat focus diagnostic:', await page.evaluate(() => window.chatFocusTrace));
-    throw error;
-  } finally {
-    await page.evaluate(() => window.stopChatFocusTrace());
-  }
-  // A newer keyboard or pointer interaction cancels the pending focus restoration.
+  await page.waitForFunction(
+    (id) => document.activeElement?.closest('.project-chat-row')?.dataset.sessionId === id,
+    first,
+  );
+  await page.keyboard.press('F2');
+  await page.getByRole('textbox', { name: 'Nombre del chat', exact: true }).fill('Chat renombrado');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(
+    async (id) =>
+      (await window.desk.invoke({ type: 'snapshot' })).sessions.find((chat) => chat.id === id)
+        ?.title === 'Chat renombrado',
+    first,
+  );
+  await page.waitForFunction(
+    (id) => document.activeElement?.closest('.project-chat-row')?.dataset.sessionId === id,
+    first,
+  );
+  await chatButton(first).click({ button: 'right' });
+  await page
+    .getByRole('textbox', { name: 'Nombre del chat', exact: true })
+    .fill('Cambio cancelado');
+  await page.keyboard.press('Escape');
+  assert.equal((await snap()).sessions.find((chat) => chat.id === first).title, 'Chat renombrado');
+  await page.waitForFunction(
+    (id) => document.activeElement?.closest('.project-chat-row')?.dataset.sessionId === id,
+    first,
+  );
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Mensaje', exact: true }).inputValue(),
+    'Borrador conservado',
+  );
+  // Selection must not steal focus from a subsequent keyboard or pointer interaction.
   for (const [title, interaction] of [
     ['Sesión 2', 'keydown'],
-    ['Sesión 1', 'pointerdown'],
+    ['Chat renombrado', 'pointerdown'],
   ]) {
     const target = (await snap()).sessions.find((session) => session.title === title).id;
-    await page.locator('.chat-switcher-trigger').click();
-    await page
-      .getByRole('menuitemradio')
-      .filter({ has: page.getByText(title, { exact: true }) })
-      .waitFor();
     await page.evaluate(
-      ({ title, interaction }) => {
-        [...document.querySelectorAll('.chat-switcher-option')]
-          .find((button) => button.querySelector('strong')?.textContent === title)
+      ({ target, interaction }) => {
+        [...document.querySelectorAll('.project-chat-row')]
+          .find((row) => row.dataset.sessionId === target)
+          .querySelector('.project-chat')
           .click();
         window.dispatchEvent(
           interaction === 'keydown'
@@ -238,7 +258,7 @@ try {
         );
         document.querySelector('button[aria-label="Ajustes"]').focus();
       },
-      { title, interaction },
+      { target, interaction },
     );
     await page.waitForFunction(
       async (id) => (await window.desk.invoke({ type: 'snapshot' })).selectedSession === id,
@@ -248,7 +268,7 @@ try {
     assert.equal(
       await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
       'Ajustes',
-      'New input keeps focus instead of the previous chat-selection request',
+      'New input keeps focus after sidebar chat selection',
     );
   }
   // A real Claude PTY remains alive while another chat is selected; removal confirms its shutdown.
@@ -275,8 +295,7 @@ try {
   await settle();
   await page.locator('.xterm').waitFor();
   assert.equal(await page.locator('.xterm').count(), 1);
-  await page.getByRole('button', { name: 'Proyecto temporal', exact: true }).dblclick();
-  await page.locator('.sidebar:not(.collapsed)').waitFor();
+  await expandSidebar();
   await page.getByRole('button', { name: `Eliminar chat ${terminalTitle}`, exact: true }).focus();
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: 'Detener y eliminar', exact: true }).click();
@@ -292,8 +311,20 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    'OK: project chat dropdown, all chats reachable, live processes preserved across navigation, drafts, mixed accounts, deletion cancellation/confirmed stop, CmdK recovery, compact layout and keyboard focus.',
+    'OK: sidebar chat navigation/rename, compact Git control, all chats reachable, live processes preserved across navigation, drafts, mixed accounts, deletion cancellation/confirmed stop, CmdK recovery, compact layout and keyboard focus.',
   );
 } finally {
-  if (app) await app.close();
+  if (app) {
+    // Stop only fixture-owned sessions so the isolated app can quit without a live-process prompt.
+    const state = await snap().catch(() => undefined);
+    for (const session of state?.sessions ?? [])
+      await call({ type: 'stop', sessionId: session.id }).catch(() => {});
+    const closeTimeout = setTimeout(() => app.process().kill('SIGTERM'), 10000);
+    try {
+      await app.close();
+    } finally {
+      clearTimeout(closeTimeout);
+    }
+  }
+  await fs.rm(root, { recursive: true, force: true });
 }
