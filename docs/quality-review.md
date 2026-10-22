@@ -94,7 +94,7 @@ Tras suavizar los iconos y sustituir el lápiz por el divisor con «+», se repi
 
 ## Compositor centrado y Git bajo demanda
 
-- El campo de escritura tiene un ancho máximo de 960 px, centrado en el área de conversación. Conserva el ancho disponible en ventanas pequeñas y cuando se abren herramientas al lado.
+- El campo de escritura tiene un ancho máximo de 780 px, centrado en el área de conversación. Conserva el ancho disponible en ventanas pequeñas y cuando se abren herramientas al lado.
 - Se elimina la cabecera que repetía proyecto y chat. El lateral conserva selección, orden, arrastre y renombrado con F2 o clic derecho; Enter guarda y Escape cancela.
 - Git aparece abajo a la izquierda como un único control de rama, con indicador de cambios o conflictos cuando procede. El panel que abre reúne ramas, diferencias, commit, sincronización, actualización y aislamiento/worktree. Se ajusta a la ventana y se cierra con Escape o al hacer clic fuera.
 - El estado de Git permanece en un componente estable por repositorio/worktree. Colocar su interfaz en el pie del compositor mediante un portal evita perder operaciones o el borrador de commit cuando se sustituye el compositor al cambiar de chat.

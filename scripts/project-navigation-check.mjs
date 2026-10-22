@@ -711,8 +711,8 @@ try {
       const composerBounds = await page.locator('.composer').boundingBox();
       const conversationBounds = await page.locator('.conversation').boundingBox();
       assert.ok(
-        composerBounds.width <= 960.5,
-        `Composer limited to 960px at ${width}: ${composerBounds.width}`,
+        composerBounds.width <= 780.5,
+        `Composer limited to 780px at ${width}: ${composerBounds.width}`,
       );
       assert.ok(
         composerBounds.x >= 0 && composerBounds.x + composerBounds.width <= width + 1,
