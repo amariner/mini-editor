@@ -1,14 +1,13 @@
 :root {
-  --chat-complete-ink: color-mix(in srgb, var(--ok) 55%, var(--text-2));
+  --chat-complete-ink: color-mix(in srgb, var(--ok) 30%, var(--muted));
 }
 
 .chat-state-mark {
   display: inline-grid;
   place-items: center;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
   color: var(--muted);
   pointer-events: none;
 }
@@ -20,22 +19,28 @@
   color: inherit;
 }
 .chat-state-mark.working {
-  color: var(--brand);
+  color: color-mix(in srgb, var(--brand) 55%, var(--muted));
 }
 .chat-state-mark.attention {
-  color: var(--attention);
+  color: color-mix(in srgb, var(--attention) 70%, var(--muted));
 }
 .chat-state-mark.error {
-  color: var(--danger);
+  color: color-mix(in srgb, var(--danger) 70%, var(--muted));
 }
 .chat-state-mark.done {
   color: var(--chat-complete-ink);
 }
 .chat-state-mark.done.unread {
-  background: color-mix(in srgb, var(--chat-complete-ink) 16%, transparent);
+  color: color-mix(in srgb, var(--ok) 40%, var(--text-2));
 }
 
 /* The app's four shapes breathe in sequence; no JavaScript animation or timer. */
+.chat-state-mark.working .desk-mark {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+}
 .chat-state-mark.working .desk-mark > g > * {
   transform-box: fill-box;
   transform-origin: center;
@@ -64,16 +69,16 @@
 
 /* Completed chats stay recognisable after reading; unread completion is stronger. */
 .app .sidebar .project-chat-target.chat-completed .project-chat {
-  background: color-mix(in srgb, var(--chat-complete-ink) 5%, transparent);
+  background: color-mix(in srgb, var(--chat-complete-ink) 2%, transparent);
 }
 .app .sidebar .project-chat-target.chat-completed .project-chat:hover {
-  background: color-mix(in srgb, var(--chat-complete-ink) 9%, transparent);
+  background: color-mix(in srgb, var(--chat-complete-ink) 4%, transparent);
 }
 .app .sidebar .project-chat-target.chat-completed.completion-unread .project-chat {
-  background: color-mix(in srgb, var(--chat-complete-ink) 12%, transparent);
+  background: color-mix(in srgb, var(--chat-complete-ink) 6%, transparent);
 }
 .app .sidebar .project-chat-target.chat-completed .project-chat.selected {
-  background: color-mix(in srgb, var(--chat-complete-ink) 10%, var(--select-surface));
+  background: color-mix(in srgb, var(--chat-complete-ink) 3%, var(--select-surface));
 }
 
 @media (prefers-reduced-motion: reduce) {

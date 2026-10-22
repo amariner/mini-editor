@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, CircleAlert, MessageCircleQuestion } from 'lucide-react';
+import { Check, CircleAlert, CircleHelp } from 'lucide-react';
 import { DeskMark } from './project-mark';
 import type { Session } from './shared';
 import { cardStatus, type CardTone } from './supervision';
@@ -33,16 +33,16 @@ export const ChatStateMark = React.memo(function ChatStateMark({
       aria-hidden={status ? undefined : true}
     >
       {tone === 'working' ? (
-        <DeskMark size={16} />
+        <DeskMark size={14} />
       ) : tone === 'done' ? (
-        <Check size={13} strokeWidth={2.2} aria-hidden="true" />
+        <Check size={12} strokeWidth={1.5} aria-hidden="true" />
       ) : tone === 'attention' ? (
-        <MessageCircleQuestion size={14} aria-hidden="true" />
+        <CircleHelp size={12} strokeWidth={1.5} aria-hidden="true" />
       ) : tone === 'error' ? (
-        <CircleAlert size={14} aria-hidden="true" />
+        <CircleAlert size={12} strokeWidth={1.5} aria-hidden="true" />
       ) : (
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-          <circle cx="8" cy="8" r="3" fill="currentColor" />
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <circle cx="6" cy="6" r="2" fill="none" stroke="currentColor" strokeWidth="1" />
         </svg>
       )}
     </span>

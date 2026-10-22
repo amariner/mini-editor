@@ -50,8 +50,8 @@
   min-height: 34px;
 }
 .app .sidebar .project-name {
-  flex: 0 1 auto;
-  max-width: calc(100% - 48px);
+  flex: 1;
+  min-width: 0;
   padding-left: 6px;
   padding-right: 2px;
   min-height: 30px;
@@ -59,26 +59,68 @@
 .app .sidebar .project-name .project-mark {
   flex-shrink: 0;
 }
+.app .sidebar .project-mark svg {
+  width: 80%;
+  height: 80%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+.app .sidebar :is(.project-remove, .project-chat-delete, .add-project) svg {
+  stroke-width: 1.5;
+}
+.app .sidebar :is(.project-remove, .project-chat-delete) svg {
+  width: 12px;
+  height: 12px;
+}
 .app .sidebar .project-row > .inline-name {
   flex: 1;
   width: 0;
 }
-.app .sidebar .project-row > .project-new-chat,
-.app .sidebar .project-row > .project-remove {
-  flex: 0 0 var(--project-action-size);
-  width: var(--project-action-size);
-  min-width: var(--project-action-size);
-  height: var(--project-action-size);
-  min-height: var(--project-action-size);
+.app .sidebar .project-new-chat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 22px);
+  height: 18px;
+  min-height: 18px;
+  margin: 0 2px 0 20px;
   padding: 0;
-  visibility: visible;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
   opacity: 0;
   pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
 }
-.app .sidebar .project-block:is(:hover, :focus-within) .project-new-chat,
-.app .sidebar .project-row:is(:hover, :focus-within) .project-remove {
+.app .sidebar .project-new-chat::before,
+.app .sidebar .project-new-chat::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.24;
+}
+.app .sidebar .project-new-chat > svg {
+  flex: 0 0 12px;
+}
+.app .sidebar .project-block:is(:hover, :focus-within) .project-new-chat {
   opacity: 1;
   pointer-events: auto;
+}
+.app .sidebar .project-new-chat:is(:hover, :focus-visible) {
+  color: var(--text);
+  background: transparent;
+}
+.app .sidebar .project-new-chat:disabled {
+  cursor: default;
 }
 .app .sidebar .project-remove {
   color: var(--muted);
@@ -177,8 +219,7 @@
   min-height: 72px;
   flex-basis: 72px;
 }
-.app .sidebar.collapsed .project-row > .project-remove,
-.app .sidebar.collapsed .project-row > .project-new-chat,
+.app .sidebar.collapsed .project-new-chat,
 .app .sidebar.collapsed .project-status-slot {
   display: none;
 }
@@ -187,8 +228,7 @@
 }
 @media (hover: none) {
   .app .sidebar .section-label .add-project,
-  .app .sidebar .project-row > .project-new-chat,
-  .app .sidebar .project-row > .project-remove {
+  .app .sidebar .project-new-chat {
     opacity: 1;
     pointer-events: auto;
   }
@@ -207,5 +247,14 @@
   }
   .app .sidebar .project-chats {
     padding-left: 16px;
+  }
+  .app .sidebar .project-new-chat {
+    width: calc(100% - 18px);
+    margin-left: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app .sidebar .project-new-chat {
+    transition: none;
   }
 }

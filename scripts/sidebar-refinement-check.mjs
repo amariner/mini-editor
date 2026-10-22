@@ -338,9 +338,49 @@ try {
     );
     check(`${colorScheme}: Escape cancels ordering and floating, outside drop floats once`);
 
-    await project.hover();
     const create = project.getByRole('button', { name: 'Nuevo chat en Estudio', exact: true });
-    await create.click();
+    await composer.focus();
+    await page.mouse.move(1000, 100);
+    const listBeforeReveal = await row(page, 's2').boundingBox();
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-project-id="p"] .project-new-chat'))
+          .opacity === '0',
+    );
+    await project.locator('.project-name').hover();
+    await page.waitForFunction(
+      () =>
+        Number(
+          getComputedStyle(document.querySelector('[data-project-id="p"] .project-new-chat'))
+            .opacity,
+        ) > 0.95,
+    );
+    const listAfterReveal = await row(page, 's2').boundingBox();
+    assert.ok(
+      Math.abs(listBeforeReveal.y - listAfterReveal.y) <= 0.5,
+      'Hovering the project reveals its divider without moving the customized list',
+    );
+    const dividerBounds = await create.boundingBox();
+    const headerBounds = await project.locator('.project-row').boundingBox();
+    assert.ok(
+      dividerBounds.y >= headerBounds.y + headerBounds.height - 1 &&
+        dividerBounds.y + dividerBounds.height <= listAfterReveal.y + 1,
+      'New-chat divider remains above the first manually ordered chat',
+    );
+    await aligned(
+      create,
+      create.locator('svg'),
+      'x',
+      'Plus stays centered in its horizontal divider',
+    );
+    assert.ok(
+      (await create.locator('svg').boundingBox()).width <= 12,
+      'Creation icon is understated',
+    );
+    await page.screenshot({ path: `${artifactRoot}/${colorScheme}-creation-divider.png` });
+    await page.mouse.move(1000, 100);
+    await create.focus();
+    await create.press('Space');
     await selected(page, 's4');
     await ordered(
       roots,
@@ -357,7 +397,9 @@ try {
       'New child leads customized order',
     );
     assert.equal(await actionCount(page, 'newSession'), 1);
-    check(`${colorScheme}: new chats and subchats are prepended after manual ordering`);
+    check(
+      `${colorScheme}: stable centered divider supports keyboard creation; new chats lead manual ordering`,
+    );
 
     await page.evaluate(() => {
       window.fixture.state.sessions.push(
@@ -513,6 +555,10 @@ try {
       [480, 600],
     ]) {
       await page.setViewportSize({ width, height });
+      // Let Chromium finish both layout and painting after resizing before capturing it.
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
       assert.ok(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         `No document overflow at ${width}px`,

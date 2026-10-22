@@ -56,7 +56,7 @@ Estas comprobaciones usan datos temporales, proveedores simulados y servidores l
 
 - Añadir proyecto aparece al pasar por el panel o enfocarlo con teclado y comparte el eje de los iconos. Buscar solo aparece cuando la lista requiere scroll; ⌘K sigue disponible.
 - Doble clic en el panel o en el nombre/icono del proyecto pliega o expande la barra. ⌘B ofrece el mismo control por teclado y F2 permite renombrar. En el panel plegado el icono queda libre para seleccionar y expandir; ⌘N crea un chat.
-- El lápiz del proyecto crea conversaciones y aparece junto al nombre al pasar por el bloque o enfocarlo. Los estados de proyecto, chats y subchats comparten una columna; al pasar por cada fila, la X sustituye al estado en su misma posición y conserva la confirmación antes de borrar.
+- Crear conversaciones aparece como una línea divisoria con «+» centrado entre el proyecto y su chat más reciente, al pasar por el bloque o enfocarlo con teclado. Su espacio permanece estable para no desplazar los chats. Los estados de proyecto, chats y subchats comparten una columna; al pasar por cada fila, la X sustituye al estado en su misma posición y conserva la confirmación antes de borrar.
 - Se retiran las pestañas superiores. El nombre del chat aparece junto al proyecto en el compositor, con un menú que permite navegar por todas las conversaciones del proyecto y renombrar. El aislamiento se configura dentro del panel de Git/worktree inferior.
 - Crear o eliminar conversaciones no borra el estado de Git del mismo repositorio ni deja la barra en «Consultando…» hasta el siguiente sondeo.
 - Los chats de la misma carpeta comparten el estado de las operaciones Git y su borrador de commit. El selector devuelve el foco al nuevo chat cuando está disponible; cualquier interacción posterior cancela esa devolución para respetar la intención del usuario.
@@ -74,11 +74,12 @@ También pasan los recorridos de multichat, estilo/foco en claro y oscuro, naveg
 
 ## Refinamiento del panel de chats
 
-- El estado del proyecto queda alineado con el de todos sus chats, incluidos los anidados. La X ocupa exactamente ese lugar al pasar por la fila. El lápiz junto al nombre mantiene libre el icono del proyecto para seleccionar y plegar con doble clic.
+- El estado del proyecto queda alineado con el de todos sus chats, incluidos los anidados. La X ocupa exactamente ese lugar al pasar por la fila. El divisor con «+» mantiene libre el icono del proyecto para seleccionar y plegar con doble clic.
 - Los chats nuevos aparecen primero dentro de su grupo. Se pueden seleccionar y ordenar verticalmente con arrastre o Alt+↑/↓; los hijos acompañan al padre y no cambian de relación. Al arrastrar cerca de los bordes, la lista se desplaza automáticamente.
 - El orden manual se conserva al recargar y se comparte con el selector inferior. Se guarda por grupo en el almacenamiento local de esta instalación, sin modificar el protocolo IPC ni el formato de los proyectos. Los chats creados después se anteponen al orden guardado.
 - Durante la ejecución se animan las cuatro formas de Agent Desk mediante CSS, sin temporizadores de JavaScript. Se respeta la preferencia de movimiento reducido. Al completar, aparece una marca verde suave y una ligera coloración de la fila, más visible mientras queda pendiente de leer; se mantienen las notificaciones existentes.
 - La barra lateral pasa a 216 px en escritorio y 184 px en ventanas estrechas; las filas de chat tienen 26 px de alto mínimo. Los iconos y controles permanecen en posiciones estables al aparecer y desaparecer.
+- Los iconos del panel usan contornos finos, tamaños contenidos y colores atenuados. El verde de finalización y los fondos se suavizan; las conversaciones pendientes de leer conservan mayor énfasis. El divisor de creación funciona también con Enter o Espacio y desaparece al plegar el panel.
 
 Comprobaciones específicas y capturas en `artifacts/sidebar-refinement/`. Para repetirlas con datos temporales:
 
@@ -87,3 +88,5 @@ SOURCE_BUILD=1 node scripts/sidebar-refinement-check.mjs
 ```
 
 Resultado final de este refinamiento: **275/275 pruebas de lógica**, TypeScript y compilación del renderer correctos, **20 comprobaciones específicas** y **28 comprobaciones de navegación** en claro y oscuro. Se verifica también autoscroll con 40 chats, cancelación sin escrituras ni ventanas flotantes, y ordenación por teclado sin perder el foco. El JavaScript principal de producción queda en 470,03 kB (150,44 kB gzip); no se han añadido dependencias.
+
+Tras suavizar los iconos y sustituir el lápiz por el divisor con «+», se repiten correctamente TypeScript, la compilación y las **48 comprobaciones de interfaz**. Incluyen simetría de las líneas, centrado, ausencia de saltos al mostrar el control, creación por teclado y panel plegado. Capturas del control visible: `artifacts/sidebar-refinement/dark-creation-divider.png` y `light-creation-divider.png`. El bundle principal queda en 469,66 kB (150,31 kB gzip).

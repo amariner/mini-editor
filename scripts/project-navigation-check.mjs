@@ -256,23 +256,58 @@ try {
       'Delete icon replaces the status dot in exactly the same position',
     );
     assert.equal(await deleteButton.locator('.lucide-x').count(), 1, 'Delete uses a cross');
-    await firstProject.hover();
     const newChat = firstProject
       .getByRole('button', { name: /Nueva conversación|Nuevo chat/ })
       .first();
-    await newChat.waitFor();
-    assert.equal(await newChat.locator('.lucide-plus').count(), 0, 'New chat uses a writing icon');
+    await composer.focus();
+    await page.mouse.move(1000, 150);
+    await visuallyHidden(page, '[data-project-id="p"] .project-new-chat');
+    const restingRowBounds = await row.boundingBox();
+    await firstProject.locator('.project-name').hover();
+    await visiblyShown(page, '[data-project-id="p"] .project-new-chat');
+    assert.equal(await newChat.locator('.lucide-plus').count(), 1, 'New chat uses a quiet plus');
     const newChatBounds = await newChat.boundingBox();
-    const projectNameBounds = await projectName.boundingBox();
-    const projectStatusBounds = await firstProject.locator('.project-status').boundingBox();
+    const projectHeaderBounds = await firstProject.locator('.project-row').boundingBox();
+    const hoveringRowBounds = await row.boundingBox();
     assert.ok(
-      newChatBounds.x >= projectNameBounds.x + projectNameBounds.width - 1 &&
-        newChatBounds.x + newChatBounds.width <= projectStatusBounds.x + 1,
-      'Writing action follows the project name, before the separate status column',
+      newChatBounds.y >= projectHeaderBounds.y + projectHeaderBounds.height - 1 &&
+        newChatBounds.y + newChatBounds.height <= hoveringRowBounds.y + 1,
+      'Creation divider sits between the project header and newest chat',
     );
-    await assertAligned(newChat, projectName, 'y', 'Writing action shares the project baseline');
+    assert.ok(
+      Math.abs(hoveringRowBounds.y - restingRowBounds.y) <= 0.5,
+      'Revealing the divider does not move the chat rows',
+    );
+    await assertAligned(newChat, newChat.locator('svg'), 'x', 'Plus is centered in the divider');
+    await assertAligned(newChat, newChat.locator('svg'), 'y', 'Plus shares the horizontal line');
+    const lines = await newChat.evaluate((element) =>
+      ['::before', '::after'].map((pseudo) => {
+        const style = getComputedStyle(element, pseudo);
+        return {
+          content: style.content,
+          width: parseFloat(style.width),
+          height: parseFloat(style.height),
+        };
+      }),
+    );
+    assert.ok(
+      lines.every((line) => line.content !== 'none' && line.width > 20 && line.height <= 1) &&
+        Math.abs(lines[0].width - lines[1].width) <= 1,
+      'Matching fine divider lines flank the centered plus',
+    );
+    await composer.focus();
+    await page.mouse.move(1000, 150);
+    await visuallyHidden(page, '[data-project-id="p"] .project-new-chat');
+    await newChat.focus();
+    await visiblyShown(page, '[data-project-id="p"] .project-new-chat');
+    assert.ok(
+      Math.abs((await row.boundingBox()).y - restingRowBounds.y) <= 0.5,
+      'Keyboard focus reveals the divider without moving chats',
+    );
     await page.screenshot({ path: `${artifactRoot}/${colorScheme}-desktop.png` });
-    check(`${colorScheme}: chat deletion replaces status, writing action follows the project name`);
+    check(
+      `${colorScheme}: deletion replaces status; centered creation divider appears on hover and focus without layout shift`,
+    );
 
     const switcher = page.locator('.chat-switcher-trigger');
     await switcher.waitFor();
@@ -448,6 +483,12 @@ try {
       document.querySelector('.sidebar')?.classList.contains('collapsed'),
     );
     assert.equal(await name.count(), 0, 'Double click collapses rather than entering rename');
+    await visuallyHidden(page, '[data-project-id="p"] .project-new-chat');
+    assert.equal(
+      await firstProject.locator('.project-new-chat').boundingBox(),
+      null,
+      'Collapsed rail has no creation divider',
+    );
     await sidebar.locator('.traffic-space').hover();
     await assertAligned(
       addProject.locator('svg'),
@@ -499,8 +540,9 @@ try {
     await search.waitFor({ state: 'detached' });
     check(`${colorScheme}: search tracks project-list overflow dynamically`);
 
-    await firstProject.hover();
-    await newChat.click();
+    await page.mouse.move(1000, 150);
+    await newChat.focus();
+    await newChat.press('Enter');
     await selected(page, 's3');
     assert.equal(await actionCount(page, 'newSession'), 1);
     await firstProject.locator('.project-chat').filter({ hasText: 'Revisar interfaz' }).click();
@@ -513,7 +555,9 @@ try {
     await confirmation.getByRole('button', { name: 'Eliminar chat', exact: true }).click();
     await page.waitForFunction(() => !window.fixture.state.sessions.some((s) => s.id === 's3'));
     assert.equal(await actionCount(page, 'deleteSession'), 1);
-    check(`${colorScheme}: new chat and confirmed deletion use the project block`);
+    check(
+      `${colorScheme}: keyboard activates the creation divider; confirmed deletion uses the project block`,
+    );
 
     // The sidebar remains the creation entry point for a project without any conversations.
     const secondProject = page.locator('[data-project-id="q"]');

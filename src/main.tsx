@@ -34,7 +34,6 @@ import {
   ExternalLink,
   RefreshCw,
   Check,
-  SquarePen,
   PanelRightOpen,
   PanelBottomOpen,
   ArrowDown,
@@ -1210,18 +1209,6 @@ function App() {
                               <span className="project-label">{p.name}</span>
                             </button>
                           )}
-                          <button
-                            className="icon-btn ghost project-new-chat"
-                            aria-label={`Nuevo chat en ${p.name}`}
-                            title="Nuevo chat (⌘N)"
-                            disabled={navigating || !profile || !compatibleRuntime(state)}
-                            onClick={() => {
-                              setMultichat('off');
-                              void run({ type: 'newSession', projectId: p.id });
-                            }}
-                          >
-                            <SquarePen size={14} />
-                          </button>
                           <div className="project-status-slot">
                             <span className="project-status" title={projectStatus}>
                               <ChatStateMark
@@ -1240,6 +1227,19 @@ function App() {
                             </button>
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          className="project-new-chat"
+                          aria-label={`Nuevo chat en ${p.name}`}
+                          title="Nuevo chat (⌘N)"
+                          disabled={navigating || !profile || !compatibleRuntime(state)}
+                          onClick={() => {
+                            setMultichat('off');
+                            void run({ type: 'newSession', projectId: p.id });
+                          }}
+                        >
+                          <Plus size={12} strokeWidth={1.5} aria-hidden="true" />
+                        </button>
                         <ProjectChats
                           state={state}
                           projectId={p.id}
