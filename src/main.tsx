@@ -147,6 +147,16 @@ function App() {
         return false;
       }
     }),
+    [foldedProjects, setFoldedProjects] = useState<string[]>(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('agent-desk.folded-projects') ?? '[]');
+        return Array.isArray(saved)
+          ? saved.filter((id): id is string => typeof id === 'string')
+          : [];
+      } catch {
+        return [];
+      }
+    }),
     [draggedProject, setDraggedProject] = useState<string>(),
     [projectDrop, setProjectDrop] = useState<string>(),
     [navigating, setNavigating] = useState(false),
@@ -182,6 +192,11 @@ function App() {
     } catch {}
   }, [sidebarCollapsed]);
   useEffect(() => {
+    try {
+      localStorage.setItem('agent-desk.folded-projects', JSON.stringify(foldedProjects));
+    } catch {}
+  }, [foldedProjects]);
+  useEffect(() => {
     if (state && !state.freebuffEnabled && terminalTarget === 'freebuff') {
       setTerminalTarget('default');
       setShowTerminalPanel(false);
@@ -201,6 +216,11 @@ function App() {
     stateRef = useRef<Snapshot | undefined>(undefined);
   const projectDrag = useRef<string | undefined>(undefined);
   const suppressProjectClick = useRef(false);
+  const projectAccordionClick = useRef<{ id: string; folded: boolean } | undefined>(undefined);
+  const setProjectFolded = (id: string, folded: boolean) =>
+    setFoldedProjects((ids) =>
+      ids.includes(id) === folded ? ids : folded ? [...ids, id] : ids.filter((item) => item !== id),
+    );
   const finishProjectDrag = () => {
     projectDrag.current = undefined;
     setDraggedProject(undefined);
@@ -356,6 +376,7 @@ function App() {
   const run = async (action: Action) => {
     if ((action.type === 'select' && action.sessionId) || action.type === 'newSession')
       setClosedSelection(undefined);
+    if (action.type === 'newSession') setProjectFolded(action.projectId, false);
     if (action.type === 'login') {
       setSettings(true);
       return;
@@ -1109,6 +1130,8 @@ function App() {
               <nav ref={projectOverflow.viewportRef} className="projects" aria-label="Proyectos">
                 <div ref={projectOverflow.contentRef} className="project-list">
                   {state.projects.map((p) => {
+                    const projectFolded = foldedProjects.includes(p.id);
+                    const accordionId = `project-chats-${p.id}`;
                     const projectSessions = state.sessions.filter(
                       (chat) => chat.projectId === p.id,
                     );
@@ -1197,14 +1220,28 @@ function App() {
                                     ),
                                   );
                               }}
-                              title={`${p.path} · Doble clic: plegar/expandir · F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
+                              title={`${p.path} · Clic: ${projectFolded ? 'desplegar' : 'plegar'} chats · Doble clic: plegar/expandir panel · F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
                               aria-disabled={navigating}
                               aria-label={p.name}
+                              aria-expanded={!sidebarCollapsed && !projectFolded}
+                              aria-controls={accordionId}
                               aria-current={p.id === project?.id ? 'page' : undefined}
                               onClick={(e) => {
                                 if (e.detail < 2 && !suppressProjectClick.current) {
-                                  void switchProject(p.id);
+                                  projectAccordionClick.current = {
+                                    id: p.id,
+                                    folded: projectFolded,
+                                  };
+                                  if (!sidebarCollapsed) setProjectFolded(p.id, !projectFolded);
+                                  if (p.id !== project?.id || multichat !== 'off')
+                                    void switchProject(p.id);
                                 }
+                              }}
+                              onDoubleClick={() => {
+                                // A double click belongs to the whole sidebar; undo its first click's fold.
+                                const click = projectAccordionClick.current;
+                                if (click?.id === p.id) setProjectFolded(p.id, click.folded);
+                                projectAccordionClick.current = undefined;
                               }}
                             >
                               <ProjectMark identity={p.path} />
@@ -1229,32 +1266,46 @@ function App() {
                             </button>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="project-new-chat"
-                          aria-label={`Nuevo chat en ${p.name}`}
-                          title="Nuevo chat (⌘N)"
-                          disabled={navigating || !profile || !compatibleRuntime(state)}
-                          onClick={() => {
-                            setMultichat('off');
-                            void run({ type: 'newSession', projectId: p.id });
-                          }}
+                        <div
+                          id={accordionId}
+                          className="project-chat-accordion"
+                          data-expanded={!projectFolded}
+                          aria-hidden={projectFolded || sidebarCollapsed}
+                          inert={projectFolded || sidebarCollapsed}
                         >
-                          <Plus size={12} strokeWidth={1.5} aria-hidden="true" />
-                        </button>
-                        <ProjectChats
-                          state={state}
-                          projectId={p.id}
-                          hiddenChats={[]}
-                          unreadCompleted={unreadCompleted}
-                          run={run}
-                          remove={(s) => void closeTab(s, true)}
-                          open={(s) => {
-                            setClosedSelection(undefined);
-                            setMultichat('off');
-                            void run({ type: 'select', projectId: s.projectId, sessionId: s.id });
-                          }}
-                        />
+                          <div className="project-chat-accordion-inner">
+                            <button
+                              type="button"
+                              className="project-new-chat"
+                              aria-label={`Nuevo chat en ${p.name}`}
+                              title="Nuevo chat (⌘N)"
+                              disabled={navigating || !profile || !compatibleRuntime(state)}
+                              onClick={() => {
+                                setMultichat('off');
+                                void run({ type: 'newSession', projectId: p.id });
+                              }}
+                            >
+                              <Plus size={12} strokeWidth={1.5} aria-hidden="true" />
+                            </button>
+                            <ProjectChats
+                              state={state}
+                              projectId={p.id}
+                              hiddenChats={[]}
+                              unreadCompleted={unreadCompleted}
+                              run={run}
+                              remove={(s) => void closeTab(s, true)}
+                              open={(s) => {
+                                setClosedSelection(undefined);
+                                setMultichat('off');
+                                void run({
+                                  type: 'select',
+                                  projectId: s.projectId,
+                                  sessionId: s.id,
+                                });
+                              }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     );
                   })}

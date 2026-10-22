@@ -495,6 +495,7 @@ try {
     await page.waitForFunction(
       () => window.fixture.state.projects[0].name === 'Estudio de interfaz',
     );
+    const projectExpandedBeforeRailToggle = await projectName.getAttribute('aria-expanded');
     await projectName.dblclick();
     await page.waitForFunction(() =>
       document.querySelector('.sidebar')?.classList.contains('collapsed'),
@@ -518,6 +519,11 @@ try {
     await page.waitForFunction(
       () => !document.querySelector('.sidebar')?.classList.contains('collapsed'),
     );
+    assert.equal(
+      await projectName.getAttribute('aria-expanded'),
+      projectExpandedBeforeRailToggle,
+      'Double-clicking the rail does not change the project accordion',
+    );
     await sidebar.dblclick({ position: { x: 12, y: 420 } });
     await page.waitForFunction(() =>
       document.querySelector('.sidebar')?.classList.contains('collapsed'),
@@ -526,7 +532,9 @@ try {
     await page.waitForFunction(
       () => !document.querySelector('.sidebar')?.classList.contains('collapsed'),
     );
-    check(`${colorScheme}: double-click widget toggles width and F2 renames project`);
+    check(
+      `${colorScheme}: double-click widget toggles width without changing the accordion and F2 renames project`,
+    );
 
     await page.evaluate(() => {
       window.fixture.state.projects.push(
@@ -576,20 +584,25 @@ try {
       `${colorScheme}: keyboard activates the creation divider; confirmed deletion uses the project block`,
     );
 
-    // The sidebar remains the creation entry point for a project without any conversations.
+    // Creating from a folded, empty project opens its first conversation and its accordion.
     const secondProject = page.locator('[data-project-id="q"]');
     await secondProject.locator('.project-name').click();
     await page.waitForFunction(() => window.fixture.state.selectedProject === 'q');
-    await secondProject.hover();
-    await secondProject
-      .getByRole('button', { name: 'Nuevo chat en Documentación', exact: true })
-      .click();
+    assert.equal(
+      await secondProject.locator('.project-name').getAttribute('aria-expanded'),
+      'false',
+    );
+    await page.keyboard.press('Meta+n');
     await page.waitForFunction(() =>
       window.fixture.state.sessions.some(
         (s) => s.projectId === 'q' && s.id === window.fixture.state.selectedSession,
       ),
     );
     await composer.waitFor();
+    assert.equal(
+      await secondProject.locator('.project-name').getAttribute('aria-expanded'),
+      'true',
+    );
     assert.equal(await page.locator('.session-tabs-bar').count(), 0);
     assert.equal(await composer.inputValue(), '');
     await page.evaluate(() => {
@@ -607,7 +620,7 @@ try {
           .querySelector('[data-session-id="s1"] .project-chat')
           ?.getAttribute('aria-current') === 'true',
     );
-    check(`${colorScheme}: an empty project can create its first chat from the project action`);
+    check(`${colorScheme}: creating a first chat with Cmd+N expands its folded project`);
 
     // Every conversation stays reachable; navigation is not capped by the former tab limit.
     await page.evaluate(() => {

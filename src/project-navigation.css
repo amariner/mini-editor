@@ -9,6 +9,29 @@
 .app .sidebar .project-block {
   margin-bottom: 8px;
 }
+.app .sidebar .project-chat-accordion {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows 160ms ease,
+    opacity 120ms ease,
+    visibility 0s;
+}
+.app .sidebar .project-chat-accordion[data-expanded='false'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 160ms ease,
+    opacity 120ms ease,
+    visibility 0s 160ms;
+}
+.app .sidebar .project-chat-accordion-inner {
+  min-height: 0;
+  overflow: hidden;
+}
 .app .sidebar .project-chats {
   padding: 1px 2px 4px 20px;
 }
@@ -210,6 +233,7 @@
   flex-basis: 72px;
 }
 .app .sidebar.collapsed .project-new-chat,
+.app .sidebar.collapsed .project-chat-accordion,
 .app .sidebar.collapsed .project-status-slot {
   display: none;
 }
@@ -244,7 +268,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .app .sidebar .project-new-chat {
+  .app .sidebar .project-new-chat,
+  .app .sidebar .project-chat-accordion,
+  .app .sidebar .project-chat-accordion[data-expanded='false'] {
     transition: none;
   }
 }

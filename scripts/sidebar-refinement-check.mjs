@@ -318,6 +318,112 @@ try {
       `${colorScheme}: Alt+ArrowUp/Down moves roots and children without losing focus or selection`,
     );
 
+    // Project accordions only change navigation visibility; the selected chat keeps its draft.
+    const projectName = project.locator('.project-name');
+    const otherProject = page.locator('[data-project-id="q"]');
+    const otherProjectName = otherProject.locator('.project-name');
+    const expanded = (id, value) =>
+      page.waitForFunction(
+        ({ id, value }) =>
+          document
+            .querySelector(`[data-project-id="${id}"] .project-name`)
+            ?.getAttribute('aria-expanded') === String(value),
+        { id, value },
+      );
+    await page.evaluate(() => {
+      window.fixture.state.sessions.push({
+        ...window.fixture.session('q1', 'Chat de documentación'),
+        projectId: 'q',
+      });
+      window.fixture.publish();
+    });
+    await chat(page, 'q1').waitFor();
+    await chat(page, 'c1').click();
+    await selected(page, 'c1');
+    await composer.fill('Borrador conservado al plegar');
+    await projectName.click();
+    await expanded('p', false);
+    await chat(page, 'c1').waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 'c1');
+    assert.equal(await composer.inputValue(), 'Borrador conservado al plegar');
+    assert.equal(await otherProjectName.getAttribute('aria-expanded'), 'true');
+    assert.ok(await chat(page, 'q1').isVisible(), 'Another project stays expanded');
+    const controlledPanel = await projectName.getAttribute('aria-controls');
+    assert.ok(controlledPanel, 'Project button names its controlled accordion');
+    assert.ok(
+      await page.evaluate((panelId) => {
+        const previous = document.activeElement;
+        const panel = document.getElementById(panelId);
+        if (!panel) return false;
+        for (const element of panel.querySelectorAll('button, input, [tabindex]')) {
+          element.focus();
+          if (document.activeElement === element) return false;
+        }
+        previous?.focus();
+        return true;
+      }, controlledPanel),
+      'Collapsed chats and their actions cannot receive focus',
+    );
+    await page.screenshot({ path: `${artifactRoot}/${colorScheme}-project-accordion.png` });
+    await otherProjectName.click();
+    await expanded('q', false);
+    assert.equal(await projectName.getAttribute('aria-expanded'), 'false');
+    await otherProjectName.press('Space');
+    await expanded('q', true);
+    await chat(page, 'q1').waitFor();
+    assert.equal(await projectName.getAttribute('aria-expanded'), 'false');
+    await projectName.press('Enter');
+    await expanded('p', true);
+    await chat(page, 'c1').waitFor();
+    await selected(page, 'c1');
+    assert.equal(await composer.inputValue(), 'Borrador conservado al plegar');
+    await ordered(roots, ['Segundo', 'Primero', 'Tercero'], 'Accordion preserves root order');
+    await ordered(
+      children,
+      ['Subchat segundo', 'Subchat primero', 'Subchat tercero'],
+      'Accordion preserves child order',
+    );
+    check(
+      `${colorScheme}: independent project accordions preserve selection, drafts and ordering; hidden chats cannot take focus`,
+    );
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await projectName.press('Space');
+    await expanded('p', false);
+    await chat(page, 'c1').waitFor({ state: 'hidden' });
+    assert.equal(
+      await page.evaluate((panelId) => {
+        const panel = document.getElementById(panelId);
+        return [panel, ...panel.querySelectorAll('*')].some((element) => {
+          const style = getComputedStyle(element);
+          const durations = `${style.transitionDuration},${style.animationDuration}`.split(',');
+          return durations.some((duration) => parseFloat(duration) > 0.001);
+        });
+      }, controlledPanel),
+      false,
+      'Reduced motion disables accordion and descendant motion',
+    );
+    await page.reload();
+    await composer.waitFor();
+    await expanded('p', false);
+    await expanded('q', true);
+    await chat(page, 'c1').waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 'c1');
+    assert.equal(await composer.inputValue(), 'Borrador conservado al plegar');
+    await projectName.press('Enter');
+    await expanded('p', true);
+    await ordered(roots, ['Segundo', 'Primero', 'Tercero'], 'Order survives folded reload');
+    await page.evaluate(() => {
+      window.fixture.state.sessions = window.fixture.state.sessions.filter(
+        (session) => session.id !== 'q1',
+      );
+      window.fixture.publish();
+    });
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    check(
+      `${colorScheme}: Enter and Space toggle the accordion, reduced motion is respected, expansion state survives reload`,
+    );
+
     const firstRoot = await row(page, 's2').boundingBox();
     await drag('s3', { x: firstRoot.x + 60, y: firstRoot.y + 2 }, 'cancel');
     await ordered(roots, ['Segundo', 'Primero', 'Tercero'], 'Escape cancels root reorder');
