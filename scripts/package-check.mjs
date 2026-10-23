@@ -39,7 +39,8 @@ try {
     executablePath: executable,
     cwd: temporary,
     env,
-    timeout: 30000,
+    // macOS Keychain can delay the debugging connection during a signed app's startup.
+    timeout: 60000,
   });
   const page = await installed.firstWindow();
   await page.waitForFunction(() => !!window.desk);
@@ -66,7 +67,7 @@ try {
       HOME: process.env.HOME,
       AGENT_DESK_DATA_DIR: path.join(temporary, 'development'),
     },
-    timeout: 30000,
+    timeout: 60000,
   });
   const devPage = await development.firstWindow();
   await devPage.waitForFunction(() => !!window.desk);

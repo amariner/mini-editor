@@ -107,6 +107,28 @@ export function LocalAccountSettings({
         Ejecuta modelos GGUF en este ordenador, sin cuenta ni Ollama. Agent Desk gestiona el motor
         llama.cpp.
       </p>
+      <label>
+        <input
+          type="checkbox"
+          checked={state?.tools ?? false}
+          disabled={blocked || !state}
+          onChange={(e) => {
+            const tools = e.target.checked;
+            void act({
+              type: 'localConfigure',
+              profile: profile.id,
+              context: state?.context ?? 8192,
+              tools,
+            });
+          }}
+        />{' '}
+        Permitir herramientas del proyecto
+      </label>
+      <p className="muted" role="status">
+        {state?.tools
+          ? 'Puede listar y leer el proyecto. Las escrituras, los comandos y las lecturas externas piden aprobación en el chat.'
+          : 'Solo conversación: no puede leer ni escribir archivos. Activa las herramientas para trabajar en la carpeta del proyecto con un modelo compatible.'}
+      </p>
       <label>Carpeta de modelos</label>
       <p className="muted" style={{ overflowWrap: 'anywhere' }}>
         {state?.directory ?? 'Selecciona dónde guardar tus modelos.'}
@@ -284,26 +306,7 @@ export function LocalAccountSettings({
         Las respuestas admiten hasta {state?.outputLimit ?? 2048} tokens, dentro del contexto total,
         que incluye historial, archivos y resultados de herramientas.
       </p>
-      <label>
-        <input
-          type="checkbox"
-          checked={state?.tools ?? false}
-          disabled={blocked}
-          onChange={(e) => {
-            const tools = e.target.checked;
-            setState((previous) => (previous ? { ...previous, tools } : previous));
-            void act({
-              type: 'localConfigure',
-              profile: profile.id,
-              context: state?.context ?? 8192,
-              tools,
-            });
-          }}
-        />{' '}
-        Permitir herramientas del proyecto
-      </label>
       <p className="muted">
-        Actívalas solo para modelos con llamadas a herramientas. Se conservan los permisos del chat.
         Una generación local simultánea; el modelo se libera tras cinco minutos de inactividad.
       </p>
       {state?.running && (
