@@ -291,8 +291,10 @@ export class LocalService extends OpenRouterService {
       signal,
       redirect: 'follow',
     });
-    if (!response.ok || !response.body)
+    if (!response.ok || !response.body) {
+      await response.body?.cancel();
       throw new Error(`No se pudo descargar el archivo (${response.status}).`);
+    }
     this.progress.total = Number(response.headers.get('content-length')) || undefined;
     const hash = createHash('sha256');
     const stream = Readable.fromWeb(response.body as any);
@@ -320,6 +322,7 @@ export class LocalService extends OpenRouterService {
           signal,
         );
         if (sum !== digest) throw new Error('La verificación SHA-256 del motor ha fallado.');
+        this.progress.busy = 'Instalando motor llama.cpp';
         const unpack = path.join(temp, 'unpacked');
         await fs.mkdir(unpack);
         await new Promise<void>((resolve, reject) => {

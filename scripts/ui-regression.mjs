@@ -18,6 +18,7 @@ const scripts = selected.length
       'floating-chat',
       'floating-appearance',
       'local',
+      'local-download',
       'compact-chat',
       'chat-design',
       'navigation',

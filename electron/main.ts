@@ -4,6 +4,7 @@ import { openInChrome } from './external-browser';
 import { COMMON_EXTENSIONS, IMAGE_EXTENSIONS } from '../src/attachment-policy';
 import { ProxySettings } from './proxy';
 import { providerFetch } from './provider-fetch';
+import { downloadFetch } from './download-fetch';
 import { safeStorage, session as electronSession } from 'electron';
 import { Attachments } from './attachments';
 import { nativeImage } from 'electron';
@@ -266,11 +267,10 @@ app.whenReady().then(async () => {
           decrypt: (value) => safeStorage.decryptString(value),
         },
         downloadFetch: async (input, init) => {
-          await prepareNetwork(electronSession.defaultSession);
-          return electronSession.defaultSession.fetch(input as string, {
-            ...init,
-            credentials: 'omit',
-          });
+          // Public downloads must not inherit browser cookies or cached origin authentication.
+          const ses = electronSession.fromPartition('desk-local-downloads', { cache: false });
+          await prepareNetwork(ses);
+          return downloadFetch(ses, network, input as string, init);
         },
         fetch: async (input, init) => {
           await prepareNetwork(electronSession.defaultSession);

@@ -38,6 +38,7 @@ import { InterfaceSettings, useInterfacePreferences } from './interface-settings
 export function AccountsSettings({
   state,
   run,
+  runLocal = run,
   close,
   onError,
   appearance,
@@ -45,6 +46,7 @@ export function AccountsSettings({
 }: {
   state: Snapshot;
   run: (action: Action) => Promise<any>;
+  runLocal?: (action: Action) => Promise<any>;
   close: () => void;
   onError: (error: string) => void;
   appearance: ReturnType<typeof useInterfacePreferences>;
@@ -571,7 +573,7 @@ export function AccountsSettings({
                     {p.kind === 'local' && (
                       <LocalAccountSettings
                         profile={p}
-                        run={run}
+                        run={runLocal}
                         disabled={!compatible || !!busy}
                       />
                     )}

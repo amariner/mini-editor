@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Action, ModelInfo, ProfileDefinition } from './shared';
 import type { LocalState } from '../electron/local';
 const suggested =
@@ -14,8 +14,11 @@ export function LocalAccountSettings({
 }) {
   const [state, setState] = useState<LocalState>();
   const [models, setModels] = useState<ModelInfo[]>([]);
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+  const [activeAction, setActiveAction] = useState<Action['type']>();
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const cancelRequested = useRef(false);
   const [url, setUrl] = useState('');
   const refresh = async () => {
     const [status, catalog] = await Promise.all([
@@ -44,19 +47,60 @@ export function LocalAccountSettings({
       clearInterval(timer);
     };
   }, [profile.id]);
+  useEffect(() => {
+    if (cancelling && !activeAction && state && !state.busy) {
+      setNotice('Descarga cancelada.');
+      setCancelling(false);
+      cancelRequested.current = false;
+    }
+  }, [cancelling, activeAction, state]);
   const act = async (action: Action) => {
-    setBusy(true);
+    setActiveAction(action.type);
     setError('');
+    setNotice('');
+    cancelRequested.current = false;
     try {
       await run(action);
+      if (action.type === 'localInstall') setNotice('Motor instalado. Listo para usar.');
+      if (action.type === 'localDownload') setNotice('Modelo descargado. Listo para usar.');
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      const message = e instanceof Error ? e.message : String(e);
+      if (cancelRequested.current && /abort|cancel/i.test(message))
+        setNotice('Descarga cancelada.');
+      else setError(message);
+      // Clear the last progress state after a failure without replacing its useful error.
+      await refresh().catch(() => {});
     } finally {
-      setBusy(false);
+      setActiveAction(undefined);
+      setCancelling(false);
+      cancelRequested.current = false;
     }
   };
-  const blocked = disabled || busy || !!state?.busy;
+  const cancelDownload = async () => {
+    cancelRequested.current = true;
+    setCancelling(true);
+    setError('');
+    try {
+      await run({ type: 'localCancel', profile: profile.id });
+      if (!activeAction) await refresh();
+    } catch (e) {
+      cancelRequested.current = false;
+      setCancelling(false);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const busy = !!activeAction || !!state?.busy;
+  const blocked = disabled || busy;
+  const installing = activeAction === 'localInstall' || !!state?.busy?.includes('motor');
+  const downloading =
+    installing || activeAction === 'localDownload' || !!state?.busy?.startsWith('Descargando');
+  const stage = cancelling
+    ? 'Cancelando descarga…'
+    : (state?.busy ?? (downloading ? 'Preparando descarga…' : 'Actualizando…'));
+  const downloaded = state?.busy ? state.downloaded : 0;
+  const total = state?.busy ? state.total : undefined;
+  const progress = total ? Math.min(100, Math.round((downloaded / total) * 100)) : undefined;
   return (
     <div className="provider-settings local-settings">
       <p>
@@ -90,14 +134,53 @@ export function LocalAccountSettings({
           ? 'Motor instalado · llama.cpp'
           : 'El motor se descarga una vez; los modelos se descargan por separado.'}
       </p>
-      {!state?.engine && (
-        <button
-          disabled={blocked}
-          onClick={() => void act({ type: 'localInstall', profile: profile.id })}
-        >
-          Descargar motor local
-        </button>
-      )}
+      <div className="local-engine-download">
+        {(!state?.engine || installing) && (
+          <button
+            className="local-engine-button"
+            disabled={blocked}
+            aria-busy={installing}
+            onClick={() => void act({ type: 'localInstall', profile: profile.id })}
+          >
+            {installing && <span className="local-download-spinner" aria-hidden="true" />}
+            {installing ? stage : 'Descargar motor local'}
+          </button>
+        )}
+        <div className="local-download-feedback" role="status" aria-live="polite">
+          {busy ? (
+            <>
+              <div className="local-download-status">
+                <span>
+                  {!installing && <span className="local-download-spinner" aria-hidden="true" />}
+                  {installing ? 'Instalando motor local' : stage}
+                </span>
+                {downloading && (
+                  <button disabled={cancelling} onClick={() => void cancelDownload()}>
+                    {cancelling ? 'Cancelando…' : 'Cancelar'}
+                  </button>
+                )}
+              </div>
+              {downloading && (
+                <>
+                  <progress max={100} value={progress} aria-label="Progreso de la descarga" />
+                  <span className="local-download-size">
+                    {downloaded > 0
+                      ? `${(downloaded / 1e6).toFixed(1)} MB${total ? ` de ${(total / 1e6).toFixed(1)} MB · ${progress}%` : ''}`
+                      : 'Conectando con el servidor…'}
+                  </span>
+                </>
+              )}
+            </>
+          ) : notice ? (
+            <span>{notice}</span>
+          ) : null}
+        </div>
+        {error && (
+          <p className="account-error local-download-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
       <label>
         Descargar modelo desde Hugging Face
         <input
@@ -123,17 +206,6 @@ export function LocalAccountSettings({
         La descarga puede ocupar varios GB. Puedes usar cualquier GGUF de texto compatible con esta
         versión de llama.cpp. Las imágenes necesitan una integración adicional.
       </p>
-      {(busy || state?.busy) && (
-        <div role="status">
-          {state?.busy ?? 'Preparando…'}{' '}
-          {state?.downloaded
-            ? `· ${(state.downloaded / 1e6).toFixed(0)} MB${state.total ? ` / ${(state.total / 1e6).toFixed(0)} MB` : ''}`
-            : ''}
-          <button onClick={() => void run({ type: 'localCancel', profile: profile.id })}>
-            Cancelar descarga
-          </button>
-        </div>
-      )}
       <label>
         Modelo predeterminado
         <select
@@ -267,11 +339,6 @@ export function LocalAccountSettings({
           </li>
         ))}
       </ul>
-      {error && (
-        <p className="account-error" role="alert">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

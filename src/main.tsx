@@ -374,7 +374,7 @@ function App() {
     return result;
   };
 
-  const run = async (action: Action) => {
+  const run = async (action: Action, rejectOnError = false) => {
     if ((action.type === 'select' && action.sessionId) || action.type === 'newSession')
       setClosedSelection(undefined);
     if (action.type === 'newSession') setProjectFolded(action.projectId, false);
@@ -414,6 +414,7 @@ function App() {
       }
       return r;
     } catch (e) {
+      if (rejectOnError) throw new Error(actionError(e));
       setError(actionError(e));
       return undefined;
     } finally {
@@ -2261,6 +2262,7 @@ function App() {
             state={state}
             appearance={appearance}
             run={run}
+            runLocal={(action) => run(action, true)}
             close={() => setSettings(false)}
             onError={setError}
           />
