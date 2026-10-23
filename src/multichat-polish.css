@@ -19,8 +19,8 @@
 }
 .multichat-card-head {
   flex-shrink: 0;
-  min-height: 46px;
-  padding: 8px 8px 2px 16px;
+  min-height: 32px;
+  padding: 2px 8px 0 16px;
   gap: 4px;
   background: transparent;
   border-bottom: 0;
@@ -53,8 +53,8 @@
 .multichat-info-line {
   flex-shrink: 0;
   gap: 10px;
-  min-height: 26px;
-  padding: 0 16px 6px;
+  min-height: 18px;
+  padding: 0 16px;
   font-size: 10.5px;
   line-height: 16px;
 }
@@ -186,7 +186,7 @@
   min-height: 0;
 }
 .multichat-preview.compact-conversation {
-  padding: 14px 16px;
+  padding: 10px 16px;
   gap: 16px;
   scrollbar-width: thin;
 }
@@ -357,8 +357,8 @@
 }
 @container (max-width: 330px) {
   .multichat-card-head {
-    min-height: 40px;
-    padding: 5px 6px 0 12px;
+    min-height: 32px;
+    padding: 2px 6px 0 12px;
   }
   .multichat-info-line {
     padding-inline: 12px;
@@ -386,4 +386,104 @@
   .multichat-card * {
     scroll-behavior: auto;
   }
+}
+
+/* Account accents follow the current theme. Override these in the theme editor. */
+:root {
+  --account-slate: color-mix(in srgb, #849299 9%, var(--bg));
+  --account-blue: color-mix(in srgb, #829fbd 9%, var(--bg));
+  --account-sage: color-mix(in srgb, #91aa98 9%, var(--bg));
+  --account-lavender: color-mix(in srgb, #a295b8 9%, var(--bg));
+  --account-sand: color-mix(in srgb, #b4a084 9%, var(--bg));
+  --account-rose: color-mix(in srgb, #b28f9b 9%, var(--bg));
+}
+.multichat-info-line {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.multichat-card:hover .multichat-info-line,
+.multichat-card:focus-within .multichat-info-line {
+  opacity: 1;
+  pointer-events: auto;
+}
+.multichat-card .multichat-compose-row button {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text-2);
+  border: 0;
+  border-radius: 7px;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+}
+.multichat-card .multichat-compose-row button:hover:enabled {
+  background: color-mix(in srgb, var(--text) 15%, transparent);
+  color: var(--text);
+}
+.multichat-card .multichat-compose-row button:disabled {
+  color: var(--faint);
+}
+.multichat-compose-row .multichat-attach {
+  visibility: hidden;
+  opacity: 0;
+}
+.multichat-card .multichat-compose-row .multichat-attach {
+  background: transparent;
+  color: var(--muted);
+}
+.multichat-card .multichat-compose-row .multichat-attach:hover:enabled {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.multichat-compose-row:focus-within .multichat-attach {
+  visibility: visible;
+  opacity: 1;
+}
+@media (hover: none) {
+  .multichat-info-line {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Keep the secondary line tucked under the title, including with saved theme CSS. */
+.app .multichat-card > .multichat-card-head {
+  min-height: 32px;
+  padding-top: 2px;
+  padding-bottom: 0;
+}
+.app .multichat-card > .multichat-info-line {
+  min-height: 16px;
+  line-height: 14px;
+  margin-top: -6px;
+  padding-block: 0;
+}
+
+.app .multichat-card .multichat-compose-row {
+  align-items: center;
+}
+.app .multichat-card .multichat-compose-row > button {
+  display: inline-grid;
+  place-items: center;
+  align-self: center;
+  flex: 0 0 26px;
+  margin: 0;
+  line-height: 1;
+}
+.app .multichat-card .multichat-compose-row > button > svg {
+  display: block;
+  margin: 0;
+}
+.app .multichat-card .multichat-compose-row {
+  padding: 4px 5px 4px 4px;
+  gap: 3px;
+}
+.app .multichat-card .multichat-compose-row > textarea {
+  margin: 0;
+  padding-block: 6px;
+  line-height: 18px;
+}
+.app .multichat-card .multichat-compose-row > button {
+  transform: translateY(-1px);
 }

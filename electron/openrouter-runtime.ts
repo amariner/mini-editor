@@ -139,9 +139,9 @@ export class OpenRouterRuntime implements ProviderRuntime {
           image_url: { url: `data:${file.mediaType};base64,${data.toString('base64')}` },
         });
       } else if (file.mediaType === 'application/pdf') {
-        if (this.api.name === 'OpenCode')
+        if (this.api.name === 'OpenCode' || this.api.name === 'Local')
           throw new Error(
-            'OpenCode: convierte el PDF a texto o usa las herramientas del proyecto.',
+            `${this.api.name}: convierte el PDF a texto o usa las herramientas del proyecto.`,
           );
         content.push({
           type: 'file',

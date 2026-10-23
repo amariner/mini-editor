@@ -62,6 +62,8 @@ try {
     ...buildOptions,
     outdir: path.join(stagedPayload, 'dist-electron'),
     sourcemap: false,
+    minify: true,
+    keepNames: true,
   });
 
   console.log(`Copiando ${dependencies.length} dependencias de ejecución…`);
@@ -126,14 +128,13 @@ try {
   console.log('Firmando localmente y verificando el paquete…');
   run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', stagedApp]);
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', stagedApp]);
-  await fs.mkdir(output, { recursive: true });
-  await fs.rm(app, { recursive: true, force: true });
-  await fs.rename(stagedApp, app);
-  run(process.execPath, ['scripts/package-check.mjs', app]);
+  // Validate the complete staged distribution before replacing the last working
+  // app or installer. A failed smoke test must leave both previous artifacts intact.
+  run(process.execPath, ['scripts/package-check.mjs', stagedApp]);
   const disk = path.join(staging, 'disk');
   await fs.mkdir(disk);
   // ditto preserves the signed bundle and all framework symlinks.
-  run('/usr/bin/ditto', [app, path.join(disk, 'Agent Desk.app')]);
+  run('/usr/bin/ditto', [stagedApp, path.join(disk, 'Agent Desk.app')]);
   await fs.symlink('/Applications', path.join(disk, 'Applications'));
   await fs.writeFile(
     path.join(disk, 'Instalar.txt'),
@@ -151,6 +152,7 @@ try {
       '',
     ].join('\n'),
   );
+  const stagedImage = path.join(staging, path.basename(image));
   run('/usr/bin/hdiutil', [
     'create',
     '-volname',
@@ -162,9 +164,15 @@ try {
     'UDZO',
     '-imagekey',
     'zlib-level=9',
-    image,
+    stagedImage,
   ]);
-  run('/usr/bin/hdiutil', ['verify', image]);
+  run('/usr/bin/hdiutil', ['verify', stagedImage]);
+  await fs.mkdir(output, { recursive: true });
+  await fs.rm(app, { recursive: true, force: true });
+  await fs.rename(stagedApp, app);
+  await fs.rename(stagedImage, image);
+  const installerSize = (await fs.stat(image)).size;
+  console.log(`Instalador comprimido: ${(installerSize / 1024 ** 2).toFixed(1)} MiB.`);
   console.log(`\nInstalador: ${image}\nAplicación: ${app}`);
 } finally {
   await fs.rm(staging, { recursive: true, force: true });

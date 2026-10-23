@@ -1,10 +1,11 @@
 {
   "name": "agent-desk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
+    "dev:local": "AGENT_DESK_DATA_DIR=artifacts/local-dev/data node scripts/dev.mjs",
     "dev": "node scripts/dev.mjs",
     "build": "tsc --noEmit && vite build && node scripts/build.mjs",
     "package:mac": "node scripts/package-mac.mjs",

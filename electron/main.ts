@@ -265,6 +265,13 @@ app.whenReady().then(async () => {
           encrypt: (value) => safeStorage.encryptString(value),
           decrypt: (value) => safeStorage.decryptString(value),
         },
+        downloadFetch: async (input, init) => {
+          await prepareNetwork(electronSession.defaultSession);
+          return electronSession.defaultSession.fetch(input as string, {
+            ...init,
+            credentials: 'omit',
+          });
+        },
         fetch: async (input, init) => {
           await prepareNetwork(electronSession.defaultSession);
           return providerFetch(electronSession.defaultSession, network, input as string, init);
@@ -443,6 +450,72 @@ app.whenReady().then(async () => {
           return manager.setDefaultAccount(a.profile);
         case 'changeSessionAccount':
           return manager.changeSessionAccount(a.sessionId, a.profile);
+        case 'localDelete':
+        case 'localStatus':
+        case 'localFolder':
+        case 'localInstall':
+        case 'localImport':
+        case 'localDownload':
+        case 'localCancel':
+        case 'localUnload':
+        case 'localConfigure': {
+          const p = manager.state.profiles?.find((p) => p.id === a.profile);
+          if (!p || p.kind !== 'local' || manager.accounts.changing(p.id))
+            throw new Error('El proveedor local no está disponible.');
+          const local = manager.accounts.local;
+          if (a.type === 'localStatus') return local.status(p.id);
+          if (a.type === 'localCancel') {
+            local.cancelDownload();
+            return true;
+          }
+          if (a.type === 'localUnload') {
+            await local.stopEngine();
+            return local.status(p.id);
+          }
+          if (
+            manager.state.sessions.some(
+              (s) =>
+                s.profile === p.id &&
+                ['working', 'waiting', 'starting', 'stopping'].includes(s.status),
+            )
+          )
+            throw new Error(
+              'Detén la tarea de este proveedor antes de cambiar los ajustes locales.',
+            );
+          if (a.type === 'localFolder') {
+            const result = await dialog.showOpenDialog(senderWindow, {
+              title: 'Carpeta para los modelos locales',
+              properties: ['openDirectory', 'createDirectory'],
+            });
+            if (!result.canceled) await local.configure(p.id, { directory: result.filePaths[0] });
+          } else if (a.type === 'localImport') {
+            const result = await dialog.showOpenDialog(senderWindow, {
+              title: 'Importar modelo GGUF',
+              properties: ['openFile'],
+              filters: [{ name: 'Modelos GGUF', extensions: ['gguf'] }],
+            });
+            if (!result.canceled) await local.importModel(p.id, result.filePaths[0]);
+          } else if (a.type === 'localDelete')
+            await local.removeModel(p.id, a.model, (file) => shell.trashItem(file));
+          else if (a.type === 'localInstall') await local.install();
+          else if (a.type === 'localDownload') await local.downloadModel(p.id, a.url);
+          else if (a.type === 'localConfigure')
+            await local.configure(p.id, {
+              context: a.context,
+              tools: a.tools,
+              ...(a.defaultModel !== undefined ? { defaultModel: a.defaultModel } : {}),
+              ...(a.cacheType !== undefined ? { cacheType: a.cacheType } : {}),
+            });
+          await manager.accounts.refresh(p.id);
+          const available = await local.catalog(p.id);
+          for (const session of manager.state.sessions.filter((s) => s.profile === p.id)) {
+            session.info = undefined;
+            if (!available.some((model) => model.value === session.providerConfig?.model))
+              session.providerConfig = { model: 'default' };
+          }
+          manager.changed();
+          return local.status(p.id);
+        }
         case 'addAccount':
           return manager.addAccount(a.kind, a.name);
         case 'removeAccount': {

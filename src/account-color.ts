@@ -1,7 +1,26 @@
 import type { CSSProperties } from 'react';
+export const accountPalette = [
+  { name: 'Pizarra', color: '#849299', token: 'slate' },
+  { name: 'Azul', color: '#829fbd', token: 'blue' },
+  { name: 'Salvia', color: '#91aa98', token: 'sage' },
+  { name: 'Lavanda', color: '#a295b8', token: 'lavender' },
+  { name: 'Arena', color: '#b4a084', token: 'sand' },
+  { name: 'Rosa', color: '#b28f9b', token: 'rose' },
+] as const;
+
+export function suggestedAccountColor(profile: string): string {
+  const hash = Array.from(profile).reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 0);
+  return accountPalette[hash % accountPalette.length].color;
+}
+
 /** Choose readable card text without changing the saved account background. */
 export function accountCardStyle(color?: string): CSSProperties | undefined {
   if (!color || !/^#[0-9a-f]{6}$/i.test(color)) return;
+  const preset = accountPalette.find((entry) => entry.color === color.toLowerCase());
+  if (preset) {
+    const surface = `var(--account-${preset.token})`;
+    return { backgroundColor: surface, '--card': surface } as CSSProperties;
+  }
   const linear = [1, 3, 5].map((i) => {
     const n = parseInt(color.slice(i, i + 2), 16) / 255;
     return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;

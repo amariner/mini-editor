@@ -4,10 +4,9 @@ import { ChatStateMark } from './chat-state-mark';
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Maximize2,
   X,
   LayoutGrid,
-  Send,
+  CornerDownLeft,
   Square,
   Paperclip,
   Globe,
@@ -42,7 +41,7 @@ import {
 import { conversationEntries } from './conversation';
 import { ChatActionsContext, type ChatActions } from './markdown';
 import { EditableName } from './editable-name';
-import { accountCardStyle } from './account-color';
+import { accountCardStyle, suggestedAccountColor } from './account-color';
 import type { GitSnapshot } from './git-types';
 import { cardStatus as status, isPending, lastTurnChanges, planProgress } from './supervision';
 import { shortPath } from './activity';
@@ -765,7 +764,20 @@ function Card({
         }}
       >
         {/* The title drags within the grid to reorder, or outside it to detach. */}
-        <div className="multichat-card-head">
+        <div
+          className="multichat-card-head"
+          onDoubleClick={(e) => {
+            if (
+              disabled ||
+              (e.target as HTMLElement).closest(
+                'input, .multichat-menu-trigger, .team-indicator, .team-member',
+              )
+            )
+              return;
+            open();
+          }}
+          title="Doble clic para ampliar el chat"
+        >
           <ChatStateMark
             tone={tone}
             status={unseen ? 'Terminado sin revisar' : label}
@@ -782,7 +794,6 @@ function Card({
             <button
               {...detachHandle}
               className="multichat-title"
-              onDoubleClick={() => setEditingTitle(true)}
               onClick={(e) => {
                 if (e.detail === 0) setEditingTitle(true);
               }}
@@ -801,7 +812,7 @@ function Card({
                 }
               }}
               disabled={disabled || !compatible}
-              title={`${session.title}\nDoble clic para renombrar · Arrastra para ordenar\n${chatDetachHint}`}
+              title={`${session.title}\nDoble clic para ampliar · F2 para renombrar · Arrastra para ordenar\n${chatDetachHint}`}
               aria-label={`Renombrar ${session.title}`}
               aria-keyshortcuts="F2 Alt+ArrowLeft Alt+ArrowRight Alt+Shift+F"
             >
@@ -815,16 +826,11 @@ function Card({
               {index + 1}
             </kbd>
           )}
-          <button
-            className="multichat-expand"
-            aria-label={`Ampliar ${session.title}`}
-            title="Ampliar"
-            disabled={disabled}
-            onClick={open}
-          >
-            <Maximize2 size={14} />
-          </button>
           <CardMenu title={session.title} color={color} visible={visible}>
+            <button role="menuitem" disabled={disabled} onClick={open}>
+              <LayoutGrid size={14} />
+              <span>Ampliar chat</span>
+            </button>
             {servers.map((server) => (
               <button
                 key={server.port}
@@ -1108,6 +1114,7 @@ function Card({
               />
               <button
                 type="button"
+                className="multichat-attach"
                 aria-label={`Adjuntar a ${session.title}`}
                 title="Adjuntar archivos"
                 disabled={!enabled}
@@ -1137,7 +1144,7 @@ function Card({
                 }
                 disabled={!enabled || (!draft.trim() && !images.length)}
               >
-                <Send size={13} />
+                <CornerDownLeft size={13} />
               </button>
             </div>
           </form>
@@ -1505,7 +1512,10 @@ export function Multichat({
                   state.profiles?.find((p) => p.id === s.profile)?.name ??
                   providerNames[providerKind(s.profile)]
                 }
-                color={state.profiles?.find((p) => p.id === s.profile)?.color}
+                color={
+                  state.profiles?.find((p) => p.id === s.profile)?.color ??
+                  suggestedAccountColor(s.profile)
+                }
                 git={git[s.projectId]?.value}
                 gitError={git[s.projectId]?.error}
                 gitBusy={!!gitBusy[s.projectId]}

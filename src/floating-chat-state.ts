@@ -1,10 +1,14 @@
 // Shared renderer values stay independent of the main process's IPC validators.
-export const MIN_FLOATING_OPACITY = 0.1;
+export const MIN_FLOATING_OPACITY = 0;
 
 export interface FloatingChatState {
   sessionId: string;
   opacity: number;
   alwaysOnTop: boolean;
+  glass?: boolean;
+  blur?: boolean;
+  glassStrength?: number;
+  glassSupported?: boolean;
 }
 
 export const floatingChatHash = (id: string) => `#chat=${encodeURIComponent(id)}`;

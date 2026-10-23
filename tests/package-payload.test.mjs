@@ -53,6 +53,9 @@ test('payload filtering keeps runtime assets and licenses but omits maps and for
     'lib/index.js',
     'prebuilds/darwin-arm64/pty.node',
     'prebuilds/darwin-arm64/spawn-helper',
+    'build/Release/pty.node',
+    'build/Release/spawn-helper',
+    'build/Debug/pty.node',
   ]) {
     assert.equal(runtimeFile('node-pty', file, target), true, file);
   }
@@ -64,6 +67,11 @@ test('payload filtering keeps runtime assets and licenses but omits maps and for
     'deps/winpty/src/agent.cc',
     'typings/node-pty.d.ts',
     'node_modules/something/index.js',
+    'build/Makefile',
+    'build/config.gypi',
+    'build/node_gyp_bins/python3',
+    'build/Release/obj.target/pty/src/unix/pty.o',
+    'build/Release/.deps/Release/pty.node.d',
   ]) {
     assert.equal(runtimeFile('node-pty', file, target), false, file);
   }

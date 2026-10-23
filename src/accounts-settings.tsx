@@ -1,3 +1,5 @@
+import { accountPalette, suggestedAccountColor } from './account-color';
+import { LocalAccountSettings } from './local-account-settings';
 import { ProviderAccountSettings } from './provider-account-settings';
 import { providerNames, type ProviderKind } from './shared';
 import { NetworkSettings } from './network-settings';
@@ -222,6 +224,8 @@ export function AccountsSettings({
                     setAdding(false);
                     setNewName('');
                     setNewKind('claude');
+                    if (newKind === 'local')
+                      setExpanded((previous) => ({ ...previous, [result.id]: true }));
                     if (newKind !== 'freebuff')
                       void run({ type: 'accountRefresh', profile: result.id });
                   }
@@ -239,6 +243,7 @@ export function AccountsSettings({
                 >
                   <option value="claude">Claude</option>
                   <option value="codex">ChatGPT · Codex</option>
+                  <option value="local">Local · En este ordenador</option>
                   <option value="openrouter">OpenRouter · API</option>
                   <option value="opencode">OpenCode · Console</option>
                   <option value="gemini">Google · Gemini</option>
@@ -292,14 +297,21 @@ export function AccountsSettings({
                           : busy === 'cancelling'
                             ? 'Cancelando…'
                             : account?.status === 'signedIn'
-                              ? 'Conectada'
+                              ? p.kind === 'local'
+                                ? 'Disponible'
+                                : 'Conectada'
                               : account?.status === 'signedOut'
-                                ? 'Sin sesión'
+                                ? p.kind === 'local'
+                                  ? 'Sin modelos'
+                                  : 'Sin sesión'
                                 : 'Estado sin verificar';
               const disabled =
                 !compatible ||
                 !!busy ||
-                (p.kind !== 'openrouter' && p.kind !== 'opencode' && !state.tools[p.kind]);
+                (p.kind !== 'local' &&
+                  p.kind !== 'openrouter' &&
+                  p.kind !== 'opencode' &&
+                  !state.tools[p.kind]);
               const loginLabel =
                 p.kind === 'opencode'
                   ? account?.status === 'signedIn'
@@ -341,7 +353,7 @@ export function AccountsSettings({
                       <span className={`account-status ${account?.status ?? ''}`} title={status}>
                         {status}
                       </span>
-                      {p.kind !== 'openrouter' && (
+                      {p.kind !== 'openrouter' && p.kind !== 'local' && (
                         <button
                           className={`account-login ${account?.status === 'signedIn' ? 'is-connected' : ''}`}
                           title={loginLabel}
@@ -390,9 +402,12 @@ export function AccountsSettings({
                     </div>
                   )}
 
-                  {p.kind !== 'openrouter' && p.kind !== 'opencode' && !state.tools[p.kind] && (
-                    <p className="muted">Selecciona el ejecutable para conectar esta cuenta.</p>
-                  )}
+                  {p.kind !== 'local' &&
+                    p.kind !== 'openrouter' &&
+                    p.kind !== 'opencode' &&
+                    !state.tools[p.kind] && (
+                      <p className="muted">Selecciona el ejecutable para conectar esta cuenta.</p>
+                    )}
                   {account?.loginStarting && (
                     <p className="muted" role="status">
                       Claude puede tardar hasta un minuto en abrir el acceso en el navegador. Puedes
@@ -423,16 +438,46 @@ export function AccountsSettings({
                     <div className="account-color-setting">
                       <label>
                         Color en Multichat
-                        <input
-                          type="color"
+                        <select
                           aria-label={`Color de ${p.name}`}
-                          value={colorDrafts[p.id] ?? p.color ?? '#f5f5f4'}
+                          value={colorDrafts[p.id] ?? p.color ?? suggestedAccountColor(p.id)}
                           disabled={!compatible || !!savingColor || busy === 'removing'}
                           onChange={(e) =>
                             setColorDrafts((v) => ({ ...v, [p.id]: e.target.value }))
                           }
-                        />
+                        >
+                          {p.color && !accountPalette.some((entry) => entry.color === p.color) && (
+                            <option value={p.color}>Personalizado actual</option>
+                          )}
+                          {accountPalette.map((entry) => (
+                            <option key={entry.color} value={entry.color}>
+                              {entry.name}
+                              {entry.color === suggestedAccountColor(p.id) ? ' · Sugerido' : ''}
+                            </option>
+                          ))}
+                        </select>
                       </label>
+                      <div
+                        className="account-color-palette"
+                        role="group"
+                        aria-label={`Paleta de ${p.name}`}
+                      >
+                        {accountPalette.map((entry) => (
+                          <button
+                            key={entry.color}
+                            type="button"
+                            aria-label={`${entry.name} para ${p.name}`}
+                            title={`${entry.name}${entry.color === suggestedAccountColor(p.id) ? ' · Sugerido' : ''}`}
+                            aria-pressed={
+                              (colorDrafts[p.id] ?? p.color ?? suggestedAccountColor(p.id)) ===
+                              entry.color
+                            }
+                            style={{ backgroundColor: `var(--account-${entry.token})` }}
+                            disabled={!compatible || !!savingColor || busy === 'removing'}
+                            onClick={() => setColorDrafts((v) => ({ ...v, [p.id]: entry.color }))}
+                          />
+                        ))}
+                      </div>
                       <button
                         disabled={
                           !compatible ||
@@ -454,8 +499,8 @@ export function AccountsSettings({
                           (!p.color && !colorDrafts[p.id]) ||
                           busy === 'removing'
                         }
-                        aria-label="Sin color"
-                        title="Sin color"
+                        aria-label="Restablecer color sugerido"
+                        title="Restablecer color sugerido"
                         onClick={() => void saveColor(p.id, null)}
                       >
                         <RotateCcw size={14} aria-hidden="true" />
@@ -523,6 +568,13 @@ export function AccountsSettings({
                         </label>
                       </fieldset>
                     )}
+                    {p.kind === 'local' && (
+                      <LocalAccountSettings
+                        profile={p}
+                        run={run}
+                        disabled={!compatible || !!busy}
+                      />
+                    )}
                     {['openrouter', 'opencode', 'gemini'].includes(p.kind) && (
                       <ProviderAccountSettings
                         profile={p}
@@ -533,12 +585,15 @@ export function AccountsSettings({
                       />
                     )}
                     <div className="account-actions account-secondary-actions">
-                      <button disabled={disabled} onClick={() => request(p.id, 'accountLogout')}>
-                        <LogOut size={14} />
-                        {p.kind === 'gemini' && /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
-                          ? 'Desvincular de Agent Desk'
-                          : 'Cerrar sesión'}
-                      </button>
+                      {p.kind !== 'local' && (
+                        <button disabled={disabled} onClick={() => request(p.id, 'accountLogout')}>
+                          <LogOut size={14} />
+                          {p.kind === 'gemini' &&
+                          /[/\\]agy(?:\.exe)?$/.test(state.tools.gemini ?? '')
+                            ? 'Desvincular de Agent Desk'
+                            : 'Cerrar sesión'}
+                        </button>
+                      )}
                       <button
                         className="danger-ghost"
                         disabled={

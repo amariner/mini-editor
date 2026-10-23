@@ -461,20 +461,21 @@ try {
     const listAfterReveal = await row(page, 's2').boundingBox();
     assert.ok(
       Math.abs(listBeforeReveal.y - listAfterReveal.y) <= 0.5,
-      'Hovering the project reveals its divider without moving the customized list',
+      'Hovering the project reveals its action without moving the customized list',
     );
     const dividerBounds = await create.boundingBox();
     const headerBounds = await project.locator('.project-row').boundingBox();
     assert.ok(
-      dividerBounds.y >= headerBounds.y + headerBounds.height - 1 &&
-        dividerBounds.y + dividerBounds.height <= listAfterReveal.y + 1,
-      'New-chat divider remains above the first manually ordered chat',
+      dividerBounds.y >= headerBounds.y &&
+        dividerBounds.y + dividerBounds.height <= headerBounds.y + headerBounds.height &&
+        listAfterReveal.y - (headerBounds.y + headerBounds.height) <= 5,
+      'New-chat action fits in the header and chats follow without an empty divider row',
     );
     await aligned(
       create,
       create.locator('svg'),
       'x',
-      'Plus stays centered in its horizontal divider',
+      'Plus stays centered in its header action',
     );
     assert.ok(
       (await create.locator('svg').boundingBox()).width <= 12,

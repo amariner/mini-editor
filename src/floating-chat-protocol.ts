@@ -10,6 +10,9 @@ export const floatingChatAction = z
     operation: z.enum(['open', 'focus', 'dock', 'close', 'configure']),
     opacity: z.number().min(MIN_FLOATING_OPACITY).max(1).optional(),
     alwaysOnTop: z.boolean().optional(),
+    glass: z.boolean().optional(),
+    blur: z.boolean().optional(),
+    glassStrength: z.number().min(0).max(2).optional(),
   })
   .strict();
 

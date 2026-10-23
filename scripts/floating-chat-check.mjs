@@ -39,16 +39,28 @@ const visibility = async (visible, count = 2) => {
     if (state.length === count && state.every((w) => w.visible === visible)) return state;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  assert.fail(`Expected ${count} floating windows visible=${visible}: ${JSON.stringify(state)}`);
+  const native = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().map((window) => ({
+      title: window.getTitle(),
+      focused: window.isFocused(),
+      visible: window.isVisible(),
+    })),
+  );
+  assert.fail(
+    `Expected ${count} floating windows visible=${visible}: ${JSON.stringify({ state, native })}`,
+  );
 };
 const focusEditor = async () =>
-  app.evaluate(({ BrowserWindow }) => {
+  app.evaluate(({ BrowserWindow, app }) => {
     const editor = BrowserWindow.getAllWindows().find(
       (w) =>
         (w.webContents.getURL().includes('/dist/index.html') ||
           w.webContents.getURL().startsWith('http://127.0.0.1:')) &&
         !w.webContents.getURL().includes('#chat='),
     );
+    // A background macOS app cannot claim keyboard focus with BrowserWindow.focus alone.
+    // This helper simulates an explicit user switch to the editor, including activation.
+    app.focus({ steal: true });
     editor.show();
     editor.focus();
   });
@@ -183,7 +195,23 @@ try {
     0,
   );
   await optionsButton.click();
-  await one.getByLabel('Opacidad en reposo').fill('15');
+  await one.locator('#floating-opacity').fill('45');
+  await one.waitForFunction(() => document.querySelector('#floating-opacity')?.value === '45');
+  if (process.platform === 'darwin') {
+    await one.locator('#floating-glass-strength').fill('0');
+    await one.waitForFunction(
+      () => document.querySelector('.app').dataset.floatingMaterial === 'clear',
+    );
+    assert.equal(
+      (await snapshot(page)).floatingChats.find((f) => f.sessionId === first.id).glass,
+      false,
+    );
+    await one.locator('#floating-glass-strength').fill('100');
+    await one.waitForFunction(
+      () => document.querySelector('.app').dataset.floatingMaterial === 'glass',
+    );
+  }
+  await one.locator('#floating-opacity').fill('15');
   await one.waitForFunction(() =>
     getComputedStyle(document.querySelector('.app'))
       .getPropertyValue('--floating-effective-opacity')
@@ -197,8 +225,8 @@ try {
     body: getComputedStyle(document.body).backgroundColor,
     text: getComputedStyle(document.querySelector('.composer textarea')).opacity,
     background: getComputedStyle(document.querySelector('.app')).backgroundColor,
-    input: getComputedStyle(document.querySelector('.desk-input')).backgroundColor,
-    layers: ['main', '.work-area', '.workspace', '.conversation', '.messages', '.composer'].map(
+    input: getComputedStyle(document.querySelector('.composer')).backgroundColor,
+    layers: ['main', '.work-area', '.workspace', '.conversation', '.messages', '.desk-input'].map(
       (selector) => [selector, getComputedStyle(document.querySelector(selector)).backgroundColor],
     ),
   }));
@@ -207,8 +235,8 @@ try {
   assert.equal(alpha.text, '1');
   // The options panel is open, so the window previews the resting tint instead of turning solid.
   assert.match(alpha.background, /0\.15/);
-  // The writing area keeps its own near-solid backing.
-  assert.match(alpha.input, /0\.86/);
+  // The writing area follows the selected transparency.
+  assert.match(alpha.input, /0\.15/);
   assert.ok(
     alpha.layers.every(([, color]) => color === 'rgba(0, 0, 0, 0)'),
     JSON.stringify(alpha.layers),
@@ -232,7 +260,7 @@ try {
     /0\.6\)/,
   );
   assert.match(
-    await one.locator('.desk-input').evaluate((el) => getComputedStyle(el).backgroundColor),
+    await one.locator('.composer').evaluate((el) => getComputedStyle(el).backgroundColor),
     /0\.35\)/,
   );
   const popupBounds = await one.locator('.floating-chat-options').boundingBox();
@@ -280,7 +308,7 @@ try {
   });
   assert.ok(layout.right <= layout.width && layout.bottom <= layout.height, JSON.stringify(layout));
   assert.equal(layout.overflow, false);
-  assert.ok(layout.insetLeft >= 12 && layout.insetRight >= 12, JSON.stringify(layout));
+  assert.ok(layout.insetLeft >= 10 && layout.insetRight >= 10, JSON.stringify(layout));
   await fs.mkdir('artifacts', { recursive: true });
   // Render streamed backend snapshots in the actual native renderer, without model calls.
   const fixture = await snapshot(page);

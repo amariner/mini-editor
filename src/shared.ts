@@ -1,30 +1,34 @@
 import type { BrowserInput, BrowserState } from './browser-protocol';
-export type ProviderKind = 'claude' | 'codex' | 'openrouter' | 'opencode' | 'gemini';
+export type ProviderKind = 'claude' | 'codex' | 'openrouter' | 'opencode' | 'gemini' | 'local';
 export type Profile =
   | `claude-${number}`
   | 'codex'
   | `codex-${number}`
   | `openrouter-${number}`
   | `opencode-${number}`
-  | `gemini-${number}`;
+  | `gemini-${number}`
+  | `local-${number}`;
 export const providerKind = (profile?: string): ProviderKind =>
-  profile?.startsWith('opencode-')
-    ? 'opencode'
-    : profile?.startsWith('openrouter-')
-      ? 'openrouter'
-      : profile?.startsWith('gemini-')
-        ? 'gemini'
-        : isCodex(profile)
-          ? 'codex'
-          : 'claude';
+  profile?.startsWith('local-')
+    ? 'local'
+    : profile?.startsWith('opencode-')
+      ? 'opencode'
+      : profile?.startsWith('openrouter-')
+        ? 'openrouter'
+        : profile?.startsWith('gemini-')
+          ? 'gemini'
+          : isCodex(profile)
+            ? 'codex'
+            : 'claude';
 export const isConnectedProvider = (profile?: string) =>
-  ['openrouter', 'opencode', 'gemini'].includes(providerKind(profile));
+  ['openrouter', 'opencode', 'gemini', 'local'].includes(providerKind(profile));
 export const providerNames: Record<ProviderKind, string> = {
   claude: 'Claude',
   codex: 'Codex',
   openrouter: 'OpenRouter',
   opencode: 'OpenCode',
   gemini: 'Google · Gemini',
+  local: 'Local',
 };
 export interface ProviderConfig {
   model: string;
@@ -432,6 +436,22 @@ export type Action =
   | { type: 'openDevInChrome'; sessionId: string; port: number }
   | { type: 'changeSessionAccount'; sessionId: string; profile: Profile }
   | { type: 'configureOptimization'; profile: Profile; optimization: TokenOptimization }
+  | { type: 'localStatus'; profile: Profile }
+  | { type: 'localFolder'; profile: Profile }
+  | { type: 'localInstall'; profile: Profile }
+  | { type: 'localImport'; profile: Profile }
+  | { type: 'localDownload'; profile: Profile; url: string }
+  | { type: 'localDelete'; profile: Profile; model: string }
+  | { type: 'localCancel'; profile: Profile }
+  | { type: 'localUnload'; profile: Profile }
+  | {
+      type: 'localConfigure';
+      profile: Profile;
+      context: number;
+      tools: boolean;
+      defaultModel?: string;
+      cacheType?: 'q8_0' | 'q4_0';
+    }
   | { type: 'addAccount'; kind: ProviderKind; name?: string }
   | { type: 'accountOpenLogin'; profile: Profile }
   | { type: 'connectOpenRouter'; profile: Profile; apiKey: string }

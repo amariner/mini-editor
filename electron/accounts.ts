@@ -1,3 +1,4 @@
+import { LocalService } from './local';
 import { codexUsage, type SubscriptionUsage } from '../src/subscription-usage';
 import { providerKind, isCodex } from '../src/shared';
 import fs from 'node:fs/promises';
@@ -41,10 +42,15 @@ type Login = {
   startupTimer?: ReturnType<typeof setTimeout>;
 };
 export class Accounts {
+  readonly local: LocalService;
   readonly openrouter: OpenRouterService;
   readonly opencode: OpenCodeService;
   api(profile: Profile) {
-    return providerKind(profile) === 'opencode' ? this.opencode : this.openrouter;
+    return providerKind(profile) === 'local'
+      ? this.local
+      : providerKind(profile) === 'opencode'
+        ? this.opencode
+        : this.openrouter;
   }
   readonly state = {} as Record<Profile, AccountState>;
   readonly logins = new Map<Profile, Login>();
@@ -67,6 +73,7 @@ export class Accounts {
     services: ProviderServices = {},
     private googleProject: (profile: Profile) => string | undefined = () => undefined,
   ) {
+    this.local = new LocalService(root, services);
     this.openrouter = new OpenRouterService(root, services);
     this.opencode = new OpenCodeService(root, services);
   }
@@ -170,7 +177,7 @@ export class Accounts {
   ): Promise<import('../src/shared').ModelInfo[]> {
     if (!this.state[profile] || this.removing(profile))
       throw new Error('La cuenta no está disponible.');
-    if (['openrouter', 'opencode'].includes(providerKind(profile)))
+    if (['openrouter', 'opencode', 'local'].includes(providerKind(profile)))
       return this.api(profile).catalog(profile, signal);
     if (providerKind(profile) === 'gemini') {
       const agy = this.tools().gemini;
@@ -364,12 +371,16 @@ export class Accounts {
     });
   }
   private async read(profile: Profile, check?: Check) {
-    if (['openrouter', 'opencode'].includes(providerKind(profile))) {
+    if (['openrouter', 'opencode', 'local'].includes(providerKind(profile))) {
       const apiUsage = await this.api(profile).usage(profile);
       this.update(profile, {
         status: apiUsage ? 'signedIn' : 'signedOut',
         label: apiUsage ? this.api(profile).name : undefined,
-        plan: apiUsage ? 'API' : undefined,
+        plan: apiUsage
+          ? providerKind(profile) === 'local'
+            ? 'En este ordenador'
+            : 'API'
+          : undefined,
         ...(apiUsage && providerKind(profile) === 'opencode'
           ? await this.opencode.summary(profile)
           : {}),
@@ -422,6 +433,8 @@ export class Accounts {
     return this.check(profile, (check) => this.read(profile, check));
   }
   async login(profile: Profile, stopSessions: boolean) {
+    if (providerKind(profile) === 'local')
+      throw new Error('Los modelos locales no necesitan iniciar sesión.');
     return this.job(profile, 'signingIn', async () => {
       await this.prepare(profile, stopSessions);
       this.update(profile, { status: 'unknown', label: undefined, plan: undefined });
@@ -585,11 +598,9 @@ export class Accounts {
       // Claude opens OAuth itself; BROWSER must be an executable, not a command with arguments.
       if (process.platform === 'darwin') {
         const browser = `${ctx.cwd}/open-login-browser.sh`;
-        await fs.writeFile(
-          browser,
-          '#!/bin/sh\nexec /usr/bin/open -a "Google Chrome" "$@"\n',
-          { mode: 0o700 },
-        );
+        await fs.writeFile(browser, '#!/bin/sh\nexec /usr/bin/open -a "Google Chrome" "$@"\n', {
+          mode: 0o700,
+        });
         await fs.chmod(browser, 0o700);
         Object.assign(ctx.env, { BROWSER: browser });
       }
@@ -735,7 +746,7 @@ export class Accounts {
   async logout(profile: Profile, stopSessions: boolean) {
     return this.job(profile, 'signingOut', async () => {
       await this.prepare(profile, stopSessions);
-      if (['openrouter', 'opencode'].includes(providerKind(profile))) {
+      if (['openrouter', 'opencode', 'local'].includes(providerKind(profile))) {
         await this.api(profile).disconnect(profile);
         this.update(profile, {
           status: 'signedOut',

@@ -16,6 +16,9 @@ export function FloatingChatHeader({
   preferences?: FloatingChatState;
   run: (action: Action) => Promise<any>;
 }) {
+  const savedGlassStrength = preferences?.glass === false ? 0 : (preferences?.glassStrength ?? 1);
+  const [glassStrength, setGlassStrength] = useState(savedGlassStrength);
+  useEffect(() => setGlassStrength(savedGlassStrength), [savedGlassStrength]);
   const [options, setOptions] = useState(false);
   const [opacity, setOpacity] = useState(preferences?.opacity ?? 1);
   const popup = useRef<HTMLDivElement>(null);
@@ -47,6 +50,15 @@ export function FloatingChatHeader({
       document.removeEventListener('keydown', escape);
     };
   }, [options]);
+  const changeOpacity = (value: number) => {
+    setOpacity(value);
+    void run({
+      type: 'floatingChat',
+      sessionId: session.id,
+      operation: 'configure',
+      opacity: value,
+    });
+  };
   const action = (operation: 'dock' | 'close' | 'configure', update = {}) =>
     void run({ type: 'floatingChat', sessionId: session.id, operation, ...update });
   return (
@@ -71,13 +83,13 @@ export function FloatingChatHeader({
           type="button"
           ref={trigger}
           aria-label="Opciones de ventana flotante"
-          title="Opciones · opacidad y siempre encima"
+          title="Apariencia de la ventana"
           aria-expanded={options}
           aria-controls={options ? 'floating-chat-options' : undefined}
           aria-haspopup="dialog"
           onClick={() => setOptions((open) => !open)}
         >
-          <Settings2 size={14} />
+          <Settings2 size={12} strokeWidth={1.5} />
         </button>
         <button
           type="button"
@@ -85,7 +97,7 @@ export function FloatingChatHeader({
           title="Abrir en el editor · Clic derecho en la cabecera: opciones"
           onClick={() => action('dock')}
         >
-          <Maximize2 size={14} />
+          <Maximize2 size={12} strokeWidth={1.5} />
         </button>
         <button
           type="button"
@@ -94,7 +106,7 @@ export function FloatingChatHeader({
           title="Cerrar ventana flotante · conservar el chat"
           onClick={() => action('close')}
         >
-          <X size={15} />
+          <X size={13} strokeWidth={1.5} />
         </button>
       </div>
       {options && (
@@ -105,7 +117,7 @@ export function FloatingChatHeader({
           role="dialog"
           aria-label="Opciones de ventana flotante"
         >
-          <strong>Ventana flotante</strong>
+          <strong>Apariencia de la ventana</strong>
           <button
             type="button"
             className="floating-pin"
@@ -119,7 +131,7 @@ export function FloatingChatHeader({
             <span>{(preferences?.alwaysOnTop ?? true) ? 'Activado' : 'Desactivado'}</span>
           </button>
           <label htmlFor="floating-opacity">
-            Opacidad en reposo
+            Opacidad del fondo
             <output htmlFor="floating-opacity">{Math.round(opacity * 100)}%</output>
           </label>
           <input
@@ -127,27 +139,55 @@ export function FloatingChatHeader({
             type="range"
             min={MIN_FLOATING_OPACITY * 100}
             max="100"
-            step="5"
+            step="1"
             value={Math.round(opacity * 100)}
+            aria-valuetext={`${Math.round(opacity * 100)}%`}
             onChange={(e) => {
-              const value = Number(e.target.value) / 100;
-              setOpacity(value);
-              action('configure', { opacity: value });
+              changeOpacity(Number(e.target.value) / 100);
             }}
           />
-          <button
-            type="button"
-            className="floating-pin floating-close"
-            onClick={() => action('close')}
-          >
-            <X size={14} />
-            Cerrar ventana
-            <span>El chat sigue en el editor</span>
-          </button>
-          <p>
-            Menos porcentaje hace el fondo más transparente, sin atenuar el texto. Al pasar el ratón
-            o escribir recupera opacidad.
-          </p>
+          {preferences?.glassSupported && (
+            <div className="floating-glass-intensity">
+              <label htmlFor="floating-glass-strength">
+                Intensidad del cristal
+                <output htmlFor="floating-glass-strength">
+                  {Math.round(glassStrength * 100)}%
+                </output>
+              </label>
+              <input
+                id="floating-glass-strength"
+                type="range"
+                min="0"
+                max="200"
+                step="10"
+                value={Math.round(glassStrength * 100)}
+                aria-valuetext={`${Math.round(glassStrength * 100)}%`}
+                onChange={(e) => {
+                  const value = Number(e.target.value) / 100;
+                  setGlassStrength(value);
+                  action('configure', { glass: value > 0, glassStrength: value });
+                }}
+              />
+            </div>
+          )}
+          {preferences?.glassSupported && (
+            <div className="floating-glass-intensity">
+              <div className="floating-blur-row">
+                <span>Desenfoque</span>
+                <button
+                  id="floating-blur"
+                  type="button"
+                  role="switch"
+                  aria-label="Desenfoque"
+                  aria-checked={preferences.blur ?? false}
+                  className="floating-effect-switch"
+                  onClick={() => action('configure', { blur: !(preferences.blur ?? false) })}
+                >
+                  <span />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </header>

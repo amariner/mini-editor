@@ -511,3 +511,34 @@
     top: -20px;
   }
 }
+
+.account-settings .account-color-setting select {
+  min-height: 30px;
+  max-width: 190px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+.account-settings .account-color-setting label {
+  flex-basis: 100%;
+}
+.account-color-palette {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+}
+.account-settings .account-color-palette button {
+  width: 25px;
+  height: 25px;
+  min-height: 25px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  padding: 0;
+}
+.account-settings .account-color-palette button[aria-pressed='true'] {
+  outline: 2px solid var(--text-2);
+  outline-offset: 2px;
+}

@@ -232,6 +232,7 @@ export class Manager {
       this.runtimes.size === 0 &&
       this.operations.size === 0 &&
       !this.accounts.active &&
+      !this.accounts.local.busy &&
       this.gitJobs.size === 0
     );
   }
@@ -754,9 +755,13 @@ export class Manager {
       s.error = undefined;
       this.changed();
       try {
-        if (['openrouter', 'opencode'].includes(providerKind(s.profile))) {
+        if (['openrouter', 'opencode', 'local'].includes(providerKind(s.profile))) {
           if (!(await this.accounts.api(s.profile).key(s.profile)))
-            throw new Error('Conecta la cuenta API en Ajustes.');
+            throw new Error(
+              providerKind(s.profile) === 'local'
+                ? 'Selecciona una carpeta y añade un modelo local en Ajustes.'
+                : 'Conecta la cuenta API en Ajustes.',
+            );
           await this.refreshModels(id);
           if (!s.info?.models.length)
             throw new Error(s.modelsError ?? 'Selecciona modelos en Ajustes.');
@@ -1520,7 +1525,7 @@ export class Manager {
       this.usageAttempts.set(profile, { at: Date.now(), revision });
       return this.accounts.refresh(profile);
     }
-    if (providerKind(profile) === 'gemini') return Promise.resolve();
+    if (['gemini', 'local'].includes(providerKind(profile))) return Promise.resolve();
     const pending = this.usageJobs.get(profile);
     if (pending) return pending;
     const revision = this.accounts.revision(profile);
@@ -2272,6 +2277,7 @@ export class Manager {
     const accountResults = await this.accounts.shutdown();
     const terminalResults = await this.terminals.shutdown();
     const results = await Promise.allSettled([...this.runtimes.keys()].map((id) => this.stop(id)));
+    await this.accounts.local.shutdown();
     if ([...accountResults, ...terminalResults, ...results].every((r) => r.status === 'fulfilled'))
       await this.coordinator.close();
     this.store.flush();

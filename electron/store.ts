@@ -70,7 +70,7 @@ const schema = z.object({
       z.object({
         id: profileSchema,
         name: z.string().trim().min(1).max(40),
-        kind: z.enum(['claude', 'codex', 'openrouter', 'opencode', 'gemini']),
+        kind: z.enum(['claude', 'codex', 'openrouter', 'opencode', 'gemini', 'local']),
         color: accountColorSchema.optional(),
         modelSelection: modelSelectionSchema.optional(),
         googleCloudProject: z.string().max(100).optional(),

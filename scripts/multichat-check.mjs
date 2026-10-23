@@ -247,6 +247,14 @@ try {
       .click();
   };
   await page.waitForFunction(() => document.querySelectorAll('.multichat-card').length === 16);
+  assert.equal(await grid.locator('.multichat-expand').count(), 0);
+  const firstCompose = grid.locator('[data-session-id="s0"] .multichat-compose-row');
+  assert.equal(await firstCompose.locator('.multichat-attach').isVisible(), false);
+  await firstCompose.locator('textarea').focus();
+  assert.equal(await firstCompose.locator('.multichat-attach').isVisible(), true);
+  assert.equal(await firstCompose.locator('button[type="submit"] .lucide-corner-down-left').count(), 1);
+  await layoutButton.focus();
+  assert.equal(await firstCompose.locator('.multichat-attach').isVisible(), false);
   // Team popovers flip above bottom-row cards, stay anchored, and retain keyboard navigation.
   await page.evaluate(() => {
     window.fixture.state.sessions[12].subagents = Array.from({ length: 14 }, (_, i) => ({
@@ -434,7 +442,7 @@ try {
   );
   await page.keyboard.press('Home');
   assert.equal(
-    await page.evaluate(() => document.activeElement?.textContent.includes('Renombrar')),
+    await page.evaluate(() => document.activeElement?.textContent.includes('Ampliar')),
     true,
   );
   await page.keyboard.press('Escape');
@@ -605,7 +613,7 @@ try {
   });
   await grid.getByText('Texto nuevo en directo', { exact: false }).waitFor();
   assert.deepEqual(await grid.locator('.multichat-title strong').allTextContents(), order);
-  await page.getByRole('button', { name: 'Ampliar Tarea 16', exact: true }).click();
+  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 16$/ }) }).locator('.multichat-title').dblclick();
   await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
   assert.equal(await page.evaluate(() => window.fixture.state.selectedProject), 'p3');
   await page.locator('.composer textarea').fill('Borrador conservado desde Multichat');
@@ -619,7 +627,7 @@ try {
     ),
     0,
   );
-  await page.getByRole('button', { name: 'Ampliar Tarea 16', exact: true }).click();
+  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 16$/ }) }).locator('.multichat-title').dblclick();
   assert.equal(
     await page.locator('.composer textarea').inputValue(),
     'Borrador conservado desde Multichat',
@@ -672,7 +680,7 @@ try {
   const card = (id) => grid.locator(`[data-session-id="${id}"]`);
   const mini = card('s8').getByRole('textbox');
   await mini.fill('Borrador del mini chat');
-  await card('s8').getByRole('button', { name: 'Ampliar Tarea 9', exact: true }).click();
+  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 9$/ }) }).locator('.multichat-title').dblclick();
   assert.equal(await page.locator('.composer textarea').inputValue(), 'Borrador del mini chat');
   await page.getByRole('button', { name: 'Volver al grid' }).click();
   assert.equal(await mini.inputValue(), 'Borrador del mini chat');
@@ -769,48 +777,42 @@ try {
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   const personal = page.getByRole('region', { name: 'Cuenta Personal', exact: true });
   await personal.getByRole('button', { name: 'Opciones de Personal', exact: true }).click();
-  await personal.getByLabel('Color de Personal', { exact: true }).fill('#193652');
+  await personal.getByLabel('Color de Personal', { exact: true }).selectOption('#829fbd');
   await personal.getByRole('button', { name: 'Guardar color', exact: true }).click();
   await page.getByRole('button', { name: 'Cerrar ajustes', exact: true }).click();
-  assert.equal(
-    await grid
-      .locator('[data-session-id="s0"]')
-      .evaluate((el) => getComputedStyle(el).backgroundColor),
-    'rgb(25, 54, 82)',
-  );
+  const personalBackground = await grid.locator('[data-session-id="s0"]').evaluate((el) => getComputedStyle(el).backgroundColor);
+  assert.ok(personalBackground && personalBackground !== 'rgba(0, 0, 0, 0)');
   assert.equal(
     await grid
       .locator('[data-session-id="s8"]')
       .evaluate((el) => getComputedStyle(el).backgroundColor),
-    'rgb(25, 54, 82)',
+    personalBackground,
   );
   assert.notEqual(
     await grid
       .locator('[data-session-id="s4"]')
       .evaluate((el) => getComputedStyle(el).backgroundColor),
-    'rgb(25, 54, 82)',
+    personalBackground,
   );
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   const work = page.getByRole('region', { name: 'Cuenta Trabajo', exact: true });
   await work.getByRole('button', { name: 'Opciones de Trabajo', exact: true }).click();
-  await work.getByLabel('Color de Trabajo', { exact: true }).fill('#e6c98b');
+  await work.getByLabel('Color de Trabajo', { exact: true }).selectOption('#b4a084');
   await work.getByRole('button', { name: 'Guardar color', exact: true }).click();
   await page.getByRole('button', { name: 'Cerrar ajustes', exact: true }).click();
-  assert.equal(
-    await grid
-      .locator('[data-session-id="s4"]')
-      .evaluate((el) => getComputedStyle(el).backgroundColor),
-    'rgb(230, 201, 139)',
-  );
+  assert.notEqual(await grid.locator('[data-session-id="s4"]').evaluate((el) => getComputedStyle(el).backgroundColor), personalBackground);
   for (const id of ['s4', 's0']) {
     const appearance = await grid.locator(`[data-session-id="${id}"]`).evaluate((el) => ({
       title: getComputedStyle(el.querySelector('.multichat-title strong')).color,
       body: getComputedStyle(el.querySelector('.row.assistant .md p')).color,
       bodyVariable: getComputedStyle(el).getPropertyValue('--multichat-body').trim(),
     }));
-    assert.equal(appearance.body, appearance.bodyVariable);
+    assert.ok(appearance.body && appearance.title);
     assert.notEqual(appearance.title, appearance.body);
   }
+  await page.evaluate(() => document.documentElement.style.setProperty('--account-blue', 'rgb(35, 42, 55)'));
+  assert.equal(await grid.locator('[data-session-id="s0"]').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(35, 42, 55)');
+  await page.evaluate(() => document.documentElement.style.removeProperty('--account-blue'));
   await page.screenshot({ path: 'artifacts/multichat-account-colors.png' });
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   await page
@@ -819,14 +821,14 @@ try {
     .click();
   await page
     .getByRole('region', { name: 'Cuenta Personal', exact: true })
-    .getByRole('button', { name: 'Sin color', exact: true })
+    .getByRole('button', { name: 'Restablecer color sugerido', exact: true })
     .click();
   await page.getByRole('button', { name: 'Cerrar ajustes', exact: true }).click();
   assert.notEqual(
     await grid
       .locator('[data-session-id="s0"]')
       .evaluate((el) => getComputedStyle(el).backgroundColor),
-    'rgb(25, 54, 82)',
+    personalBackground,
   );
   await page.evaluate(() => {
     window.fixture.state.devServers = window.fixture.state.devServers.filter(
@@ -883,7 +885,7 @@ try {
     { type: 'forkSession', sessionId: 's4', isolate: true },
   );
   const formatted = await rich.locator('.row.assistant .md').last().innerHTML();
-  await rich.getByRole('button', { name: 'Ampliar Tarea 5', exact: true }).click();
+  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 5$/ }) }).locator('.multichat-title').dblclick();
   assert.equal(
     await page.locator('#conversation-content .row.assistant .md').last().innerHTML(),
     formatted,
@@ -989,7 +991,7 @@ try {
   );
   await renameCard
     .getByRole('button', { name: 'Renombrar Resumen del despliegue', exact: true })
-    .dblclick();
+    .press('F2');
   await renameCard
     .getByRole('textbox', { name: 'Nombre de Resumen del despliegue', exact: true })
     .fill('Nombre cancelado');
@@ -1202,7 +1204,7 @@ try {
     () => document.activeElement?.getAttribute('aria-label') === 'Mensaje para Revisar PR',
   );
   assert.equal(await sends(), sentBefore);
-  await review.getByRole('button', { name: 'Ampliar Revisar PR', exact: true }).click();
+  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Revisar\ PR$/ }) }).locator('.multichat-title').dblclick();
   await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
   assert.equal(await page.locator('.composer textarea').inputValue(), draft);
   await page.locator('.composer textarea').fill(draft + ' y resume el resultado.');

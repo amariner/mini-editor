@@ -5,6 +5,7 @@ import type { SecretCodec } from './proxy';
 import { profileDirectory } from './core';
 export interface ProviderServices {
   fetch?: typeof fetch;
+  downloadFetch?: typeof fetch;
   codec?: SecretCodec;
 }
 const endpoint = 'https://openrouter.ai/api/v1';

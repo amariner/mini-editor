@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   Folder,
   Plus,
+  SquarePen,
   Search,
   Settings2,
   GitBranch,
@@ -70,7 +71,7 @@ import { attentionItems } from './attention';
 import { AttentionPanel } from './attention-panel';
 import { ChatActionsContext, type ChatActions } from './markdown';
 import { applyStyles, resetStyles, savedStyles } from './custom-styles';
-import { accountCardStyle } from './account-color';
+import { accountCardStyle, suggestedAccountColor } from './account-color';
 import { isLocalPage, workspaceAvailability } from './workspace-availability';
 import { SnapshotSync } from './snapshot-sync';
 import { searchWorkspace } from './workspace-search';
@@ -1061,7 +1062,10 @@ function App() {
   // A floating window wears its account colour; the page paints it with the chosen transparency.
   const { backgroundColor: floatingTint, ...floatingAccountStyle } =
     (floatingSessionId &&
-      accountCardStyle(state.profiles?.find((p) => p.id === session?.profile)?.color)) ||
+      accountCardStyle(
+        state.profiles?.find((p) => p.id === session?.profile)?.color ??
+          suggestedAccountColor(session?.profile ?? ''),
+      )) ||
     {};
   if (floatingTint)
     (floatingAccountStyle as Record<string, unknown>)['--floating-tint'] = floatingTint;
@@ -1069,12 +1073,20 @@ function App() {
   return (
     <div
       className={`app ${onboarding ? 'onboarding' : ''} ${floatingSessionId ? 'floating-chat-app' : ''}`}
+      data-floating-material={
+        floatingSessionId
+          ? floatingPreferences?.glass && floatingPreferences?.glassSupported
+            ? 'glass'
+            : 'clear'
+          : undefined
+      }
       style={
         {
           ...appearance.style,
           ...(floatingSessionId
             ? {
                 ...floatingAccountStyle,
+                '--floating-glass-strength': floatingPreferences?.glassStrength ?? 1,
                 '--floating-window-opacity': `${(floatingPreferences?.opacity ?? 1) * 100}%`,
               }
             : {}),
@@ -1300,7 +1312,7 @@ function App() {
                                 void run({ type: 'newSession', projectId: p.id });
                               }}
                             >
-                              <Plus size={12} strokeWidth={1.5} aria-hidden="true" />
+                              <SquarePen size={12} strokeWidth={1.5} aria-hidden="true" />
                             </button>
                             <ProjectChats
                               state={state}
@@ -1636,7 +1648,7 @@ function App() {
                         </div>
                       )}
                       {session.error && (
-                        <div className="inline-notice">
+                        <div className="inline-notice chat-error-notice">
                           <span>{session.error}</span>
                           {session.error.includes('/login') && (
                             <button onClick={() => run({ type: 'login', sessionId: session.id })}>

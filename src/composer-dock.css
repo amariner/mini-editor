@@ -44,3 +44,55 @@
   margin: 4px 12px;
   max-width: calc(100% - 24px);
 }
+
+/* Scroll at the workspace edge; only the reading and writing columns are bounded. */
+.app .workspace > .conversation {
+  max-width: none;
+  margin-inline: 0;
+}
+.app .conversation > .messages {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 16%, transparent) transparent;
+}
+.app .conversation > .messages:hover {
+  scrollbar-color: color-mix(in srgb, var(--text) 28%, transparent) transparent;
+}
+.app .conversation > .messages::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+.app .conversation > .messages::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+  background-clip: padding-box;
+}
+.app .conversation > .messages::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text) 28%, transparent);
+}
+.app:not(.floating-chat-app) > main:has(> .work-area) {
+  padding-right: 0;
+}
+
+.app .conversation > .inline-notice {
+  width: calc(100% - 40px);
+  max-width: 780px;
+  margin: 0 auto 8px;
+  flex-shrink: 0;
+}
+.app .conversation > .inline-notice > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.app .conversation > .chat-error-notice {
+  background: color-mix(in srgb, var(--danger) 10%, var(--card));
+}
+/* Keep header actions inset even when the conversation reaches the window edge. */
+.app:not(.floating-chat-app) > main:has(> .work-area) > .topbar {
+  margin-right: 12px;
+}
+@media (max-width: 900px) {
+  .app:not(.floating-chat-app) > main:has(> .work-area) > .topbar {
+    margin-right: 8px;
+  }
+}

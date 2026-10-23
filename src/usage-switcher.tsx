@@ -72,6 +72,15 @@ export function UsageWindowDetail({
   }, []);
   const kind = providerKind(profile);
   const codex = isCodex(profile);
+  if (kind === 'local')
+    return (
+      <div className="usage-window">
+        <div className="usage-window-head">
+          <span>Ejecución local</span>
+        </div>
+        <small>Modelo ejecutado en este ordenador. Sin cuota de API.</small>
+      </div>
+    );
   if (['openrouter', 'opencode'].includes(kind)) {
     const cost =
       stats && (stats.costReported || stats.costEstimated)

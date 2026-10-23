@@ -9,7 +9,9 @@ import {
 } from '../src/floating-chat-protocol';
 import type { DeskEvent, Session } from '../src/shared';
 
-type Preferences = Omit<FloatingChatState, 'sessionId'> & { bounds?: Electron.Rectangle };
+type Preferences = Omit<FloatingChatState, 'sessionId' | 'glassSupported'> & {
+  bounds?: Electron.Rectangle;
+};
 type Entry = { window: BrowserWindow; preferences: Preferences; ready: boolean };
 
 /** Native, independent windows; closing one never touches the agent's lifecycle. */
@@ -19,6 +21,7 @@ export class FloatingChats {
   private file: string;
   private hiddenForEditor = false;
   private revealing = false;
+  private saveTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     dataDir: string,
@@ -31,6 +34,22 @@ export class FloatingChats {
       const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (saved && typeof saved === 'object' && !Array.isArray(saved)) this.preferences = saved;
     } catch {}
+  }
+
+  private savePreferences(immediate = false) {
+    clearTimeout(this.saveTimer);
+    const write = () => {
+      this.saveTimer = undefined;
+      try {
+        fs.writeFileSync(this.file + '.tmp', JSON.stringify(this.preferences));
+        fs.renameSync(this.file + '.tmp', this.file);
+      } catch {}
+    };
+    if (immediate) write();
+    else {
+      this.saveTimer = setTimeout(write, 150);
+      this.saveTimer.unref();
+    }
   }
 
   private url(id: string) {
@@ -56,6 +75,10 @@ export class FloatingChats {
       sessionId,
       opacity: preferences.opacity,
       alwaysOnTop: preferences.alwaysOnTop,
+      glass: preferences.glass,
+      blur: preferences.blur ?? false,
+      glassStrength: preferences.glassStrength ?? 1,
+      glassSupported: process.platform === 'darwin',
     }));
   }
 
@@ -74,9 +97,7 @@ export class FloatingChats {
     const removed = Object.keys(this.preferences).filter((id) => !ids.has(id));
     if (removed.length) {
       for (const id of removed) delete this.preferences[id];
-      try {
-        fs.writeFileSync(this.file, JSON.stringify(this.preferences));
-      } catch {}
+      this.savePreferences(true);
     }
   }
 
@@ -161,6 +182,11 @@ export class FloatingChats {
         ? Math.max(MIN_FLOATING_OPACITY, Math.min(1, saved.opacity))
         : 1,
       alwaysOnTop: typeof saved?.alwaysOnTop === 'boolean' ? saved.alwaysOnTop : true,
+      glass: typeof saved?.glass === 'boolean' ? saved.glass : true,
+      blur: typeof saved?.blur === 'boolean' ? saved.blur : false,
+      glassStrength: Number.isFinite(saved?.glassStrength)
+        ? Math.max(0, Math.min(2, saved.glassStrength!))
+        : 1,
     };
     const window = new BrowserWindow({
       x,
@@ -173,13 +199,18 @@ export class FloatingChats {
       frame: false,
       transparent: true,
       backgroundColor: '#00000000',
-      // The page draws the whole shape (radius, border, tint) so themes can restyle it in CSS;
-      // native rounding would clip any other radius.
-      roundedCorners: false,
+      // Clip the native material too, so it cannot spill into transparent corners.
+      roundedCorners: true,
+      ...(process.platform === 'darwin'
+        ? {
+            vibrancy: preferences.blur ? ('under-window' as const) : undefined,
+            visualEffectState: 'active' as const,
+          }
+        : {}),
       resizable: true,
       maximizable: false,
       fullscreenable: false,
-      hasShadow: true,
+      hasShadow: false,
       show: false,
       alwaysOnTop: preferences.alwaysOnTop,
       webPreferences: {
@@ -198,14 +229,15 @@ export class FloatingChats {
       if (!window.isDestroyed()) preferences.bounds = window.getBounds();
       this.preferences[session.id] = preferences;
       // A broken preferences file must not prevent a window from closing.
-      try {
-        fs.writeFileSync(this.file, JSON.stringify(this.preferences));
-      } catch {}
+      this.savePreferences(true);
     };
     window.on('moved', remember);
     window.on('resized', remember);
     window.on('focus', () => this.showAll());
-    window.on('close', remember);
+    window.on('close', () => {
+      remember();
+      this.savePreferences(true);
+    });
     window.on('closed', () => {
       this.entries.delete(session.id);
       this.changed();
@@ -254,11 +286,30 @@ export class FloatingChats {
     window.close();
   }
 
-  configure(id: string, update: { opacity?: number; alwaysOnTop?: boolean }) {
+  configure(
+    id: string,
+    update: {
+      opacity?: number;
+      alwaysOnTop?: boolean;
+      glass?: boolean;
+      blur?: boolean;
+      glassStrength?: number;
+    },
+  ) {
     const entry = this.entries.get(id);
     if (!entry) throw new Error('Esta ventana flotante ya está cerrada.');
     if (update.opacity !== undefined)
       entry.preferences.opacity = Math.max(MIN_FLOATING_OPACITY, Math.min(1, update.opacity));
+    if (update.glassStrength !== undefined)
+      entry.preferences.glassStrength = Math.max(0, Math.min(2, update.glassStrength));
+    if (update.glass !== undefined) {
+      entry.preferences.glass = update.glass;
+    }
+    if (update.blur !== undefined) {
+      entry.preferences.blur = update.blur;
+      if (process.platform === 'darwin')
+        entry.window.setVibrancy(update.blur ? 'under-window' : null);
+    }
     if (update.alwaysOnTop !== undefined) {
       entry.preferences.alwaysOnTop = update.alwaysOnTop;
       entry.window.setAlwaysOnTop(update.alwaysOnTop, 'floating');
@@ -266,9 +317,7 @@ export class FloatingChats {
         entry.window.setVisibleOnAllWorkspaces(update.alwaysOnTop, { visibleOnFullScreen: true });
     }
     this.preferences[id] = { ...entry.preferences, bounds: entry.window.getBounds() };
-    try {
-      fs.writeFileSync(this.file, JSON.stringify(this.preferences));
-    } catch {}
+    this.savePreferences();
     this.changed();
   }
 }

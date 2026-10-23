@@ -82,6 +82,17 @@ export function runtimeFile(packageName, relative, target = process) {
     if (['src', 'scripts', 'deps', 'third_party', 'typings', 'binding.gyp'].includes(parts[0]))
       return false;
     if (/\.(?:test|spec)\.js$/.test(relative)) return false;
+    // node-gyp leaves object files, Makefiles and even absolute Python symlinks
+    // here. Only the native runtime and its spawn helper belong in the app.
+    if (parts[0] === 'build') {
+      if (parts.length === 1) return true;
+      if (!['Release', 'Debug'].includes(parts[1])) return false;
+      if (parts.length === 2) return true;
+      return (
+        parts.length === 3 &&
+        (parts[2] === 'spawn-helper' || /\.(?:node|dll|exe|dylib|so)$/.test(parts[2]))
+      );
+    }
   }
   if (
     ['node-pty', '@github/keytar'].includes(packageName) &&
