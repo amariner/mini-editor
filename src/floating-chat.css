@@ -295,6 +295,9 @@ html.floating-chat-document,
 .floating-chat-app .desk-input .composer-area {
   padding: 0;
 }
+.floating-chat-app .desk-input > .activity-dock {
+  margin-inline: 0;
+}
 /* Focus preserves geometry and tint, overriding the full editor's composer rules. */
 .app.floating-chat-app .desk-input .composer-area .composer,
 .app.floating-chat-app .desk-input .composer-area .composer.enabled:focus-within {

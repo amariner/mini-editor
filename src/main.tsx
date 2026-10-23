@@ -1801,14 +1801,16 @@ function App() {
                             <TodoPanel todos={session.todos} />
                           ) : null}
                           <ExecutionPanel session={session} />
+                        </>
+                      )}
+                      <div className={`desk-input ${terminalMode ? 'solo' : ''}`}>
+                        {!terminalMode && (
                           <ActivityDock
                             key={`activity-${session.id}`}
                             session={session}
                             kind={kind}
                           />
-                        </>
-                      )}
-                      <div className={`desk-input ${terminalMode ? 'solo' : ''}`}>
+                        )}
                         <GitBar
                           key={`${project.id}:${session.worktree?.path ?? 'shared'}`}
                           compact
