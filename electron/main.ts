@@ -14,6 +14,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Manager } from './manager';
 import { actionSchema } from './core';
+import { mcpElicitationUrl } from '../src/mcp-elicitation';
 import {
   clearProjectFiles,
   opensAsText,
@@ -100,6 +101,7 @@ const snapshot = () =>
   sanitize({
     proxy: network?.snapshot(),
     ...manager.state,
+    mcpConnections: manager.mcp.snapshot(),
     browsers: browser?.snapshot() ?? [],
     floatingChats: floatingChats?.snapshot() ?? [],
     devServers: browser?.serverSnapshot() ?? [],
@@ -261,6 +263,9 @@ app.whenReady().then(async () => {
         : undefined,
       () => network.environment(),
       {
+        openExternal: async (url) => {
+          await shell.openExternal(url);
+        },
         codec: {
           available: () => safeStorage.isEncryptionAvailable(),
           encrypt: (value) => safeStorage.encryptString(value),
@@ -362,6 +367,34 @@ app.whenReady().then(async () => {
       if ((restartRequested || quitting) && a.type !== 'snapshot')
         throw new Error('Agent Desk se está reiniciando. Espera a que vuelva a abrirse.');
       switch (a.type) {
+        case 'openMcpElicitation': {
+          const pending = manager
+            .session(a.sessionId)
+            .approvals.find(
+              (p) => p.id === a.requestId && p.method === 'mcpServer/elicitation/request',
+            );
+          if (!pending) throw new Error('La solicitud ya no está pendiente.');
+          await shell.openExternal(mcpElicitationUrl(pending.params));
+          return { ok: true };
+        }
+        case 'saveMcpConnection':
+          return manager.saveMcpConnection(a.connection);
+        case 'deleteMcpConnection':
+          await manager.deleteMcpConnection(a.id);
+          return { ok: true };
+        case 'testMcpConnection':
+          return manager.mcp.test(a.id);
+        case 'authenticateMcpConnection':
+          return manager.mcp.authenticate(a.id);
+        case 'cancelMcpAuthentication':
+          manager.mcp.cancelAuthentication(a.id);
+          return { ok: true };
+        case 'setProjectMcpConnections':
+          await manager.setProjectMcpConnections(a.projectId, a.connectionIds);
+          return { ok: true };
+        case 'setSessionMcpConnections':
+          await manager.setSessionMcpConnections(a.sessionId, a.connectionIds);
+          return { ok: true };
         case 'floatingChat': {
           if (floatingOwner && floatingOwner !== a.sessionId)
             throw new Error('Esta ventana pertenece a otra conversación.');

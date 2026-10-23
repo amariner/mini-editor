@@ -139,6 +139,7 @@ function App() {
     [query, setQuery] = useState(''),
     [searchIndex, setSearchIndex] = useState(0),
     [settings, setSettings] = useState(false),
+    [connectionSessionId, setConnectionSessionId] = useState<string>(),
     [attentionOpen, setAttentionOpen] = useState(false),
     [unreadCompleted, setUnreadCompleted] = useState<Set<string>>(() => new Set()),
     [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -904,6 +905,11 @@ function App() {
   };
   const localCommand = (name: string, arg: string) => {
     if (!session) return false;
+    if (name === 'mcp') {
+      setConnectionSessionId(session.id);
+      setSettings(true);
+      return true;
+    }
     if (name === 'login' || name === 'logout') {
       setSettings(true);
       return true;
@@ -2260,12 +2266,17 @@ function App() {
           }
         >
           <AccountsSettings
+            initialTab={connectionSessionId ? 'connections' : undefined}
+            connectionSessionId={connectionSessionId}
             onOpenFreebuff={openFreebuff}
             state={state}
             appearance={appearance}
             run={run}
             runLocal={(action) => run(action, true)}
-            close={() => setSettings(false)}
+            close={() => {
+              setSettings(false);
+              setConnectionSessionId(undefined);
+            }}
             onError={setError}
           />
         </React.Suspense>

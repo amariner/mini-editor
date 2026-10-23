@@ -4,6 +4,7 @@ import type { ModelInfo, Profile, ApiUsage } from '../src/shared';
 import type { SecretCodec } from './proxy';
 import { profileDirectory } from './core';
 export interface ProviderServices {
+  openExternal?: (url: string) => Promise<void>;
   fetch?: typeof fetch;
   downloadFetch?: typeof fetch;
   codec?: SecretCodec;

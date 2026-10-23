@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import type { Approval, RewindResult, Session } from '../src/shared';
 import { applyClaudeMessage, note, settle } from './claude-events';
 import { permissionResult } from './core';
+import { mcpElicitationResult } from '../src/mcp-elicitation';
 import { coordinationInput } from './coordination';
 /* The SDK is an ES module; the main process is bundled as CommonJS. A real dynamic import keeps
    Node's ESM loader in charge instead of letting the bundler rewrite it into require(). */
@@ -89,7 +90,7 @@ export async function readClaudeModels(
     cancel();
   }
 }
-type Pending = { resolve: (r: unknown) => void; signal: AbortSignal };
+type Pending = { resolve: (r: unknown) => void; signal: AbortSignal; elicitation?: boolean };
 /** One long-lived Agent SDK query per open session. Messages are queued into its prompt stream. */
 export class ClaudeRuntime {
   private controller = new AbortController();
@@ -108,6 +109,24 @@ export class ClaudeRuntime {
     private changed: () => void,
     private onExit: (reason: string, unexpected: boolean) => Promise<void>,
   ) {}
+  private diagnostic(message: string) {
+    const servers = (this.options.mcpServers ?? {}) as Record<
+      string,
+      { env?: Record<string, string>; headers?: Record<string, string> }
+    >;
+    const secrets = Object.values(servers)
+      .flatMap((server) => [
+        ...Object.values(server.env ?? {}),
+        ...Object.values(server.headers ?? {}),
+      ])
+      .filter((value) => typeof value === 'string' && value.length > 0)
+      .flatMap((value) => [
+        value,
+        ...(/^\s*(?:Bearer|Basic)\s+(\S+)\s*$/i.exec(value)?.slice(1) ?? []),
+      ])
+      .sort((a, b) => b.length - a.length);
+    return secrets.reduce((text, secret) => text.split(secret).join('[credencial]'), message);
+  }
   private async *prompt() {
     while (!this.closed) {
       while (this.queue.length) yield this.queue.shift();
@@ -128,9 +147,16 @@ export class ClaudeRuntime {
           this.stderr = (this.stderr + d).slice(-6000);
         },
         canUseTool: (tool: string, input: any, opts: any) => this.ask(tool, input, opts),
+        onElicitation: (request: Record<string, unknown>, options: { signal: AbortSignal }) =>
+          this.elicit(request, options.signal),
       },
     });
-    const init = await this.query.initializationResult();
+    let init: any;
+    try {
+      init = await this.query.initializationResult();
+    } catch (error) {
+      throw new Error(this.diagnostic((error as Error).message));
+    }
     const info = (s.info ??= {
       tools: [],
       commands: [],
@@ -186,11 +212,37 @@ export class ClaudeRuntime {
       unexpected = !this.closed;
     } finally {
       for (const [id, p] of this.pending) {
-        p.resolve({ behavior: 'deny', message: 'La sesión se cerró.' });
+        p.resolve(
+          p.elicitation
+            ? { action: 'cancel', content: null }
+            : { behavior: 'deny', message: 'La sesión se cerró.' },
+        );
         this.pending.delete(id);
       }
-      await this.onExit(reason, unexpected);
+      await this.onExit(this.diagnostic(reason), unexpected);
     }
+  }
+  private elicit(params: Record<string, unknown>, signal: AbortSignal) {
+    if (signal.aborted || this.closed) return Promise.resolve({ action: 'cancel', content: null });
+    return new Promise<unknown>((resolve) => {
+      const id = randomUUID();
+      const cancel = () => {
+        if (!this.pending.delete(id)) return;
+        this.s.approvals = this.s.approvals.filter((a) => a.id !== id);
+        if (!this.s.approvals.length && this.s.status === 'waiting') this.s.status = 'working';
+        this.changed();
+        finish({ action: 'cancel', content: null });
+      };
+      const finish = (result: unknown) => {
+        signal.removeEventListener('abort', cancel);
+        resolve(result);
+      };
+      this.pending.set(id, { resolve: finish, signal, elicitation: true });
+      this.s.approvals.push({ id, method: 'mcpServer/elicitation/request', params });
+      this.s.status = 'waiting';
+      signal.addEventListener('abort', cancel, { once: true });
+      this.changed();
+    });
   }
   private ask(tool: string, input: any, opts: any) {
     if (
@@ -237,7 +289,9 @@ export class ClaudeRuntime {
     const a = s.approvals.find((a) => a.id === id);
     const p = this.pending.get(String(id));
     if (!a || !p) throw new Error('La solicitud ya no está pendiente.');
-    const result = permissionResult(a, decision, answers, message);
+    const result = p.elicitation
+      ? mcpElicitationResult(a.params, decision, answers)
+      : permissionResult(a, decision, answers, message);
     this.pending.delete(String(id));
     s.approvals = s.approvals.filter((x) => x.id !== id);
     s.status = s.approvals.length ? 'waiting' : 'working';
@@ -282,11 +336,15 @@ export class ClaudeRuntime {
     if (busy) this.interrupted = true;
     for (const [id, p] of this.pending) {
       this.pending.delete(id);
-      p.resolve({
-        behavior: 'deny',
-        message: 'El usuario ha interrumpido el turno.',
-        interrupt: true,
-      });
+      p.resolve(
+        p.elicitation
+          ? { action: 'cancel', content: null }
+          : {
+              behavior: 'deny',
+              message: 'El usuario ha interrumpido el turno.',
+              interrupt: true,
+            },
+      );
     }
     this.s.approvals = [];
     await this.query?.interrupt();
@@ -349,7 +407,20 @@ export class ClaudeRuntime {
     );
   }
   async mcpStatus() {
-    const servers = await this.query?.mcpServerStatus();
+    let servers: any;
+    try {
+      const result = await this.query?.mcpServerStatus();
+      servers = Array.isArray(result)
+        ? result.map((server: any) => ({
+            ...server,
+            error: server.error
+              ? 'No se pudo conectar con este servidor MCP. Revisa su configuración y autenticación.'
+              : undefined,
+          }))
+        : result;
+    } catch {
+      throw new Error('No se pudo consultar el estado de los servidores MCP.');
+    }
     if (this.s.info && Array.isArray(servers))
       this.s.info.mcpServers = servers.map((x: any) => ({
         name: x.name,
@@ -366,7 +437,11 @@ export class ClaudeRuntime {
     try {
       for (const [id, p] of this.pending) {
         this.pending.delete(id);
-        p.resolve({ behavior: 'deny', message: 'La sesión se está cerrando.', interrupt: true });
+        p.resolve(
+          p.elicitation
+            ? { action: 'cancel', content: null }
+            : { behavior: 'deny', message: 'La sesión se está cerrando.', interrupt: true },
+        );
       }
       this.query?.close();
     } catch {

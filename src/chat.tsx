@@ -1,4 +1,5 @@
 import { ReadAloudButton } from './read-aloud-button';
+import { McpElicitation } from './mcp-elicitation-view';
 import {
   providerNames,
   providerKind,
@@ -52,6 +53,7 @@ import {
   Info,
   Waypoints,
   Undo2,
+  Plug,
 } from 'lucide-react';
 import type {
   Action,
@@ -89,7 +91,7 @@ const localCommands: SlashCommand[] = [
   { name: 'cost', description: 'Coste y tokens de la sesión' },
   { name: 'context', description: 'Uso del contexto' },
   { name: 'status', description: 'Cuenta, modelo y versión' },
-  { name: 'mcp', description: 'Estado de los servidores MCP' },
+  { name: 'mcp', description: 'Gestionar conexiones MCP del chat' },
   { name: 'rename', description: 'Renombrar la sesión', argumentHint: '[nombre]' },
   { name: 'terminal', description: 'Abrir la terminal oficial de Claude Code' },
   { name: 'help', description: 'Lista de comandos' },
@@ -1118,7 +1120,14 @@ function Counter({ index = 0, total = 1 }: { index?: number; total?: number }) {
     </span>
   ) : null;
 }
-export function ClaudeApproval({
+export function ClaudeApproval(props: React.ComponentProps<typeof ClaudePermissionApproval>) {
+  return props.approval.method === 'mcpServer/elicitation/request' ? (
+    <McpElicitation key={props.approval.id} {...props} />
+  ) : (
+    <ClaudePermissionApproval {...props} />
+  );
+}
+function ClaudePermissionApproval({
   approval,
   session,
   run,
@@ -1371,7 +1380,14 @@ export function ProviderApproval({
     </section>
   );
 }
-export function CodexApproval({
+export function CodexApproval(props: React.ComponentProps<typeof CodexPermissionApproval>) {
+  return props.approval.method === 'mcpServer/elicitation/request' ? (
+    <McpElicitation key={props.approval.id} {...props} />
+  ) : (
+    <CodexPermissionApproval {...props} />
+  );
+}
+function CodexPermissionApproval({
   approval,
   session,
   run,
@@ -2223,6 +2239,25 @@ export function Composer({
               <Plus size={15} />
             </button>
             <div className="composer-chips" inert={!toolsOpen}>
+              <button
+                className="chip-btn"
+                aria-label="Conexiones del chat"
+                title={
+                  session.mcpPending
+                    ? 'Conexiones · cambios pendientes del siguiente mensaje'
+                    : 'Conexiones del chat'
+                }
+                onClick={() => {
+                  setToolsOpen(false);
+                  onLocalCommand('mcp', '');
+                }}
+              >
+                <Plug size={15} />
+                <span>
+                  Conexiones
+                  {session.mcpAppliedIds?.length ? ` · ${session.mcpAppliedIds.length}` : ''}
+                </span>
+              </button>
               <button
                 className="chip-btn attach-image"
                 aria-label="Adjuntar archivos"

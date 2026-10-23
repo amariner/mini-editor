@@ -1,4 +1,6 @@
 import { floatingChatAction } from '../src/floating-chat-protocol';
+import { mcpConnectionInputSchema } from './mcp-validation';
+import { mcpElicitationResult } from '../src/mcp-elicitation';
 import { teamInput } from '../src/team-protocol';
 import { proxyUpdateSchema } from './proxy';
 import { browserInput } from '../src/browser-protocol';
@@ -60,6 +62,36 @@ export const providerConfigSchema = z.object({ model: z.string().min(1).max(1024
 export const accountColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
 export const actionSchema = z.discriminatedUnion('type', [
   floatingChatAction,
+  z.object({ type: z.literal('saveMcpConnection'), connection: mcpConnectionInputSchema }).strict(),
+  ...(
+    [
+      'testMcpConnection',
+      'deleteMcpConnection',
+      'authenticateMcpConnection',
+      'cancelMcpAuthentication',
+    ] as const
+  ).map((type) => z.object({ type: z.literal(type), id }).strict()),
+  z
+    .object({
+      type: z.literal('setProjectMcpConnections'),
+      projectId: id,
+      connectionIds: z.array(id).max(100),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('setSessionMcpConnections'),
+      sessionId: id,
+      connectionIds: z.array(id).max(100).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('openMcpElicitation'),
+      sessionId: id,
+      requestId: z.union([z.string().max(150), z.number()]),
+    })
+    .strict(),
   z
     .object({ type: z.literal('localDelete'), profile, model: z.string().min(1).max(1024) })
     .strict(),
@@ -513,7 +545,8 @@ export function approvalResult(
     }
     return { answers: result };
   }
-  if (method === 'mcpServer/elicitation/request') return { action: 'decline', content: null };
+  if (method === 'mcpServer/elicitation/request')
+    return mcpElicitationResult(params, decision, answers);
   throw new Error('Solicitud no compatible con esta versión de Agent Desk. Interrumpe el turno.');
 }
 /**

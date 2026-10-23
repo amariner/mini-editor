@@ -79,11 +79,19 @@ const schema = z.object({
     )
     .max(100)
     .optional(),
-  projects: z.array(z.object({ id: z.string(), name: z.string(), path: z.string() })),
+  projects: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      path: z.string(),
+      mcpConnectionIds: z.array(z.string().max(150)).max(100).optional(),
+    }),
+  ),
   sessions: z.array(
     z.object({
       id: z.string(),
       projectId: z.string(),
+      mcpConnectionIds: z.array(z.string().max(150)).max(100).optional(),
       profile: profileSchema,
       title: z.string(),
       pendingInputs: z
@@ -275,13 +283,14 @@ export class Store {
     clearTimeout(this.timer);
     clearTimeout(this.deadline);
     this.timer = this.deadline = undefined;
-    const { dataDir, notice, ...data } = this.state;
+    const { dataDir, notice, mcpConnections, ...data } = this.state;
     const safe = {
       ...data,
       sessions: data.sessions.map(
         ({
           id,
           projectId,
+          mcpConnectionIds,
           profile,
           title,
           reference,
@@ -303,6 +312,7 @@ export class Store {
         }) => ({
           id,
           projectId,
+          mcpConnectionIds,
           profile,
           title,
           reference,

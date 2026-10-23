@@ -1,4 +1,12 @@
 import { PendingInputs } from './pending-inputs';
+import { McpConnections } from './mcp';
+import {
+  claudeMcpServers,
+  codexMcpConfig,
+  managedMcpName,
+  safeMcpRuntimeError,
+} from './mcp-adapters';
+import { effectiveMcpIds, supportsManagedMcp, type McpConnectionInput } from '../src/mcp-types';
 import { Teams } from './teams';
 import { readGit, changeGit, repositoryRoot } from './git';
 import {
@@ -96,6 +104,8 @@ type Runtime = {
   loaded?: boolean;
   optimizedControls?: boolean;
   optimizationLevel?: TokenOptimization['level'];
+  mcpSignature?: string;
+  mcpIds?: string[];
   exit?: Promise<void>;
 };
 /** Configuration keys the SDK can change while the agent runs. The rest need a restart. */
@@ -110,6 +120,7 @@ const liveKeys: (keyof ClaudeConfig)[] = [
 ];
 export class Manager {
   readonly accounts: Accounts;
+  readonly mcp: McpConnections;
   readonly terminals: ProjectTerminals;
   readonly buffers = new Map<string, { data: string; sequence: number }>();
   readonly store: Store;
@@ -129,6 +140,7 @@ export class Manager {
   private acceptsInput(s: Session) {
     if (s.status === 'ready') return true;
     if (!['working', 'waiting'].includes(s.status)) return false;
+    if (this.mcpNeedsRefresh(s)) return false;
     const runtime = this.runtimes.get(s.id);
     return !!runtime?.claude || (!!runtime?.rpc && isCodex(s.profile) && !!s.turnId);
   }
@@ -139,6 +151,8 @@ export class Manager {
       const selectedProject = this.state.selectedProject,
         selectedSession = this.state.selectedSession;
       const child = this.newSession(projectId, parent.profile, 'chat');
+      if (parent.mcpConnectionIds !== undefined)
+        child.mcpConnectionIds = [...parent.mcpConnectionIds];
       this.state.selectedProject = selectedProject;
       this.state.selectedSession = selectedSession;
       return child;
@@ -165,6 +179,8 @@ export class Manager {
     services: ProviderServices = {},
   ) {
     this.store = new Store(root);
+    this.mcp = new McpConnections(root, services, () => this.mcpChanged(), this.networkEnvironment);
+    this.state.mcpConnections = this.mcp.snapshot();
     this.coordinator.teamHandler = (session, input) => this.teams.call(session.id, input);
     this.terminals = new ProjectTerminals(this.emit, () => this.changed());
     this.accounts = new Accounts(
@@ -197,6 +213,92 @@ export class Manager {
   }
   get state() {
     return this.store.state;
+  }
+  private mcpIds(s: Session) {
+    return supportsManagedMcp(s.profile, s.mode)
+      ? [
+          ...effectiveMcpIds(
+            this.state.projects.find((p) => p.id === s.projectId),
+            s,
+          ),
+        ]
+      : [];
+  }
+  private mcpNeedsRefresh(s: Session) {
+    const rt = this.runtimes.get(s.id);
+    if (!this.mcp || !supportsManagedMcp(s.profile, s.mode) || !rt) return false;
+    const ids = this.mcpIds(s);
+    return rt.mcpSignature === undefined
+      ? ids.length > 0
+      : rt.mcpSignature !== this.mcp.signature(ids);
+  }
+  private mcpChanged() {
+    if (!this.mcp) return;
+    this.state.mcpConnections = this.mcp.snapshot();
+    this.changed();
+  }
+  private validateMcpIds(ids: string[]) {
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string'))
+      throw new Error('Selecciona conexiones MCP válidas.');
+    const known = new Set(this.mcp.snapshot().map((c) => c.id));
+    if (ids.some((id) => !known.has(id)))
+      throw new Error('Una conexión MCP ya no está disponible.');
+    return [...new Set(ids)];
+  }
+  async saveMcpConnection(input: McpConnectionInput) {
+    const result = await this.mcp.save(input);
+    this.mcpChanged();
+    return result;
+  }
+  async deleteMcpConnection(id: string) {
+    await this.mcp.remove(id);
+    for (const p of this.state.projects)
+      p.mcpConnectionIds = p.mcpConnectionIds?.filter((value) => value !== id);
+    for (const s of this.state.sessions)
+      s.mcpConnectionIds = s.mcpConnectionIds?.filter((value) => value !== id);
+    this.mcpChanged();
+    return true;
+  }
+  setProjectMcpConnections(projectId: string, ids: string[]) {
+    this.project(projectId).mcpConnectionIds = this.validateMcpIds(ids);
+    this.changed();
+    return true;
+  }
+  setSessionMcpConnections(sessionId: string, ids: string[] | null) {
+    const s = this.session(sessionId);
+    if (ids !== null && ids.length && !supportsManagedMcp(s.profile, s.mode))
+      throw new Error('Las conexiones MCP están disponibles en los chats de Claude y Codex.');
+    s.mcpConnectionIds = ids === null ? undefined : this.validateMcpIds(ids);
+    this.changed();
+    return true;
+  }
+  private async resolveMcp(s: Session) {
+    // OAuth refresh may change the revision while resolving. Retry so the applied signature
+    // always describes exactly the credentials and selection sent to the provider.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ids = this.mcpIds(s),
+        before = this.mcp?.signature(ids) ?? '';
+      const connections = (await this.mcp?.resolve(ids)) ?? [];
+      const signature = this.mcp?.signature(ids) ?? '';
+      if (before === signature && JSON.stringify(ids) === JSON.stringify(this.mcpIds(s)))
+        return {
+          ids,
+          signature,
+          connections: connections.map((connection) => ({
+            ...connection,
+            env: { ...this.networkEnvironment?.(), ...connection.env },
+          })),
+        };
+    }
+    throw new Error(
+      'Las conexiones MCP han cambiado durante el inicio. Vuelve a enviar el mensaje.',
+    );
+  }
+  private assertCurrentMcp(s: Session) {
+    if (this.mcpNeedsRefresh(s))
+      throw new Error(
+        'Las conexiones MCP han cambiado. Vuelve a enviar el mensaje para aplicarlas.',
+      );
   }
   addAccount(kind: ProviderKind, name?: string) {
     const definitions = (this.state.profiles ??= []);
@@ -376,6 +478,12 @@ export class Manager {
     });
   }
   changed() {
+    if (this.mcp)
+      for (const s of this.state.sessions) {
+        const rt = this.runtimes.get(s.id);
+        s.mcpAppliedIds = rt?.mcpIds ? [...rt.mcpIds] : undefined;
+        s.mcpPending = this.mcpNeedsRefresh(s);
+      }
     if (!this.pumpQueued) {
       this.pumpQueued = true;
       queueMicrotask(() => {
@@ -878,6 +986,7 @@ export class Manager {
         await this.startClaude(s, rt, binary, dir, cwd, project.path);
       else await this.startTerminal(s, rt, binary, dir, cwd, loginOnly);
     } catch (e) {
+      e = safeMcpRuntimeError(e);
       s.error = (e as Error).message;
       if (rt.rpc) {
         try {
@@ -959,6 +1068,7 @@ export class Manager {
     projectPath: string,
   ) {
     const options = claudeOptions(s, { cwd, binary, profileDir: dir });
+    const managed = await this.resolveMcp(s);
     const isolated = !!s.worktree && cwd === s.worktree.cwd;
     options.env = { ...(options.env as Record<string, string>), ...this.networkEnvironment() };
     options.settings = {
@@ -966,6 +1076,7 @@ export class Manager {
       worktree: this.worktreeOptions(projectPath),
     };
     options.mcpServers = {
+      ...claudeMcpServers(managed.connections),
       agent_desk: { type: 'stdio', ...(await this.coordinator.config(s.id)) },
     };
     if (isolated) {
@@ -1070,6 +1181,37 @@ export class Manager {
       throw new Error(
         'Claude no ha podido conectar la coordinación local. No se ha enviado la tarea. Comprueba la versión de Claude Code y vuelve a intentarlo.',
       );
+    // A successful settings probe does not establish that this runtime connected. Check the
+    // actual Claude process before reporting its managed tools as applied.
+    if (managed.ids.length) {
+      const deadline = Date.now() + 15000;
+      let unavailable = managed.ids;
+      do {
+        const servers = await runtime.mcpStatus();
+        unavailable = managed.ids.filter(
+          (id) =>
+            !servers?.some(
+              (server: any) => server.name === managedMcpName(id) && server.status === 'connected',
+            ),
+        );
+        if (!unavailable.length) break;
+        if (
+          servers?.some(
+            (server: any) =>
+              unavailable.some((id) => managedMcpName(id) === server.name) &&
+              server.status === 'failed',
+          )
+        )
+          break;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      } while (Date.now() < deadline);
+      if (unavailable.length)
+        throw new Error(
+          'Claude no ha podido conectar todas las conexiones MCP seleccionadas. Revísalas en Ajustes → Conexiones.',
+        );
+    }
+    rt.mcpSignature = managed.signature;
+    rt.mcpIds = managed.ids;
     s.status = 'ready';
     void runtime.refreshContext();
     this.changed();
@@ -1258,13 +1400,18 @@ export class Manager {
   async loadThread(s: Session) {
     const rt = this.runtime(s.id);
     const level = this.optimization(s.profile).level;
-    if (rt.loaded && rt.optimizationLevel === level) return;
+    // Resuming an already loaded thread can retain its original MCP clients. A concurrent
+    // settings edit must be retried through the process restart in sendNow instead.
+    if (rt.mcpSignature !== undefined) this.assertCurrentMcp(s);
+    if (rt.loaded && rt.optimizationLevel === level && !this.mcpNeedsRefresh(s)) return;
+    const managed = await this.resolveMcp(s);
     const params = codexParams(
       resolveCodexModel(mergeCodexConfig(s.codexConfig), s.info?.models ?? []),
       this.project(s.projectId).path,
     ).thread;
     params.config = {
       ...params.config,
+      ...codexMcpConfig(managed.connections),
       'mcp_servers.agent_desk': { ...(await this.coordinator.config(s.id)), required: true },
     } as any;
     params.developerInstructions = [
@@ -1287,11 +1434,15 @@ export class Manager {
         s.messages.some((m) => m.role === 'user') ||
         !/no rollout found for thread id/.test((error as Error).message)
       )
-        throw error;
-      r = await rt.rpc!.call('thread/start', params);
+        throw safeMcpRuntimeError(error);
+      r = await rt.rpc!.call('thread/start', params).catch((error) => {
+        throw safeMcpRuntimeError(error);
+      });
     }
     s.reference = r.thread.id;
     rt.loaded = true;
+    rt.mcpSignature = managed.signature;
+    rt.mcpIds = managed.ids;
     rt.optimizationLevel = level;
     if (r.thread.turns?.length) {
       const restored: Message[] = [];
@@ -1352,6 +1503,7 @@ export class Manager {
         : undefined;
     const previousUserText = previousUser?.text;
     applyCodexEvent(s, method, p);
+    if (s.error) s.error = (safeMcpRuntimeError(new Error(s.error)) as Error).message;
     if (previousUser) {
       const updated = s.messages.find((m) => m.id === p.item.id);
       if (updated) {
@@ -1624,13 +1776,30 @@ export class Manager {
       }
     }
   }
-  private async sendNow(id: string, text: string, images: PreparedAttachment[] = []) {
+  private async sendNow(
+    id: string,
+    text: string,
+    images: PreparedAttachment[] = [],
+  ): Promise<boolean> {
     if (this.accounts.removing(this.session(id).profile))
       throw new Error('Se está eliminando esta cuenta.');
     if (!this.runtimes.has(id)) await this.start(id);
     return this.exclusive(id, async () => {
-      const s = this.session(id),
-        rt = this.runtime(id);
+      const s = this.session(id);
+      let rt = this.runtime(id);
+      if (this.mcp && supportsManagedMcp(s.profile, s.mode)) {
+        if (['working', 'waiting'].includes(s.status)) {
+          if (this.mcpNeedsRefresh(s)) return this.pendingInputs.enqueue(s, text, images);
+        } else {
+          // Refresh expiring OAuth credentials before considering the existing process current.
+          await this.resolveMcp(s);
+          if ((rt.claude || rt.loaded) && this.mcpNeedsRefresh(s)) {
+            await this.stopRuntime(id);
+            await this.startRuntime(id, false);
+            rt = this.runtime(id);
+          }
+        }
+      }
       if (rt.provider) {
         if (s.status !== 'ready') throw new Error('Espera a que termine la respuesta.');
         await rt.provider.send(text, images);
@@ -1668,6 +1837,7 @@ export class Manager {
           };
         }
         this.coordinator.task(id, text);
+        this.assertCurrentMcp(s);
         s.accountLocked = true;
         rt.claude.send(text, images);
         if (s.title.startsWith('Sesión ') && !text.startsWith('/'))
@@ -1701,6 +1871,7 @@ export class Manager {
       if (!s.account)
         throw new Error('Inicia sesión oficialmente con ChatGPT antes de enviar una tarea.');
       await this.loadThread(s);
+      this.assertCurrentMcp(s);
       const decision = this.optimizeTurn(s, text, images);
       this.coordinator.task(id, text);
       s.optimization = decision;
@@ -2200,6 +2371,8 @@ export class Manager {
     Object.assign(fork, {
       title: `${source.title} (copia)`.slice(0, 80),
       config: structuredClone(source.config),
+      mcpConnectionIds:
+        source.mcpConnectionIds === undefined ? undefined : [...source.mcpConnectionIds],
       forkFrom: origin,
       forkOf: source.id,
       accountLocked: true,
@@ -2278,6 +2451,7 @@ export class Manager {
     const terminalResults = await this.terminals.shutdown();
     const results = await Promise.allSettled([...this.runtimes.keys()].map((id) => this.stop(id)));
     await this.accounts.local.shutdown();
+    await this.mcp.close();
     if ([...accountResults, ...terminalResults, ...results].every((r) => r.status === 'fulfilled'))
       await this.coordinator.close();
     this.store.flush();

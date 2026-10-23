@@ -82,6 +82,7 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  mcpConnectionIds?: string[];
 }
 export type PermissionMode =
   'default' | 'acceptEdits' | 'plan' | 'auto' | 'dontAsk' | 'bypassPermissions';
@@ -321,6 +322,10 @@ export interface RateLimit {
   status?: string;
 }
 export interface Session {
+  /** Undefined inherits the project's selection; an empty array disables managed connections. */
+  mcpConnectionIds?: string[];
+  mcpAppliedIds?: string[];
+  mcpPending?: boolean;
   accountLocked?: boolean;
   optimization?: {
     model: string;
@@ -391,6 +396,7 @@ export interface AccountState {
   loginStarting?: boolean;
 }
 export interface Snapshot {
+  mcpConnections?: import('./mcp-types').McpConnection[];
   floatingChats?: import('./floating-chat-protocol').FloatingChatState[];
   freebuffEnabled?: boolean;
   theme?: Theme;
@@ -426,6 +432,7 @@ export interface Snapshot {
   notice?: string;
 }
 export type Action =
+  | import('./mcp-types').McpAction
   | import('./floating-chat-protocol').FloatingChatAction
   | { type: 'setFreebuffEnabled'; enabled: boolean }
   | { type: 'saveProxy'; config: import('./proxy-types').ProxyUpdate }

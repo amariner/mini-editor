@@ -2,6 +2,18 @@
 
 Aplicación local para macOS: una ventana Electron con tus proyectos, cuentas independientes de Claude Code, Codex, OpenRouter y Google · Gemini (sin cuentas precreadas). Claude funciona como un **chat nativo equivalente a Claude Code** (streaming, herramientas, permisos, preguntas, comandos, modelo, permisos y esfuerzo desde el compositor) y conserva su terminal oficial como modo opcional. La interfaz está en español, con un diseño plano y claro.
 
+## Conexiones MCP
+
+En **Ajustes → Conexiones** puedes añadir servidores remotos por URL (Streamable HTTP) o locales mediante un ejecutable y sus argumentos (stdio). El formulario también admite importar el JSON de un servidor. Las conexiones remotas aceptan acceso público, cabeceras/token u OAuth mediante navegador. OAuth utiliza descubrimiento y registro dinámico; los servidores que exigen un cliente pre-registrado todavía requieren configuración desde su cliente nativo. Para servidores locales, introduce las claves en las variables de entorno. El comando se ejecuta al comprobarlo o usarlo desde un chat.
+
+**Comprobar** conecta con el servidor y lista sus herramientas, sin ejecutarlas. El estado «Comprobada» corresponde a esa verificación, no a una conexión permanente. Las credenciales se cifran con el almacén seguro del sistema, no se devuelven a la interfaz y se pueden conservar, reemplazar o eliminar al editar. La configuración del servidor se guarda en los datos de Agent Desk, sin sobrescribir la configuración de las CLI.
+
+Guardar una conexión no la activa. Selecciona sus proyectos en esta pantalla y abre **+ → Conexiones** o escribe **/mcp** en el chat para heredar la selección del proyecto o elegir una propia. Una selección propia vacía desactiva las conexiones gestionadas en ese chat. Esta primera integración funciona con **Claude y Codex en modo chat**; el resto de proveedores y el modo terminal conservan sus integraciones nativas. El MCP interno `agent_desk` mantiene su configuración.
+
+Los cambios se aplican antes del siguiente mensaje, reanudando el historial cuando hace falta reiniciar el agente. Una respuesta en curso termina con su configuración original; los mensajes nuevos esperan si hay cambios pendientes. Las solicitudes MCP de formularios sencillos y de apertura de una URL aparecen en el chat y pueden aceptarse o rechazarse. Los formularios con esquemas aún no compatibles muestran una explicación y permiten rechazar la solicitud.
+
+Validación: `npm test`, `npm run build`, `node scripts/mcp-ui-check.mjs` y `node scripts/mcp-check.mjs`. Las pruebas utilizan datos temporales, servidores locales y credenciales de prueba, sin inferencia ni acceso a cuentas del usuario. El cambio requiere reiniciar las instancias antiguas de desarrollo (IPC 45); para la app instalada, generar e instalar una nueva versión.
+
 ## Modelos locales, sin Ollama
 
 En **Ajustes → Cuentas → Añadir cuenta**, elige **Local · En este ordenador**. Selecciona la carpeta raíz de tus modelos (también se exploran sus subcarpetas), descarga el motor y después importa un archivo GGUF o descarga uno mediante su enlace directo de Hugging Face (`/resolve/…/modelo.gguf`). El botón de Qwen 3.5 9B prepara un enlace de Unsloth; la descarga empieza al pulsar **Descargar en la carpeta elegida**. Los archivos originales importados se conservan y los modelos se pueden mover a la papelera desde esta pantalla.

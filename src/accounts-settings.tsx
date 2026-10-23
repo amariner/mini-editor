@@ -3,7 +3,7 @@ import { LocalAccountSettings } from './local-account-settings';
 import { ProviderAccountSettings } from './provider-account-settings';
 import { providerNames, type ProviderKind } from './shared';
 import { NetworkSettings } from './network-settings';
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import {
   LogIn,
   LogOut,
@@ -21,6 +21,7 @@ import {
   Globe,
   ChevronDown,
   Star,
+  Cable,
 } from 'lucide-react';
 import {
   defaultOptimization,
@@ -35,6 +36,12 @@ import { TerminalView } from './lazy-terminal';
 import { sessionIsLive as live } from './session-tabs';
 import { InterfaceSettings, useInterfacePreferences } from './interface-settings';
 
+const McpSettings = lazy(() =>
+  import('./mcp-settings').then((module) => ({ default: module.McpSettings })),
+);
+type SettingsTab = 'accounts' | 'interface' | 'network' | 'connections';
+const settingsTabs: SettingsTab[] = ['accounts', 'connections', 'interface', 'network'];
+
 export function AccountsSettings({
   state,
   run,
@@ -43,6 +50,8 @@ export function AccountsSettings({
   onError,
   appearance,
   onOpenFreebuff,
+  initialTab = 'accounts',
+  connectionSessionId,
 }: {
   state: Snapshot;
   run: (action: Action) => Promise<any>;
@@ -51,11 +60,14 @@ export function AccountsSettings({
   onError: (error: string) => void;
   appearance: ReturnType<typeof useInterfacePreferences>;
   onOpenFreebuff?: () => Promise<void>;
+  initialTab?: SettingsTab;
+  connectionSessionId?: string;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggleAccount = (id: string) =>
     setExpanded((previous) => ({ ...previous, [id]: !previous[id] }));
-  const [tab, setTab] = useState<'accounts' | 'interface' | 'network'>('accounts');
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
+  useEffect(() => setTab(initialTab), [initialTab]);
   const [confirmation, setConfirmation] = useState<{
     profile: Profile;
     type: 'accountLogin' | 'accountLogout' | 'removeAccount';
@@ -135,7 +147,7 @@ export function AccountsSettings({
             </button>
           </div>
           <div className="settings-tabs" role="tablist" aria-label="Secciones de ajustes">
-            {(['accounts', 'interface', 'network'] as const).map((id) => (
+            {settingsTabs.map((id) => (
               <button
                 key={id}
                 id={`settings-tab-${id}`}
@@ -147,29 +159,63 @@ export function AccountsSettings({
                 onKeyDown={(e) => {
                   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
                   e.preventDefault();
-                  const sections = ['accounts', 'interface', 'network'] as const;
+                  const sections = settingsTabs;
                   const index = sections.indexOf(id);
                   const next =
                     e.key === 'Home'
                       ? sections[0]
                       : e.key === 'End'
-                        ? sections[2]
-                        : sections[(index + (e.key === 'ArrowRight' ? 1 : 2)) % sections.length];
+                        ? sections[sections.length - 1]
+                        : sections[
+                            (index + (e.key === 'ArrowRight' ? 1 : sections.length - 1)) %
+                              sections.length
+                          ];
                   setTab(next);
                   document.getElementById(`settings-tab-${next}`)?.focus();
                 }}
               >
                 {id === 'accounts' ? (
                   <UserRound size={15} aria-hidden="true" />
+                ) : id === 'connections' ? (
+                  <Cable size={15} aria-hidden="true" />
                 ) : id === 'interface' ? (
                   <Palette size={15} aria-hidden="true" />
                 ) : (
                   <Globe size={15} aria-hidden="true" />
                 )}
-                {id === 'accounts' ? 'Cuentas' : id === 'interface' ? 'Interfaz' : 'Red'}
+                {id === 'accounts'
+                  ? 'Cuentas'
+                  : id === 'connections'
+                    ? 'Conexiones'
+                    : id === 'interface'
+                      ? 'Interfaz'
+                      : 'Red'}
               </button>
             ))}
           </div>
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-connections"
+          aria-labelledby="settings-tab-connections"
+          hidden={tab !== 'connections'}
+        >
+          {tab === 'connections' && (
+            <Suspense
+              fallback={
+                <p className="muted" role="status">
+                  Cargando conexiones…
+                </p>
+              }
+            >
+              <McpSettings
+                state={state}
+                run={runLocal}
+                compatible={compatible}
+                connectionSessionId={connectionSessionId}
+              />
+            </Suspense>
+          )}
         </div>
         <div
           role="tabpanel"

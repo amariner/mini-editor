@@ -1,0 +1,374 @@
+.mcp-settings {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 4px;
+}
+.mcp-settings h3,
+.mcp-settings h4,
+.mcp-selection h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mcp-settings p,
+.mcp-selection p {
+  margin: 0;
+}
+.mcp-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcp-section-title button,
+.mcp-form-actions button,
+.mcp-card-actions button,
+.mcp-empty button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  font-size: 12px;
+}
+.mcp-help,
+.mcp-optional,
+.mcp-count {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.mcp-help {
+  overflow-wrap: anywhere;
+}
+.mcp-count {
+  flex-shrink: 0;
+}
+.mcp-form,
+.mcp-card,
+.mcp-selection {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.mcp-form {
+  background: var(--tile);
+}
+.mcp-import {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  font-size: 11px;
+}
+.mcp-import summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.mcp-import[open] {
+  display: grid;
+  gap: 10px;
+}
+.mcp-import > button {
+  justify-self: start;
+  font-size: 11px;
+}
+.mcp-settings .mcp-field,
+.mcp-selection .mcp-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 5px;
+  row-gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.mcp-field > input,
+.mcp-field > select,
+.mcp-field > textarea {
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.mcp-field input,
+.mcp-field select,
+.mcp-field textarea,
+.mcp-secrets > select,
+.mcp-secret-row input {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.mcp-field textarea {
+  resize: vertical;
+  font-family: var(--mono);
+  line-height: 1.6;
+}
+.mcp-form-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.mcp-secrets {
+  display: grid;
+  gap: 9px;
+  font-size: 12px;
+}
+.mcp-secret-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) 30px;
+  gap: 6px;
+}
+.mcp-secret-row input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-family: var(--mono);
+}
+.mcp-settings .mcp-icon-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  flex-shrink: 0;
+  background: transparent;
+}
+.mcp-settings .mcp-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  background: transparent;
+  padding: 4px 0;
+  font-size: 11px;
+}
+.mcp-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.mcp-settings .mcp-primary {
+  background: var(--sel);
+  color: var(--sel-text);
+}
+.mcp-settings .mcp-danger {
+  color: var(--danger);
+}
+.mcp-error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mcp-connection-list {
+  display: grid;
+  gap: 10px;
+}
+.mcp-card {
+  gap: 9px;
+}
+.mcp-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.mcp-connection-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  width: 35px;
+  height: 35px;
+  flex-shrink: 0;
+  background: var(--tile);
+  color: var(--text-2);
+}
+.mcp-connection-name {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-connection-name h4 {
+  overflow-wrap: anywhere;
+}
+.mcp-connection-name small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.mcp-status {
+  font-size: 10px;
+  color: var(--text-2);
+  text-align: right;
+  max-width: 140px;
+}
+.mcp-status-connected {
+  color: var(--ok);
+}
+.mcp-status-error,
+.mcp-status-needs-auth {
+  color: var(--warn);
+}
+.mcp-endpoint {
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+.mcp-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.mcp-actions-spacer {
+  flex: 1;
+}
+.mcp-tools {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  font-size: 11px;
+}
+.mcp-tools summary {
+  color: var(--text-2);
+  cursor: pointer;
+}
+.mcp-tools ul {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.mcp-tools li + li {
+  margin-top: 12px;
+}
+.mcp-tools code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.mcp-tools li p {
+  color: var(--muted);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.mcp-delete-confirm {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  font-size: 12px;
+}
+.mcp-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  text-align: center;
+  padding: 28px 24px;
+  color: var(--muted);
+}
+.mcp-empty h4 {
+  color: var(--text);
+}
+.mcp-empty p {
+  max-width: 350px;
+  font-size: 12px;
+}
+.mcp-assignment {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  margin-top: 4px;
+}
+.mcp-choices {
+  display: grid;
+  gap: 4px;
+}
+.mcp-selection .mcp-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  margin: 0;
+  font-size: 12px;
+}
+.mcp-choice > input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--text);
+  flex-shrink: 0;
+}
+.mcp-choice > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  flex: 1;
+}
+.mcp-choice strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.mcp-choice small {
+  font-size: 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.mcp-choice-state {
+  text-align: right;
+}
+.mcp-spin {
+  animation: mcp-spin 1.3s linear infinite;
+}
+@keyframes mcp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcp-spin {
+    animation: none;
+  }
+}
+@media (max-width: 560px) {
+  .account-settings .settings-tabs {
+    flex-wrap: wrap;
+  }
+  .mcp-form-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mcp-card,
+  .mcp-form,
+  .mcp-selection {
+    padding: 12px;
+  }
+  .mcp-card-heading {
+    flex-wrap: wrap;
+  }
+  .mcp-status {
+    max-width: none;
+    margin-left: 45px;
+    text-align: left;
+  }
+  .mcp-card-actions {
+    gap: 4px;
+  }
+  .mcp-section-title {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

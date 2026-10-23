@@ -124,10 +124,10 @@ try {
     await fs.mkdir('artifacts', { recursive: true });
     await page.screenshot({ path: `artifacts/settings-v20-${colorScheme}-${width}.png` });
     await personal.getByRole('button', { name: 'Opciones de Personal', exact: true }).click();
-    await personal.getByLabel('Color de Personal', { exact: true }).fill('#708c89');
+    await personal.getByLabel('Color de Personal', { exact: true }).selectOption('#91aa98');
     await personal.getByRole('button', { name: 'Guardar color', exact: true }).click();
-    assert.equal(await page.evaluate(() => window.fixture.state.profiles[0].color), '#708c89');
-    await personal.getByRole('button', { name: 'Sin color', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.fixture.state.profiles[0].color), '#91aa98');
+    await personal.getByRole('button', { name: 'Restablecer color sugerido', exact: true }).click();
     assert.equal(await page.evaluate(() => window.fixture.state.profiles[0].color), null);
     await personal.getByLabel('Ahorro de tokens', { exact: true }).selectOption('2');
     await personal.getByRole('switch', { name: 'Modelo auto' }).check();
