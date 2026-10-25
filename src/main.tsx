@@ -1,3 +1,4 @@
+import { ChatDetails } from './chat-details';
 import { FloatingChatHeader, DetachedChat } from './floating-chat';
 import { floatingChatId } from './floating-chat-state';
 import { useTextDrafts, useImageDrafts, initializeDraftLifetime } from './chat-drafts';
@@ -166,6 +167,8 @@ function App() {
     [confirmClose, setConfirmClose] = useState<{ session: Session; remove: boolean }>(),
     [showDiff, setShowDiff] = useState(false),
     [showBrowser, setShowBrowser] = useState(false),
+    [showDetails, setShowDetails] = useState(false),
+    [detailsToggleMount, setDetailsToggleMount] = useState<HTMLSpanElement | null>(null),
     [browserTab, setBrowserTab] = useState<string>(),
     [showTerminalPanel, setShowTerminalPanel] = useState(false),
     [terminalTarget, setTerminalTarget] = useState<'default' | 'freebuff'>('default'),
@@ -268,6 +271,7 @@ function App() {
         setMultichat('off');
       }
       if (e.type === 'browserOpened' && !floatingSessionId) {
+        setShowDetails(false);
         setShowBrowser(true);
         setBrowserTab(e.tabId ?? e.sessionId);
       }
@@ -1005,6 +1009,7 @@ function App() {
     setMultichat('off');
     if (tab) {
       setBrowserTab(tab.id);
+      setShowDetails(false);
       setShowBrowser(true);
       if (tab.suspended)
         await run({
@@ -1018,6 +1023,7 @@ function App() {
         // Keep existing tabs reachable if creating a preview fails (for example
         // at the saved-tab limit), so the user can close one and retry.
         setBrowserTab(undefined);
+        setShowDetails(false);
         setShowBrowser(true);
         await run({
           type: 'browserNew',
@@ -1403,6 +1409,7 @@ function App() {
                 <ArrowLeft size={15} />
               </button>
             )}
+            <span className="chat-details-toolbar-slot" ref={setDetailsToggleMount} />
             {hasChats && (
               <button
                 className={gridVisible ? 'on' : ''}
@@ -1462,6 +1469,7 @@ function App() {
                 root: s.worktree?.cwd ?? state.projects.find((p) => p.id === s.projectId)?.path,
                 openUrl: async (url) => {
                   if (await activate()) {
+                    setShowDetails(false);
                     setShowBrowser(true);
                     await run({ type: 'browserNew', projectId: s.projectId, sessionId: s.id, url });
                   }
@@ -1559,6 +1567,26 @@ function App() {
             >
               <ChatActionsContext.Provider value={chatActions}>
                 <section className="conversation">
+                  {session && !detached && (
+                    <ChatDetails
+                      key={session.id}
+                      open={showDetails}
+                      onOpenChange={(open) => {
+                        setShowDetails(open);
+                        if (open) setShowBrowser(false);
+                      }}
+                      triggerMount={floatingSessionId ? undefined : detailsToggleMount}
+                      session={session}
+                      project={project.name}
+                      root={project.path}
+                      git={diff}
+                      gitError={diffError}
+                      showChanges={() => {
+                        setShowDetails(false);
+                        setShowDiff(true);
+                      }}
+                    />
+                  )}
                   {floatingSessionId && session && (
                     <FloatingChatHeader
                       session={session}
@@ -1804,7 +1832,7 @@ function App() {
                         <>
                           {session.todos?.length &&
                           (live(session) || session.todos.some((t) => t.status !== 'completed')) ? (
-                            <TodoPanel todos={session.todos} />
+                            <TodoPanel key={session.id} todos={session.todos} defaultOpen />
                           ) : null}
                           <ExecutionPanel session={session} />
                         </>

@@ -10,6 +10,10 @@ test('el tema se guarda junto a los datos y un archivo ausente o raro vuelve a S
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-theme-'));
   try {
     assert.equal(readTheme(dir), 'system');
+    writeTheme(dir, 'system');
+    assert.equal(readTheme(dir), 'system');
+    writeTheme(dir, 'light');
+    assert.equal(readTheme(dir), 'light');
     writeTheme(dir, 'dark');
     assert.equal(readTheme(dir), 'dark');
     assert.equal(fs.statSync(path.join(dir, 'appearance.json')).mode & 0o777, 0o600);

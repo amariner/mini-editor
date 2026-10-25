@@ -134,6 +134,13 @@ export function applyCodexEvent(s: Session, method: string, p: any) {
     stats.inputTokens = total.inputTokens;
     stats.outputTokens = total.outputTokens;
     stats.tokensReported = true;
+    const used = p.tokenUsage?.last?.totalTokens;
+    const max = p.tokenUsage?.modelContextWindow;
+    if (Number.isSafeInteger(used) && used >= 0 && Number.isSafeInteger(max) && max > 0) {
+      stats.contextTokens = used;
+      stats.contextMax = max;
+      stats.contextPercent = Math.min(100, (used / max) * 100);
+    }
   } else if (method === 'model/rerouted') {
     if (s.turnId !== p?.turnId || typeof p.toModel !== 'string') return;
     if (s.optimization) s.optimization.model = p.toModel;

@@ -54,8 +54,8 @@ const second = [
   '```',
 ].join('\n');
 try {
-  browser = await chromium.launch({ headless: true });
-  for (const colorScheme of ['dark', 'light']) {
+  browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
+  for (const colorScheme of process.env.DETAILS_ONLY ? [] : ['dark', 'light']) {
     const page = await browser.newPage({ viewport: { width: 1180, height: 860 }, colorScheme });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -330,7 +330,9 @@ try {
         0,
       );
       await modelMenu.click();
-      await chat.getByRole('textbox', { name: 'Mensaje', exact: true }).click();
+      await chat
+        .getByRole('textbox', { name: 'Mensaje', exact: true })
+        .click({ position: { x: 10, y: 10 } });
       assert.equal(await menu.count(), 0);
       assert.equal(await toolsToggle.getAttribute('aria-expanded'), 'false');
       await page.setViewportSize({ width: 480, height: 620 });
@@ -414,11 +416,10 @@ try {
       });
       await chat.getByText('Esperando tu respuesta', { exact: true }).waitFor();
       const plan = chat.locator('.todo-panel > button');
-      assert.equal(await plan.getAttribute('aria-expanded'), 'false');
-      assert.match(await plan.innerText(), /Borrando la rama fusionada/);
-      await plan.click();
+      assert.equal(await plan.getAttribute('aria-expanded'), 'true');
       assert.equal(await chat.locator('.todo-panel .todos > li').count(), 3);
       await plan.click();
+      assert.match(await plan.innerText(), /Borrando la rama fusionada/);
       await chat.locator('.approval').scrollIntoViewIfNeeded();
       assert.match(
         await chat.locator('.approval').innerText(),
@@ -576,9 +577,32 @@ try {
       dataDir: '/tmp/codex',
       runtime: { protocol },
       coordination: [],
+      browsers: [
+        {
+          id: 'preview',
+          projectId: 'p',
+          sessionId: 'c',
+          url: 'https://example.com',
+          title: 'Preview',
+          zoom: 1,
+        },
+      ],
+    };
+    const listeners = new Set();
+    window.detailsFixture = {
+      state,
+      publish: () => {
+        for (const fn of listeners) fn({ type: 'state', state: structuredClone(state) });
+      },
+      openBrowser: () => {
+        for (const fn of listeners) fn({ type: 'browserOpened', tabId: 'preview' });
+      },
     };
     window.desk = {
-      subscribe: () => () => {},
+      subscribe: (fn) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
       async invoke(action) {
         if (action.type === 'snapshot') return structuredClone(state);
         if (action.type === 'diff') return { repository: false };
@@ -599,7 +623,75 @@ try {
   await chat.locator('.turn-changes-toggle').click();
   assert.match(await chat.locator('.turn-changes').innerText(), /src\/dates\.ts/);
   assert.equal(await chat.locator('.todo-panel').count(), 1);
+  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  assert.deepEqual(errors, []);
+  await chat.getByRole('complementary', { name: 'Detalles del chat' }).waitFor();
+  assert.match(await chat.locator('.chat-details').innerText(), /Entorno/);
+  assert.equal(await chat.locator('.chat-details details').count(), 1);
+  assert.equal(await page.getByRole('button', { name: 'Cerrar detalles' }).count(), 0);
+  assert.doesNotMatch(
+    await chat.locator('.chat-details').innerText(),
+    /Sin datos|Sin rama|default|Sin información/,
+  );
+  const toggleBox = await page
+    .getByRole('button', { name: 'Detalles del chat', exact: true })
+    .boundingBox();
+  const gridBox = await page.getByRole('button', { name: 'Multichat', exact: true }).boundingBox();
+  assert.ok(toggleBox.x < gridBox.x && Math.abs(toggleBox.y - gridBox.y) < 3);
+  await page.getByRole('button', { name: 'Navegador', exact: true }).click();
+  await page.locator('.browser-pane').waitFor();
+  assert.equal(await chat.locator('.chat-details').count(), 0);
+  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  assert.equal(await page.locator('.browser-pane').count(), 0);
+  await page.evaluate(() => window.detailsFixture.openBrowser());
+  await page.locator('.browser-pane').waitFor();
+  assert.equal(await chat.locator('.chat-details').count(), 0);
+  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  await page.evaluate(() => {
+    window.detailsFixture.state.sessions[0].stats = {
+      contextPercent: 4,
+      contextTokens: 16800,
+      contextMax: 475000,
+      cost: 0,
+      inputTokens: 79700,
+      outputTokens: 391,
+      tokensReported: true,
+      turns: 1,
+      durationMs: 21000,
+    };
+    window.detailsFixture.publish();
+  });
+  await page.waitForFunction(() => document.querySelector('.chat-details progress'));
+  assert.equal(await chat.locator('.chat-details details').count(), 2);
+
+  await page.screenshot({ path: 'artifacts/chat-details-wide.png' });
+  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  assert.equal(await chat.locator('.chat-details').count(), 0);
+  await chat.locator('.tools-toggle').click();
+  await chat.getByRole('button', { name: 'Velocidad de respuesta', exact: true }).click();
+  assert.match(
+    await chat.getByRole('dialog', { name: 'Velocidad de respuesta' }).innerText(),
+    /mayor consumo/,
+  );
+  await chat.getByRole('button', { name: 'Activar modo rápido' }).click();
+
+  await page.setViewportSize({ width: 760, height: 800 });
+  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  const panelBounds = await chat.locator('.chat-details').boundingBox();
+  assert.ok(panelBounds && panelBounds.x >= 0 && panelBounds.x + panelBounds.width <= 760);
+  await page.screenshot({ path: 'artifacts/chat-details-narrow.png' });
+  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+
   await page.screenshot({ path: 'artifacts/chat-v2-codex.png' });
+  await page.getByRole('button', { name: 'Multichat', exact: true }).click();
+  const card = page.locator('.multichat-card').first();
+  const detailsToggle = card.getByRole('button', { name: 'Detalles del chat', exact: true });
+  await detailsToggle.click();
+  await card.locator('.chat-details').waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await card.locator('.chat-details').count(), 0);
+  assert.ok(await detailsToggle.evaluate((el) => el === document.activeElement));
+
   assert.deepEqual(errors, []);
   await page.close();
   console.log(

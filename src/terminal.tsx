@@ -1,3 +1,4 @@
+import { STYLES_EVENT } from './custom-styles';
 import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -50,6 +51,59 @@ const dark = {
   yellow: '#ffd866',
   brightYellow: '#ffd866',
 };
+const night = {
+  background: '#191d23',
+  foreground: '#d5d9df',
+  cursor: '#d5d9df',
+  selectionBackground: '#354453',
+  black: '#191d23',
+  brightBlack: '#939da9',
+  white: '#b8c0ca',
+  brightWhite: '#d5d9df',
+  blue: '#9aafc9',
+  brightBlue: '#9aafc9',
+  cyan: '#93babb',
+  brightCyan: '#93babb',
+  green: '#9cbcaa',
+  brightGreen: '#9cbcaa',
+  magenta: '#b8a6c9',
+  brightMagenta: '#b8a6c9',
+  red: '#d59b9b',
+  brightRed: '#d59b9b',
+  yellow: '#ceba92',
+  brightYellow: '#ceba92',
+};
+const terminalTheme = () => {
+  const css = getComputedStyle(document.documentElement);
+  const value = (name: string) => css.getPropertyValue(name).trim();
+  if (value('--theme-terminal') === '1') {
+    const palette = css.colorScheme === 'light' ? light : dark;
+    return {
+      ...palette,
+      background: value('--code-block'),
+      foreground: value('--text'),
+      cursor: value('--brand'),
+      selectionBackground: value('--accent-soft'),
+      black: value('--code-block'),
+      brightBlack: value('--muted'),
+      white: value('--text-2'),
+      brightWhite: value('--text'),
+      blue: value('--c-blue'),
+      brightBlue: value('--c-blue'),
+      cyan: value('--c-cyan'),
+      brightCyan: value('--c-cyan'),
+      green: value('--c-green'),
+      brightGreen: value('--c-green'),
+      magenta: value('--c-purple'),
+      brightMagenta: value('--c-purple'),
+      red: value('--c-red'),
+      brightRed: value('--c-red'),
+      yellow: value('--warn'),
+      brightYellow: value('--warn'),
+    };
+  }
+  return value('--night-terminal') === '1' ? night : scheme().matches ? dark : light;
+};
 const scheme = () => window.matchMedia('(prefers-color-scheme: dark)');
 export function TerminalView({
   session,
@@ -81,13 +135,14 @@ export function TerminalView({
       lineHeight: 1.4,
       cursorBlink: true,
       scrollback: 15000,
-      theme: scheme().matches ? dark : light,
+      theme: terminalTheme(),
     });
     const media = scheme();
     const onScheme = () => {
-      term.options.theme = media.matches ? dark : light;
+      term.options.theme = terminalTheme();
     };
     media.addEventListener('change', onScheme);
+    window.addEventListener(STYLES_EVENT, onScheme);
     const addon = new FitAddon();
     term.loadAddon(addon);
     term.open(host.current!);
@@ -186,6 +241,7 @@ export function TerminalView({
       cancelAnimationFrame(resizeFrame);
       output.dispose();
       media.removeEventListener('change', onScheme);
+      window.removeEventListener(STYLES_EVENT, onScheme);
       observer.disconnect();
       unsubscribe();
       input.dispose();

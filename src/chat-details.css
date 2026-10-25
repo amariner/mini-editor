@@ -1,0 +1,109 @@
+.conversation,
+.multichat-card {
+  position: relative;
+}
+.chat-details-toolbar-slot {
+  display: contents;
+}
+.chat-details-toggle {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+.chat-details-toggle[aria-expanded='true'] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.conversation > .chat-details-toggle {
+  align-self: flex-end;
+  margin: 4px 10px;
+}
+.chat-details {
+  position: absolute;
+  z-index: 25;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: min(260px, 92%);
+  padding: 12px 18px;
+  overflow: auto;
+  background: var(--card);
+  border-left: 1px solid var(--line);
+  font-size: 12px;
+  cursor: default;
+  outline: none;
+}
+.chat-details details {
+  padding: 16px 0;
+}
+.chat-details details + details {
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.chat-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.chat-details summary span {
+  float: right;
+  font-variant-numeric: tabular-nums;
+}
+.chat-details p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+.chat-details small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.chat-details progress {
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin-top: 12px;
+  accent-color: var(--accent);
+}
+.chat-details-path {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-details details > button {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.multichat-card .chat-details,
+.conversation:has(> .chat-details-toggle) > .chat-details {
+  top: 36px;
+}
+.multichat-card-head .chat-details details > button {
+  width: auto;
+  height: auto;
+}
+.fast-mode-hint {
+  max-width: 250px;
+  padding: 4px 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (min-width: 1050px) {
+  .workspace > .conversation:has(> .chat-details) {
+    padding-right: 260px;
+  }
+}
+.todo-panel > div {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.multichat-plan-details .todo-panel > div {
+  max-height: 120px;
+}

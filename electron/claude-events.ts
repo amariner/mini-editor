@@ -53,7 +53,7 @@ export function note(s: Session, kind: Message['kind'], text: string) {
     at: Date.now(),
   });
 }
-function finalize(s: Session, blocks: Block[], content: any[], streamed: boolean) {
+function finalize(s: Session, blocks: Block[], content: any[], streamed: boolean, root = true) {
   for (const c of content ?? []) {
     if (c.type === 'tool_use') {
       const existing = blocks.find((b) => b.type === 'tool_use' && b.id === c.id);
@@ -70,7 +70,8 @@ function finalize(s: Session, blocks: Block[], content: any[], streamed: boolean
           final: true,
           at: Date.now(),
         });
-      if (c.name === 'TodoWrite' && Array.isArray(c.input?.todos)) s.todos = c.input.todos;
+      if (root && c.name === 'TodoWrite' && Array.isArray(c.input?.todos))
+        s.todos = c.input.todos.slice(0, 100);
     } else if (c.type === 'text' || c.type === 'thinking') {
       const text = c.type === 'text' ? c.text : c.thinking;
       const open = streamed
@@ -149,7 +150,7 @@ export function applyClaudeMessage(s: Session, m: any) {
     if (m.parent_tool_use_id) {
       const parent = findTool(s, m.parent_tool_use_id);
       if (parent && parent.type === 'tool_use')
-        finalize(s, (parent.children ??= []), content, false);
+        finalize(s, (parent.children ??= []), content, false, false);
     } else {
       const msg = assistantMessage(s, m.message.id, m.message.model);
       msg.model = m.message.model ?? msg.model;
@@ -170,6 +171,41 @@ export function applyClaudeMessage(s: Session, m: any) {
         const b = findTool(s, c.tool_use_id);
         if (b && b.type === 'tool_use') {
           b.result = contentText(c.content).slice(0, RESULT_LIMIT);
+          // Only successful root tools update the visible plan. Replayed results are idempotent.
+          if (!c.is_error && !m.parent_tool_use_id && !b.done) {
+            const input = b.input as Record<string, any>;
+            if (b.name === 'TaskCreate' && typeof input?.subject === 'string') {
+              let result: any;
+              try {
+                result = JSON.parse(b.result);
+              } catch {
+                /* CLI uses text results too. */
+              }
+              const id = String(
+                result?.task?.id ??
+                  result?.taskId ??
+                  result?.id ??
+                  /Task #([^\s]+) created/.exec(b.result)?.[1] ??
+                  '',
+              );
+              if (id && !s.todos?.some((t) => t.id === id))
+                s.todos = [
+                  ...(s.todos ?? []),
+                  { id, content: input.subject, activeForm: input.activeForm, status: 'pending' },
+                ].slice(-100);
+            } else if (b.name === 'TaskUpdate' && input?.taskId) {
+              const task = s.todos?.find((t) => t.id === String(input.taskId));
+              if (task) {
+                if (input.status === 'deleted') s.todos = s.todos?.filter((t) => t !== task);
+                else {
+                  if (['pending', 'in_progress', 'completed'].includes(input.status))
+                    task.status = input.status;
+                  if (typeof input.subject === 'string') task.content = input.subject;
+                  if (typeof input.activeForm === 'string') task.activeForm = input.activeForm;
+                }
+              }
+            }
+          }
           b.isError = !!c.is_error;
           b.done = true;
           if (b.at) b.ms = Math.max(0, Date.now() - b.at);
@@ -181,7 +217,14 @@ export function applyClaudeMessage(s: Session, m: any) {
     s.attempted = true;
     s.forkFrom = undefined; // The fork now has its own transcript under `reference`.
     const st = (s.stats ??= { cost: 0, turns: 0, inputTokens: 0, outputTokens: 0, durationMs: 0 });
-    st.cost = typeof m.total_cost_usd === 'number' ? m.total_cost_usd : st.cost;
+    if (
+      typeof m.total_cost_usd === 'number' &&
+      Number.isFinite(m.total_cost_usd) &&
+      m.total_cost_usd >= 0
+    ) {
+      st.cost = m.total_cost_usd;
+      st.costReported = true;
+    }
     st.turns += 1;
     st.inputTokens +=
       (m.usage?.input_tokens ?? 0) +

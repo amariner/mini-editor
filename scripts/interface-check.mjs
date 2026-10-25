@@ -11,6 +11,7 @@ const mainSource = await fs.readFile('src/main.tsx', 'utf8');
 // occurrence: chat-navigation is also imported by main but applied only once.
 const sources = [
   ...new Set([
+    'src/chat-details.css',
     'src/chat-state-mark.css',
     'src/chat-detach-drag.css',
     'src/chat-navigation.css',
@@ -224,12 +225,42 @@ try {
       text,
       { timeout: 3000 },
     );
-  await picker.selectOption({ label: 'Terminal 8-bit' });
-  await state('Tema: Terminal 8-bit');
-  assert.equal(await brand(), '#ffd23f');
-  assert.match(await editor.inputValue(), /TERMINAL 8-BIT/);
+  assert.deepEqual(await picker.locator('optgroup[label="Incluidos"] option').allTextContents(), [
+    'Grafito',
+    'Noche',
+    'Papel',
+  ]);
+  for (const [name, accent, scheme] of [
+    ['Grafito', '#c5ab78', 'dark'],
+    ['Papel', '#55694f', 'light'],
+  ]) {
+    await picker.selectOption({ label: name });
+    await state(`Tema: ${name}`);
+    assert.equal(await brand(), accent);
+    assert.equal(
+      await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
+      scheme,
+    );
+    await page.emulateMedia({ colorScheme: scheme === 'dark' ? 'light' : 'dark' });
+    assert.equal(await brand(), accent);
+    await page.waitForFunction(
+      (expected) => getComputedStyle(document.querySelector('.modal')).backgroundColor === expected,
+      name === 'Papel' ? 'rgb(246, 243, 235)' : 'rgb(37, 37, 35)',
+    );
+    await page.screenshot({ path: `artifacts/tema-${name.toLowerCase()}.png` });
+    await page.reload();
+    await page.locator('.desk-input').waitFor();
+    assert.equal(await brand(), accent);
+    await openInterface();
+    await state(`Tema: ${name}`);
+  }
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await picker.selectOption({ label: 'Noche' });
+  await state('Tema: Noche');
+  assert.equal(await brand(), '#9aafc2');
+  assert.match(await editor.inputValue(), /Noche/);
   await page.screenshot({ path: 'artifacts/interfaz-temas.png' });
-  await editor.fill((await editor.inputValue()).replace('--brand: #ffd23f;', '--brand: #ff3366;'));
+  await editor.fill((await editor.inputValue()).replace('--brand: #9aafc2;', '--brand: #ff3366;'));
   await page.getByRole('button', { name: 'Guardar como tema…', exact: true }).click();
   await page.getByRole('textbox', { name: 'Nombre del tema', exact: true }).fill('Mi neón');
   await page.getByRole('button', { name: 'Guardar tema', exact: true }).click();
@@ -253,6 +284,20 @@ try {
   assert.equal(stored.length, 1);
   assert.match(stored[0].css, /--brand: #00ffaa;/);
   // Switching themes applies them at once; Original removes custom styles.
+  await picker.selectOption('');
+  await state('Estilos originales');
+  assert.equal(await brand(), original);
+  await picker.selectOption({ label: 'Noche' });
+  await state('Tema: Noche');
+  assert.equal(await brand(), '#9aafc2');
+  await page.emulateMedia({ colorScheme: 'light' });
+  assert.equal(await brand(), '#9aafc2');
+  await page.reload();
+  await page.locator('.desk-input').waitFor();
+  assert.equal(await brand(), '#9aafc2');
+  await openInterface();
+  await state('Tema: Noche');
+  await page.emulateMedia({ colorScheme: 'dark' });
   await picker.selectOption('');
   await state('Estilos originales');
   assert.equal(await brand(), original);

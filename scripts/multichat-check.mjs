@@ -252,7 +252,10 @@ try {
   assert.equal(await firstCompose.locator('.multichat-attach').isVisible(), false);
   await firstCompose.locator('textarea').focus();
   assert.equal(await firstCompose.locator('.multichat-attach').isVisible(), true);
-  assert.equal(await firstCompose.locator('button[type="submit"] .lucide-corner-down-left').count(), 1);
+  assert.equal(
+    await firstCompose.locator('button[type="submit"] .lucide-corner-down-left').count(),
+    1,
+  );
   await layoutButton.focus();
   assert.equal(await firstCompose.locator('.multichat-attach').isVisible(), false);
   // Team popovers flip above bottom-row cards, stay anchored, and retain keyboard navigation.
@@ -392,6 +395,22 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('[data-session-id="s0"] .multichat-git')?.textContent.includes('main'),
   );
+  const detailsToggle = activityCard.getByRole('button', {
+    name: 'Detalles del chat',
+    exact: true,
+  });
+  await detailsToggle.click();
+  const detailsPanel = activityCard.getByRole('complementary', { name: 'Detalles del chat' });
+  await detailsPanel.waitFor();
+  assert.match(await detailsPanel.innerText(), /Entorno/);
+  const panelBox = await detailsPanel.boundingBox();
+  const cardBox = await activityCard.boundingBox();
+  assert.ok(
+    panelBox.x >= cardBox.x && panelBox.x + panelBox.width <= cardBox.x + cardBox.width + 1,
+  );
+  await page.keyboard.press('Escape');
+  await detailsPanel.waitFor({ state: 'detached' });
+  assert.ok(await detailsToggle.evaluate((el) => el === document.activeElement));
   const info = await activityCard.locator('.multichat-info-line').innerText();
   assert.match(info, /Personal[\s\S]*Proyecto 1[\s\S]*main[\s\S]*↑1/);
   // A clean, synced branch shows no zero counters.
@@ -613,7 +632,11 @@ try {
   });
   await grid.getByText('Texto nuevo en directo', { exact: false }).waitFor();
   assert.deepEqual(await grid.locator('.multichat-title strong').allTextContents(), order);
-  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 16$/ }) }).locator('.multichat-title').dblclick();
+  await grid
+    .locator('.multichat-card')
+    .filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 16$/ }) })
+    .locator('.multichat-title')
+    .dblclick();
   await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
   assert.equal(await page.evaluate(() => window.fixture.state.selectedProject), 'p3');
   await page.locator('.composer textarea').fill('Borrador conservado desde Multichat');
@@ -627,7 +650,11 @@ try {
     ),
     0,
   );
-  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 16$/ }) }).locator('.multichat-title').dblclick();
+  await grid
+    .locator('.multichat-card')
+    .filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 16$/ }) })
+    .locator('.multichat-title')
+    .dblclick();
   assert.equal(
     await page.locator('.composer textarea').inputValue(),
     'Borrador conservado desde Multichat',
@@ -680,7 +707,11 @@ try {
   const card = (id) => grid.locator(`[data-session-id="${id}"]`);
   const mini = card('s8').getByRole('textbox');
   await mini.fill('Borrador del mini chat');
-  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 9$/ }) }).locator('.multichat-title').dblclick();
+  await grid
+    .locator('.multichat-card')
+    .filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 9$/ }) })
+    .locator('.multichat-title')
+    .dblclick();
   assert.equal(await page.locator('.composer textarea').inputValue(), 'Borrador del mini chat');
   await page.getByRole('button', { name: 'Volver al grid' }).click();
   assert.equal(await mini.inputValue(), 'Borrador del mini chat');
@@ -780,7 +811,9 @@ try {
   await personal.getByLabel('Color de Personal', { exact: true }).selectOption('#829fbd');
   await personal.getByRole('button', { name: 'Guardar color', exact: true }).click();
   await page.getByRole('button', { name: 'Cerrar ajustes', exact: true }).click();
-  const personalBackground = await grid.locator('[data-session-id="s0"]').evaluate((el) => getComputedStyle(el).backgroundColor);
+  const personalBackground = await grid
+    .locator('[data-session-id="s0"]')
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
   assert.ok(personalBackground && personalBackground !== 'rgba(0, 0, 0, 0)');
   assert.equal(
     await grid
@@ -800,7 +833,12 @@ try {
   await work.getByLabel('Color de Trabajo', { exact: true }).selectOption('#b4a084');
   await work.getByRole('button', { name: 'Guardar color', exact: true }).click();
   await page.getByRole('button', { name: 'Cerrar ajustes', exact: true }).click();
-  assert.notEqual(await grid.locator('[data-session-id="s4"]').evaluate((el) => getComputedStyle(el).backgroundColor), personalBackground);
+  assert.notEqual(
+    await grid
+      .locator('[data-session-id="s4"]')
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    personalBackground,
+  );
   for (const id of ['s4', 's0']) {
     const appearance = await grid.locator(`[data-session-id="${id}"]`).evaluate((el) => ({
       title: getComputedStyle(el.querySelector('.multichat-title strong')).color,
@@ -810,8 +848,15 @@ try {
     assert.ok(appearance.body && appearance.title);
     assert.notEqual(appearance.title, appearance.body);
   }
-  await page.evaluate(() => document.documentElement.style.setProperty('--account-blue', 'rgb(35, 42, 55)'));
-  assert.equal(await grid.locator('[data-session-id="s0"]').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(35, 42, 55)');
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty('--account-blue', 'rgb(35, 42, 55)'),
+  );
+  assert.equal(
+    await grid
+      .locator('[data-session-id="s0"]')
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    'rgb(35, 42, 55)',
+  );
   await page.evaluate(() => document.documentElement.style.removeProperty('--account-blue'));
   await page.screenshot({ path: 'artifacts/multichat-account-colors.png' });
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
@@ -885,7 +930,11 @@ try {
     { type: 'forkSession', sessionId: 's4', isolate: true },
   );
   const formatted = await rich.locator('.row.assistant .md').last().innerHTML();
-  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 5$/ }) }).locator('.multichat-title').dblclick();
+  await grid
+    .locator('.multichat-card')
+    .filter({ has: page.locator('.multichat-title strong', { hasText: /^Tarea\ 5$/ }) })
+    .locator('.multichat-title')
+    .dblclick();
   assert.equal(
     await page.locator('#conversation-content .row.assistant .md').last().innerHTML(),
     formatted,
@@ -1154,8 +1203,6 @@ try {
   assert.equal(await plan.getAttribute('aria-valuemax'), '5');
   assert.match(await plan.innerText(), /3\/5/);
   assert.match(await plan.getAttribute('aria-valuetext'), /Actualizando los tests/);
-  assert.equal(await migrate.locator('.todo-panel').count(), 0);
-  await migrate.getByRole('button', { name: 'Ver tareas de Migrar API', exact: true }).click();
   assert.equal(await migrate.locator('.todo-panel li').count(), 5);
   await migrate.getByRole('button', { name: 'Ver tareas de Migrar API', exact: true }).click();
   // Only the current turn counts: the earlier Write of antiguo.ts is not in the chip.
@@ -1204,7 +1251,11 @@ try {
     () => document.activeElement?.getAttribute('aria-label') === 'Mensaje para Revisar PR',
   );
   assert.equal(await sends(), sentBefore);
-  await grid.locator('.multichat-card').filter({ has: page.locator('.multichat-title strong', { hasText: /^Revisar\ PR$/ }) }).locator('.multichat-title').dblclick();
+  await grid
+    .locator('.multichat-card')
+    .filter({ has: page.locator('.multichat-title strong', { hasText: /^Revisar\ PR$/ }) })
+    .locator('.multichat-title')
+    .dblclick();
   await page.getByRole('button', { name: 'Volver al grid' }).waitFor();
   assert.equal(await page.locator('.composer textarea').inputValue(), draft);
   await page.locator('.composer textarea').fill(draft + ' y resume el resultado.');

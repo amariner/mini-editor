@@ -15,8 +15,9 @@ type SavedTheme = { id: string; name: string; css: string };
 // Shipped themes are separate chunks, loaded only when chosen.
 const shipped = import.meta.glob<string>('../themes/*.css', { query: '?raw', import: 'default' });
 const NAMES: Record<string, string> = {
-  'terminal-8bit': 'Terminal 8-bit',
-  'circo-cosmico': 'Circo Cósmico',
+  noche: 'Noche',
+  grafito: 'Grafito',
+  papel: 'Papel',
 };
 const builtinThemes = Object.entries(shipped)
   .map(([path, load]) => {
@@ -251,6 +252,7 @@ export function StyleEditor() {
     let alive = true;
     // Loaded on demand: the editor's source CSS is only needed while this panel is open.
     void Promise.all([
+      import('./chat-details.css?raw'),
       import('./chat-state-mark.css?raw'),
       import('./chat-detach-drag.css?raw'),
       import('./chat-navigation.css?raw'),

@@ -94,6 +94,7 @@ export interface ClaudeConfig {
   fallbackModel?: string;
   permissionMode: PermissionMode;
   effort?: Effort;
+  fastMode?: boolean;
   thinking: 'adaptive' | 'enabled' | 'disabled';
   thinkingBudget?: number;
   thinkingDisplay: 'summarized' | 'omitted';
@@ -149,6 +150,7 @@ export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access
 export interface CodexConfig {
   model: string;
   effort?: string;
+  fastMode?: boolean;
   approvalPolicy: CodexApproval;
   sandbox: CodexSandbox;
   personality: 'none' | 'friendly' | 'pragmatic';
@@ -367,7 +369,7 @@ export interface Session {
   rateLimit?: RateLimit;
   activity?: string;
   notice?: string;
-  todos?: { content: string; status: string; activeForm?: string }[];
+  todos?: { id?: string; content: string; status: string; activeForm?: string }[];
   tasks?: { id: string; description: string }[];
   /** Running subagents and their latest progress summary (Agent SDK task_* events). */
   subagents?: { id: string; description: string; summary?: string; tool?: string }[];

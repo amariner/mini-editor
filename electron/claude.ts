@@ -368,6 +368,9 @@ export class ClaudeRuntime {
     await this.query.setPermissionMode(mode);
     if (this.s.info) this.s.info.permissionMode = mode as any;
   }
+  async setFastMode(fastMode: boolean) {
+    await this.query?.applyFlagSettings({ fastMode });
+  }
   async setEffort(effort?: string) {
     await this.query?.applyFlagSettings({ effortLevel: effort ?? null });
     if (this.s.info) this.s.info.effort = (effort as any) ?? null;

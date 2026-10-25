@@ -129,18 +129,18 @@ test('subagentes resumen la ejecución sin repetir la descripción y mantienen l
   );
 });
 
-test('el plan resume la tarea actual por defecto y permite abrir sus pasos desde el grid', () => {
+test('el plan muestra sus pasos por defecto y permite plegarse', () => {
   const todos = [
     { content: 'Inspeccionar', status: 'completed' as const },
     { content: 'Comprobar', activeForm: 'Comprobando teclado', status: 'in_progress' as const },
   ];
-  const collapsed = renderToStaticMarkup(React.createElement(TodoPanel, { todos }));
+  const collapsed = renderToStaticMarkup(
+    React.createElement(TodoPanel, { todos, defaultOpen: false }),
+  );
   assert.match(collapsed, /aria-expanded="false"/);
   assert.match(collapsed, /Comprobando teclado/);
   assert.doesNotMatch(collapsed, /class="todos"/);
-  const expanded = renderToStaticMarkup(
-    React.createElement(TodoPanel, { todos, defaultOpen: true }),
-  );
+  const expanded = renderToStaticMarkup(React.createElement(TodoPanel, { todos }));
   assert.match(expanded, /aria-expanded="true"/);
   assert.match(expanded, /class="todos"/);
   assert.match(expanded, /Hecha: /);

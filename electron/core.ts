@@ -18,6 +18,7 @@ const id = z.string().min(1).max(150),
   profile = profileSchema;
 export const claudeConfigSchema = z.object({
   model: z.string().min(1).max(80),
+  fastMode: z.boolean().optional(),
   fallbackModel: z.string().max(80).optional(),
   permissionMode: z.enum([
     'default',
@@ -42,6 +43,7 @@ export const claudeConfigSchema = z.object({
   fileCheckpointing: z.boolean(),
 });
 export const codexConfigSchema = z.object({
+  fastMode: z.boolean().optional(),
   model: z.string().min(1).max(80),
   effort: z.string().max(40).optional(),
   approvalPolicy: z.enum(['untrusted', 'on-request', 'never']),
@@ -422,13 +424,18 @@ export function codexParams(config: Partial<CodexConfig> | undefined, cwd: strin
       approvalsReviewer: 'user',
       sandbox: c.sandbox,
       modelProvider: 'openai',
-      config: { forced_login_method: 'chatgpt' },
+      config: {
+        forced_login_method: 'chatgpt',
+        'features.fast_mode': true,
+        ...(c.fastMode !== undefined ? { service_tier: c.fastMode ? 'fast' : 'default' } : {}),
+      },
       ...(model ? { model } : {}),
       ...(c.personality !== 'none' ? { personality: c.personality } : {}),
       ...(c.developerInstructions.trim() ? { developerInstructions: c.developerInstructions } : {}),
     },
     turn: {
       cwd,
+      ...(c.fastMode !== undefined ? { serviceTier: c.fastMode ? 'fast' : 'default' } : {}),
       approvalPolicy: c.approvalPolicy,
       approvalsReviewer: 'user',
       // turn/start uses SandboxPolicy, not the SandboxMode accepted by thread/start.
@@ -468,7 +475,10 @@ export function claudeOptions(
     env: { ...cleanEnv(context.env), CLAUDE_CONFIG_DIR: context.profileDir },
     pathToClaudeCodeExecutable: context.binary,
     settingSources: c.settingSources,
-    settings: { forceLoginMethod: 'claudeai' },
+    settings: {
+      forceLoginMethod: 'claudeai',
+      ...(c.fastMode !== undefined ? { fastMode: c.fastMode } : {}),
+    },
     permissionMode: c.permissionMode,
     // Enable switching modes later; the permissionMode above still controls every tool request.
     allowDangerouslySkipPermissions: true,

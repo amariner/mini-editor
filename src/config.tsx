@@ -1,3 +1,4 @@
+import { FastModeControl } from './fast-mode';
 import { CodexCatalogStatus } from './codex-catalog';
 import React, { useState } from 'react';
 import { X, Plus, Trash2, TerminalSquare, LogIn, RefreshCw } from 'lucide-react';
@@ -228,6 +229,7 @@ export function ConfigPanel({
         </section>
         <section>
           <h4>Razonamiento</h4>
+          <FastModeControl session={session} run={run} />
           <Tiles
             small
             options={[{ id: undefined as any, name: 'Auto' }, ...efforts]}
@@ -454,6 +456,7 @@ export function CodexConfigPanel({
             onChange={(model) => set({ model, effort: undefined })}
           />
           <CodexCatalogStatus session={session} run={run} />
+          <FastModeControl session={session} run={run} />
           {current?.supportedEffortLevels?.length ? (
             <>
               <h5>Esfuerzo de razonamiento</h5>

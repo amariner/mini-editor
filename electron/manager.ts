@@ -114,6 +114,7 @@ const liveKeys: (keyof ClaudeConfig)[] = [
   'permissionMode',
   'allowBypass', // Legacy UI capability flag; interactive runtimes now support mode changes at startup.
   'effort',
+  'fastMode',
   'thinking',
   'thinkingBudget',
   'thinkingDisplay',
@@ -1092,6 +1093,7 @@ export class Manager {
       preset: 'claude_code',
       append: [
         s.config?.appendSystemPrompt,
+        'For multi-step work, create a short task list at the beginning with TodoWrite or TaskCreate and update it as work progresses. Skip task lists for simple answers. Keep the parent task list separate from subagent tasks.',
         isolated
           ? isolatedInstructions(s.worktree!.branch, s.worktree!.base)
           : coordinationInstructions,
@@ -1417,6 +1419,7 @@ export class Manager {
     params.developerInstructions = [
       params.developerInstructions,
       coordinationInstructions,
+      'For multi-step work, publish a short plan with update_plan before starting and keep step statuses current. Skip plans for simple answers.',
       savingInstructions(level),
     ]
       .filter(Boolean)
@@ -1918,6 +1921,8 @@ export class Manager {
     if (rt) {
       if (patch.model !== undefined && patch.model !== before.model) await rt.setModel(patch.model);
       if (patch.permissionMode) await rt.setPermissionMode(patch.permissionMode);
+      if (patch.fastMode !== undefined && patch.fastMode !== before.fastMode)
+        await rt.setFastMode(patch.fastMode);
       if ('effort' in patch && patch.effort !== before.effort) await rt.setEffort(patch.effort);
       if (
         (patch.thinking && patch.thinking !== before.thinking) ||
