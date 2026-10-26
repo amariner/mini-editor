@@ -229,6 +229,7 @@ try {
     'Grafito',
     'Noche',
     'Papel',
+    'Ultraminimalista',
   ]);
   for (const [name, accent, scheme] of [
     ['Grafito', '#c5ab78', 'dark'],
@@ -260,7 +261,12 @@ try {
   assert.equal(await brand(), '#9aafc2');
   assert.match(await editor.inputValue(), /Noche/);
   await page.screenshot({ path: 'artifacts/interfaz-temas.png' });
-  await editor.fill((await editor.inputValue()).replace('--brand: #9aafc2;', '--brand: #ff3366;'));
+  await picker.selectOption({ label: 'Ultraminimalista' });
+  await state('Tema: Ultraminimalista');
+  assert.equal(await brand(), '#ebebeb');
+  assert.match(await editor.inputValue(), /TEMA ULTRAMINIMALISTA/);
+  await page.screenshot({ path: 'artifacts/interfaz-temas.png' });
+  await editor.fill((await editor.inputValue()).replace('--brand: #ebebeb;', '--brand: #ff3366;'));
   await page.getByRole('button', { name: 'Guardar como tema…', exact: true }).click();
   await page.getByRole('textbox', { name: 'Nombre del tema', exact: true }).fill('Mi neón');
   await page.getByRole('button', { name: 'Guardar tema', exact: true }).click();

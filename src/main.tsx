@@ -1535,7 +1535,7 @@ function App() {
         )}
         {gridVisible ? null : onboarding || !project ? (
           <div className="welcome">
-            <DeskMark size={42} />
+            <DeskMark size={42} colored />
             <h1>{hasAccounts ? 'Tu espacio de trabajo' : 'Empieza con tu cuenta'}</h1>
             <p>
               {hasAccounts
@@ -1597,7 +1597,7 @@ function App() {
                   )}
                   {!session && (
                     <div className="empty no-session">
-                      <DeskMark size={36} />
+                      <DeskMark size={36} colored />
                       <h2>{accountProfiles.length ? 'Todo listo' : 'Conecta tu cuenta'}</h2>
                       <p>
                         {accountProfiles.length

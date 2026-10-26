@@ -1,15 +1,7 @@
 import React from 'react';
 // Stable pseudo-random identity: renaming or reopening a project never changes its mark.
-const colors = [
-  '#8c9ed1',
-  '#b79bbd',
-  '#89b1a3',
-  '#c6a17e',
-  '#92afc1',
-  '#b6ae7f',
-  '#be9397',
-  '#a6a0c8',
-];
+// The eight colours are theme tokens (--mark-1 … --mark-8).
+const MARK_COLORS = 8;
 const shapes = [
   <circle cx="12" cy="12" r="8" />,
   <path d="M12 2 22 12 12 22 2 12Z" />,
@@ -28,7 +20,7 @@ export function ProjectMark({ identity }: { identity: string }) {
     <span
       className="project-mark"
       aria-hidden="true"
-      style={{ color: colors[(n >>> 8) % colors.length] }}
+      style={{ color: `var(--mark-${((n >>> 8) % MARK_COLORS) + 1})` }}
     >
       <svg viewBox="0 0 24 24" fill="currentColor">
         {shapes[n % shapes.length]}
@@ -37,7 +29,8 @@ export function ProjectMark({ identity }: { identity: string }) {
   );
 }
 /** Agent Desk's own mark: four of the project shapes on a 2×2 grid. */
-export function DeskMark({ size = 48 }: { size?: number }) {
+/** `colored` paints each shape with its project-mark token, like the app icon. */
+export function DeskMark({ size = 48, colored = false }: { size?: number; colored?: boolean }) {
   return (
     <svg
       className="desk-mark"
@@ -51,6 +44,7 @@ export function DeskMark({ size = 48 }: { size?: number }) {
         <g
           key={shape}
           transform={`translate(${(i % 2) * 25 + 1.5} ${Math.floor(i / 2) * 25 + 1.5}) scale(0.875)`}
+          style={colored ? { fill: `var(--mark-${i + 1})` } : undefined}
         >
           {shapes[shape]}
         </g>

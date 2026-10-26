@@ -15,9 +15,7 @@
   border-radius: 12px;
   background: var(--panel, var(--bg));
   color: var(--text);
-  box-shadow:
-    0 14px 40px #0005,
-    0 2px 8px #0003;
+  box-shadow: var(--shadow-pop), var(--shadow-soft);
   pointer-events: none;
   transform: rotate(-2deg);
   transition:
@@ -85,7 +83,7 @@
   color: var(--muted);
 }
 .app .sidebar .project-chat-row .project-chat-target .project-chat-status.working {
-  color: #c99030;
+  color: var(--working);
 }
 .app .sidebar .project-chat-row .project-chat-target .project-chat-status:is(.attention, .error) {
   color: var(--danger);

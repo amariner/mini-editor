@@ -115,6 +115,11 @@ try {
     path.join(stagedContents, 'MacOS/Electron'),
     path.join(stagedContents, 'MacOS/Agent Desk'),
   );
+  // Agent Desk icon (scripts/make-icon.mjs) replaces Electron's default.
+  await fs.copyFile(
+    path.join(root, 'build/icon.icns'),
+    path.join(stagedResources, 'electron.icns'),
+  );
   const plist = path.join(stagedContents, 'Info.plist');
   const set = (key, value) => run('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plist]);
   set('CFBundleDisplayName', 'Agent Desk');

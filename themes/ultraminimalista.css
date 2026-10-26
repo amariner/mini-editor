@@ -1,0 +1,379 @@
+/* ═══════════════════════════════════════════════════════════════
+   TEMA ULTRAMINIMALISTA
+   Blanco y negro, líneas finas, esquinas rectas y sin sombras.
+   Los extremos se suavizan un punto (sin #fff/#000 puros en el texto)
+   para que sea cómodo durante jornadas largas. Todo son tokens del
+   tema original: cambia aquí los valores y se aplican en toda la app.
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #fcfcfc;
+  --dots: #fcfcfc;
+  --card: #fcfcfc;
+  --tile: #f3f3f3;
+  --tile-hover: #ececec;
+  --line: #e4e4e4;
+  --text: #141414;
+  --text-2: #3a3a3a;
+  --muted: #6e6e6e;
+  --faint: #b5b5b5;
+  --sel: #141414;
+  --sel-text: #fcfcfc;
+  --brand: #141414;
+  --brand-contrast: #fcfcfc;
+  --accent: #141414;
+  --link: #141414;
+  --field-focus: #141414;
+  --accent-soft: #f3f3f3;
+  --accent-ink: #141414;
+  --danger: #c4262e;
+  --danger-soft: #fbefef;
+  --on-danger: #ffffff;
+  --ok: #141414;
+  --ok-contrast: #fcfcfc;
+  --warn: #141414;
+  --attention: #141414;
+  --working: #6e6e6e;
+  --glyph-claude: #3a3a3a;
+  --glyph-codex: #3a3a3a;
+  --c-green: #141414;
+  --c-blue: #141414;
+  --c-cyan: #141414;
+  --c-red: #c4262e;
+  --c-purple: #141414;
+  --c-orange: #141414;
+  --add-bg: #eef3ef;
+  --add-text: #2b5d3a;
+  --del-bg: #fbefef;
+  --del-text: #a8262c;
+  --code-ink: #141414;
+  --code-bg: #f3f3f3;
+  --code-line: #e4e4e4;
+  --code-block: #f8f8f8;
+  --tk-k: #141414;
+  --tk-s: #5a5a5a;
+  --tk-c: #8a8a8a;
+  --tk-n: #141414;
+  --tk-f: #141414;
+  --tk-t: #5a5a5a;
+  --tk-p: #141414;
+  --tk-v: #5a5a5a;
+  --tk-o: #141414;
+  /* Project marks in greys: the shape tells projects apart. */
+  --mark-1: #2a2a2a;
+  --mark-2: #4a4a4a;
+  --mark-3: #6a6a6a;
+  --mark-4: #8a8a8a;
+  --mark-5: #353535;
+  --mark-6: #5a5a5a;
+  --mark-7: #7a7a7a;
+  --mark-8: #9a9a9a;
+  --account-slate: #f3f3f3;
+  --account-blue: #f3f3f3;
+  --account-sage: #f3f3f3;
+  --account-lavender: #f3f3f3;
+  --account-sand: #f3f3f3;
+  --account-rose: #f3f3f3;
+  --quiet-focus: #141414;
+  --overlay: rgb(252 252 252 / 0.6);
+  --shadow: none;
+  --shadow-pop: none;
+  --shadow-soft: none;
+  --r: 0;
+  --rs: 0;
+  --rx: 0;
+  font-family:
+    'Inter',
+    -apple-system,
+    system-ui,
+    sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c0c0c;
+    --dots: #0c0c0c;
+    --card: #0c0c0c;
+    --tile: #161616;
+    --tile-hover: #1e1e1e;
+    --line: #242424;
+    --text: #ebebeb;
+    --text-2: #c4c4c4;
+    --muted: #8c8c8c;
+    --faint: #4a4a4a;
+    --sel: #ebebeb;
+    --sel-text: #0c0c0c;
+    --brand: #ebebeb;
+    --brand-contrast: #0c0c0c;
+    --accent: #ebebeb;
+    --link: #ebebeb;
+    --field-focus: #ebebeb;
+    --accent-soft: #161616;
+    --accent-ink: #ebebeb;
+    --danger: #ef6b6b;
+    --danger-soft: #2a1414;
+    --on-danger: #0c0c0c;
+    --ok: #ebebeb;
+    --ok-contrast: #0c0c0c;
+    --warn: #ebebeb;
+    --attention: #ebebeb;
+    --working: #8c8c8c;
+    --glyph-claude: #c4c4c4;
+    --glyph-codex: #c4c4c4;
+    --c-red: #ef6b6b;
+    --add-bg: #142019;
+    --add-text: #9ccfac;
+    --del-bg: #2a1414;
+    --del-text: #f09a9a;
+    --code-ink: #ebebeb;
+    --code-bg: #161616;
+    --code-line: #242424;
+    --code-block: #111111;
+    --tk-k: #ebebeb;
+    --tk-s: #a8a8a8;
+    --tk-c: #7a7a7a;
+    --tk-n: #ebebeb;
+    --tk-f: #ebebeb;
+    --tk-t: #a8a8a8;
+    --tk-p: #ebebeb;
+    --tk-v: #a8a8a8;
+    --tk-o: #ebebeb;
+    --mark-1: #e0e0e0;
+    --mark-2: #c0c0c0;
+    --mark-3: #a0a0a0;
+    --mark-4: #808080;
+    --mark-5: #d0d0d0;
+    --mark-6: #b0b0b0;
+    --mark-7: #909090;
+    --mark-8: #707070;
+    --account-slate: #161616;
+    --account-blue: #161616;
+    --account-sage: #161616;
+    --account-lavender: #161616;
+    --account-sand: #161616;
+    --account-rose: #161616;
+    --quiet-focus: #ebebeb;
+    --overlay: rgb(12 12 12 / 0.6);
+  }
+}
+
+/* Esquinas rectas en todo; los indicadores de estado siguen siendo puntos. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+.dot,
+.live-dot,
+.status i,
+.multichat-dot,
+.tab-state,
+.host-dot,
+.team-active,
+.todo-mark,
+.multichat-summary i,
+.chat-state-mark,
+.attention-badge {
+  border-radius: 50% !important;
+}
+
+/* Sin sombras de elevación: las capas se separan con una línea fina. */
+.app .modal,
+.app .palette,
+.app .popover,
+.app .toast {
+  border: 1px solid var(--line);
+}
+
+/* Foco de teclado: una línea fina y nítida, visible sobre blanco o negro. */
+:focus-visible {
+  outline: 1.5px solid var(--text) !important;
+  outline-offset: 2px;
+}
+
+/* Menos ruido visual */
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.bubble,
+.compact-conversation .bubble {
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.desk-input:has(.composer.enabled:focus-within) {
+  --desk-edge: var(--text);
+}
+.workspace .session-tab.selected {
+  border-color: var(--text);
+}
+.approval,
+.compact-conversation .approval {
+  background: var(--card);
+  border: 1px solid var(--text);
+}
+
+/* ─── Capas flotantes: cristal translúcido con desenfoque ─── */
+:root {
+  --glass: rgb(252 252 252 / 0.82);
+  --glass-blur: 22px;
+  --glass-edge: rgb(20 20 20 / 0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass: rgb(12 12 12 / 0.8);
+    --glass-edge: rgb(235 235 235 / 0.24);
+  }
+}
+.app .overlay,
+.account-settings .account-confirm-overlay {
+  background: var(--overlay) !important;
+}
+.app .modal,
+.modal.account-settings,
+.app .palette,
+.attention-panel,
+.account-settings .account-confirm,
+.app .popover,
+.composer .popover,
+.app .slash-menu,
+.composer-area .slash-menu,
+.multichat-card-menu,
+.multichat-layout-menu,
+.multichat-new-menu,
+.team-popover {
+  background: var(--glass) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+  border: 1px solid var(--glass-edge) !important;
+}
+/* Las capas internas no tapan el cristal. */
+.account-settings .settings-header,
+.app .palette-search,
+.app .palette-results {
+  background: transparent !important;
+}
+.app .modal :is(input, textarea, select) {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.app .palette-results button.on,
+.app .palette-results button:hover,
+.app .popover button:hover,
+.multichat-card-menu button:hover:enabled {
+  background: var(--tile);
+}
+.app .toast {
+  background: var(--text);
+  color: var(--bg);
+}
+
+/* ─── Chat flotante (.floating-chat-app): muy transparente, bordes finos ─── */
+:root {
+  --floating-opacity: 35%;
+  --floating-solid: 50%;
+  --floating-header-opacity: 0%;
+  --floating-composer-opacity: 30%;
+  --floating-options-opacity: 92%;
+  --floating-radius: 0px;
+  --floating-composer-radius: 0px;
+  --floating-gutter: 14px;
+  --fc-edge: rgb(0 0 0 / 0.18);
+  --fc-edge-inner: rgb(127 127 127 / 0.22);
+  --fc-fill: rgb(127 127 127 / 0.1);
+  --floating-border-color: var(--fc-edge);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fc-edge: rgb(255 255 255 / 0.22);
+  }
+}
+.app.floating-chat-app,
+.app.floating-chat-app:is(:hover, :focus-within) {
+  backdrop-filter: blur(30px) saturate(1.25);
+  -webkit-backdrop-filter: blur(30px) saturate(1.25);
+  border: 1px solid var(--fc-edge) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08) !important;
+}
+/* Texto legible sobre cualquier fondo */
+.floating-chat-app :is(.messages, .floating-chat-header, .desk-input) {
+  text-shadow:
+    0 0 6px var(--bg),
+    0 0 1px var(--bg);
+}
+.floating-chat-header {
+  border-bottom: 1px solid var(--fc-edge-inner) !important;
+  background: transparent !important;
+}
+.floating-chat-controls {
+  gap: 4px;
+}
+.floating-chat-controls button {
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+.floating-chat-controls button:hover,
+.floating-chat-controls button[aria-expanded='true'] {
+  border-color: var(--fc-edge-inner) !important;
+  background: var(--fc-fill) !important;
+}
+.floating-chat-controls .floating-chat-close:hover {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent) !important;
+}
+.floating-chat-app .messages .md,
+.floating-chat-app .messages .bubble {
+  color: var(--text);
+}
+.floating-chat-app
+  .messages
+  :is(
+    .bubble,
+    :not(pre) > code,
+    .badge,
+    .md-code,
+    pre.code,
+    pre.result,
+    pre.diff,
+    .tool,
+    .turn-changes,
+    .approval
+  ) {
+  background: var(--fc-fill) !important;
+  border: 1px solid var(--fc-edge-inner) !important;
+}
+.floating-chat-app .messages .response-work > .activity-messages {
+  border-left: 1px solid var(--fc-edge-inner);
+}
+.floating-chat-app .desk-input {
+  box-shadow: none !important;
+  border: 1px solid var(--fc-edge) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.floating-chat-app .desk-input:focus-within {
+  border-color: color-mix(in srgb, var(--text) 45%, transparent) !important;
+}
+.floating-chat-app
+  .desk-input
+  :is(.git-summary, .git-workflow, .composer, .composer.enabled:focus-within) {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.floating-chat-app .desk-input .git-summary {
+  border-bottom: 1px solid var(--fc-edge-inner) !important;
+}
+.floating-chat-app .desk-input .send:not(:disabled) {
+  border: 1px solid var(--fc-edge-inner);
+}
+.floating-chat-options {
+  border: 1px solid var(--fc-edge) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}

@@ -206,7 +206,7 @@
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: 0 8px 32px #00000020;
+  box-shadow: var(--shadow-pop);
   max-height: min(360px, 60vh);
   overscroll-behavior: contain;
 }

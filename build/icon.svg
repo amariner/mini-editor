@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Agent Desk: the four project shapes of the DeskMark on a calm graphite tile. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2b2a"/>
+      <stop offset="1" stop-color="#1a1a19"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184.5" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <g transform="translate(272 272) scale(10)">
+    <g transform="translate(1.5 1.5) scale(0.875)"><circle cx="12" cy="12" r="8" fill="#8c9ed1"/></g>
+    <g transform="translate(26.5 1.5) scale(0.875)"><path d="M12 2 22 12 12 22 2 12Z" fill="#b79bbd"/></g>
+    <g transform="translate(1.5 26.5) scale(0.875)"><path d="M12 3 22 21H2Z" fill="#89b1a3"/></g>
+    <g transform="translate(26.5 26.5) scale(0.875)"><rect x="4" y="4" width="16" height="16" rx="4" fill="#c6a17e"/></g>
+  </g>
+</svg>

@@ -1,10 +1,10 @@
-import { STYLES_EVENT } from './custom-styles';
 import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { ChevronsDown, ChevronsUp, MoveVertical, ScanLine, SlidersHorizontal } from 'lucide-react';
 import type { Session } from './shared';
 import { createTerminalStream } from './terminal-stream';
+import { STYLES_EVENT } from './custom-styles';
 export { sessionIsLive as live } from './session-tabs';
 import { sessionIsLive as live } from './session-tabs';
 const light = {
@@ -73,7 +73,7 @@ const night = {
   yellow: '#ceba92',
   brightYellow: '#ceba92',
 };
-const terminalTheme = () => {
+const terminalPalette = () => {
   const css = getComputedStyle(document.documentElement);
   const value = (name: string) => css.getPropertyValue(name).trim();
   if (value('--theme-terminal') === '1') {
@@ -105,6 +105,39 @@ const terminalTheme = () => {
   return value('--night-terminal') === '1' ? night : scheme().matches ? dark : light;
 };
 const scheme = () => window.matchMedia('(prefers-color-scheme: dark)');
+// Surface colours follow the theme tokens, so the canvas blends with its panel in every theme.
+// Tokens may use var() or color-mix(); xterm needs plain colours, so resolve them through a canvas.
+function resolveColor(token: string, fallback: string) {
+  const probe = document.createElement('span');
+  probe.style.color = `var(${token}, ${fallback})`;
+  probe.style.display = 'none';
+  document.body.append(probe);
+  const computed = getComputedStyle(probe).color;
+  probe.remove();
+  const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  if (!context) return fallback;
+  context.fillStyle = computed;
+  context.fillRect(0, 0, 1, 1);
+  const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+  return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+}
+function terminalTheme() {
+  const base = terminalPalette();
+  const css = getComputedStyle(document.documentElement);
+  if (
+    ['--theme-terminal', '--night-terminal'].some(
+      (name) => css.getPropertyValue(name).trim() === '1',
+    )
+  )
+    return base;
+  return {
+    ...base,
+    background: resolveColor('--terminal-bg', base.background),
+    foreground: resolveColor('--terminal-text', base.foreground),
+    cursor: resolveColor('--terminal-cursor', base.cursor),
+    selectionBackground: resolveColor('--terminal-selection', base.selectionBackground),
+  };
+}
 export function TerminalView({
   session,
   visible,

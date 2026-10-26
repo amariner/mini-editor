@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ProjectMark } from './project-mark';
 import { Globe, Monitor, Moon, Settings2, Sparkles, Sun } from 'lucide-react';
 import type { Theme } from './shared';
-import { StyleEditor } from './custom-styles';
+import { StyleEditor, StylePicker } from './custom-styles';
 const themes: { id: Theme; name: string; icon: typeof Sun }[] = [
   { id: 'system', name: 'Sistema', icon: Monitor },
   { id: 'light', name: 'Claro', icon: Sun },
@@ -133,6 +133,7 @@ export function InterfaceSettings({
           ))}
         </div>
       </div>
+      <StylePicker />
       <label className="interface-setting">
         <span>Iconos de proyectos</span>
         <select

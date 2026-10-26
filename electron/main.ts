@@ -10,6 +10,7 @@ import { Attachments } from './attachments';
 import { nativeImage } from 'electron';
 import { DeskBrowser } from './browser';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Manager } from './manager';
@@ -172,8 +173,14 @@ async function createWindow() {
   if (dev) await win.loadURL(dev);
   else await win.loadFile(path.join(__dirname, '../dist/index.html'));
 }
-const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#161616' : '#e9e8e4');
+// Matches --bg of the original theme, so the window never flashes another colour while loading.
+const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#1b1b1b' : '#f5f5f4');
 app.whenReady().then(async () => {
+  // The packaged bundle carries its own icon; development runs inside Electron.app.
+  if (!app.isPackaged) {
+    const icon = path.join(__dirname, '../build/icon.png');
+    if (fs.existsSync(icon)) app.dock?.setIcon(icon);
+  }
   // The chosen theme drives prefers-color-scheme for the app, the terminal and browser tabs.
   nativeTheme.themeSource = readTheme(app.getPath('userData'));
   nativeTheme.on('updated', () => {

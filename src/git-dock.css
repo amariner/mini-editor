@@ -52,7 +52,7 @@
   border-radius: 12px;
   background: var(--card);
   color: var(--text);
-  box-shadow: 0 12px 36px #0003;
+  box-shadow: var(--shadow-pop);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;

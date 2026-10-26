@@ -442,3 +442,63 @@
   font-size: 11px;
   line-height: 1.6;
 }
+
+/* Native checkboxes, radios and ranges take the theme's selection colour. */
+.app input:is([type='checkbox'], [type='radio'], [type='range']) {
+  accent-color: var(--sel);
+}
+
+/* Disclosures: one chevron everywhere, drawn in CSS so every theme restyles it. */
+.app
+  :is(.account-settings details, .approval details, details.git-history, details.tool-list)
+  > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+}
+.app
+  :is(.account-settings details, .approval details, details.git-history, details.tool-list)
+  > summary::-webkit-details-marker {
+  display: none;
+}
+.app
+  :is(.account-settings details, .approval details, details.git-history, details.tool-list)
+  > summary::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin: 0 3px 0 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.7;
+  transform: rotate(-45deg);
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+.app
+  :is(.account-settings details, .approval details, details.git-history, details.tool-list)[open]
+  > summary::before {
+  transform: translateY(-2px) rotate(45deg);
+}
+
+/* Palette search: the dialog is already the frame, so the field stays borderless. */
+.app .palette-search {
+  border-bottom: 1px solid var(--line);
+}
+.app .palette-search input,
+.app .palette-search input:focus-visible {
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  padding-inline: 0;
+}
+
+/* Empty project: the invitation sits at the optical centre, like the chat watermark. */
+.app .conversation > .no-session {
+  justify-content: center;
+  margin-block: auto;
+  padding-bottom: 12vh;
+}

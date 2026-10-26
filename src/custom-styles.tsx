@@ -18,6 +18,7 @@ const NAMES: Record<string, string> = {
   noche: 'Noche',
   grafito: 'Grafito',
   papel: 'Papel',
+  ultraminimalista: 'Ultraminimalista',
 };
 const builtinThemes = Object.entries(shipped)
   .map(([path, load]) => {
@@ -238,6 +239,72 @@ function useCssInput(
     };
   }, []);
   return ref;
+}
+/** Quick switch between the original look and the themes shipped in /themes. */
+export function StylePicker() {
+  const [active, setActive] = useState(activeTheme);
+  const [saved, setSaved] = useState(savedStyles);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      setActive(activeTheme());
+      setSaved(savedStyles());
+    };
+    window.addEventListener(STYLES_EVENT, sync);
+    return () => window.removeEventListener(STYLES_EVENT, sync);
+  }, []);
+  const options = [{ id: '', name: 'Original' }, ...builtinThemes];
+  const current = !saved ? '' : builtinThemes.some((t) => t.id === active) ? active! : 'custom';
+  const choose = async (id: string) => {
+    try {
+      const css = id ? await builtinThemes.find((t) => t.id === id)?.load() : '';
+      if (css === undefined) return;
+      store(css, id || undefined);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  };
+  const all =
+    current === 'custom' ? [...options, { id: 'custom', name: 'Personalizado' }] : options;
+  return (
+    <div className="interface-setting">
+      <span id="style-label">
+        Estilo
+        {failed && <small className="style-notice error">No se ha podido aplicar.</small>}
+      </span>
+      <div
+        className="segmented theme-switch style-switch"
+        role="radiogroup"
+        aria-labelledby="style-label"
+      >
+        {all.map(({ id, name }, index) => (
+          <button
+            key={id || 'original'}
+            role="radio"
+            aria-checked={current === id}
+            tabIndex={current === id ? 0 : -1}
+            className={current === id ? 'on' : ''}
+            disabled={id === 'custom'}
+            title={id === 'custom' ? 'CSS propio o uno de tus temas (Temas y CSS)' : undefined}
+            onClick={() => void choose(id)}
+            onKeyDown={(event) => {
+              const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+              if (!step) return;
+              event.preventDefault();
+              const next = (index + step + options.length) % options.length;
+              void choose(options[next].id);
+              event.currentTarget.parentElement
+                ?.querySelectorAll<HTMLButtonElement>('button')
+                [next]?.focus();
+            }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 export function StyleEditor() {
   const [base, setBase] = useState<string>();

@@ -19,7 +19,6 @@ import {
   UserRound,
   Palette,
   Globe,
-  ChevronDown,
   Star,
   Cable,
 } from 'lucide-react';
@@ -804,10 +803,7 @@ export function AccountsSettings({
             </section>
           )}
           <details className="account-tools">
-            <summary>
-              <ChevronDown size={14} aria-hidden="true" />
-              Herramientas y datos locales
-            </summary>
+            <summary>Herramientas y datos locales</summary>
             {(['claude', 'codex', 'gemini', 'freebuff'] as const)
               .filter((tool) =>
                 tool === 'freebuff'

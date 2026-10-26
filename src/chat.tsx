@@ -1537,7 +1537,7 @@ function CodexPermissionApproval({
             <button
               key={choice.decision}
               ref={i === 0 ? primary : undefined}
-              className={choice.decision === 'decline' ? 'danger' : i === 0 ? 'primary' : ''}
+              className={choice.decision === 'decline' ? 'danger-ghost' : i === 0 ? 'primary' : ''}
               title={choice.hint}
               onClick={() => void decide(choice.decision)}
             >

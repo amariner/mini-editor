@@ -55,7 +55,7 @@
   border-radius: 10px;
   background: var(--card);
   color: var(--text);
-  box-shadow: 0 12px 36px #0003;
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
 }
 .chat-switcher-menu:popover-open {
@@ -141,7 +141,7 @@
   color: var(--danger);
 }
 .chat-switcher-status.done {
-  color: var(--success, #78ae86);
+  color: var(--add-text);
 }
 .chat-switcher-menu .chat-switcher-rename {
   flex: none;
