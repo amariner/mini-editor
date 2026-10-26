@@ -51,7 +51,7 @@ try {
   const mark = await page.locator('.project-name .project-mark').first().boundingBox();
   assert.ok(Math.abs(plus.x + plus.width / 2 - mark.x - mark.width / 2) < 2);
   const search = page.getByRole('button', { name: 'Buscar proyectos y sesiones' });
-  assert.equal(await search.count(), 0, 'Search is hidden while projects fit without scrolling');
+  assert.equal(await search.count(), 1, 'Search is always discoverable without a shortcut');
   await page.keyboard.press('Meta+k');
   await page.getByPlaceholder('Buscar proyecto o sesión…').waitFor();
   await page.keyboard.press('Escape');
@@ -80,7 +80,7 @@ try {
   await input.press('Escape');
   await page.locator('.sidebar').dblclick({ position: { x: 2, y: 300 } });
   await page.locator('.sidebar.collapsed').waitFor();
-  assert.equal(await search.count(), 0);
+  assert.equal(await search.count(), 1);
   await page.getByRole('button', { name: 'Landing', exact: true }).focus();
   await page.keyboard.press('F2');
   await input.fill('Landing web');

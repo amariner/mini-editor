@@ -1,4 +1,6 @@
-import { ChatDetails } from './chat-details';
+import { ChatDetails, ChatDetailsContent } from './chat-details';
+import { usePanelPresence } from './panel-presence';
+import type { WorkspaceView } from './workspace-panel';
 import { FloatingChatHeader, DetachedChat } from './floating-chat';
 import { floatingChatId } from './floating-chat-state';
 import { useTextDrafts, useImageDrafts, initializeDraftLifetime } from './chat-drafts';
@@ -26,7 +28,6 @@ import {
   SquarePen,
   Search,
   Settings2,
-  GitBranch,
   Globe,
   X,
   Terminal,
@@ -35,8 +36,8 @@ import {
   ShieldCheck,
   ExternalLink,
   RefreshCw,
-  Check,
   PanelRightOpen,
+  PanelRight,
   PanelBottomOpen,
   ArrowDown,
   Maximize2,
@@ -75,6 +76,7 @@ import { applyStyles, resetStyles, savedStyles } from './custom-styles';
 import { accountCardStyle, suggestedAccountColor } from './account-color';
 import { isLocalPage, workspaceAvailability } from './workspace-availability';
 import { SnapshotSync } from './snapshot-sync';
+import { reconcileSnapshot } from './state-sharing';
 import { searchWorkspace } from './workspace-search';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
@@ -90,7 +92,11 @@ import './onboarding.css';
 import './project-navigation.css';
 import './chat-navigation.css';
 import './composer-dock.css';
-import { useScrollOverflow } from './scroll-overflow';
+import './workspace-shell.css';
+import './workspace-panel.css';
+const WorkspacePanel = React.lazy(() =>
+  import('./workspace-panel').then((module) => ({ default: module.WorkspacePanel })),
+);
 const AccountsSettings = React.lazy(() =>
   import('./accounts-settings').then((module) => ({ default: module.AccountsSettings })),
 );
@@ -113,7 +119,6 @@ function App() {
   const [drafts, setDrafts] = useTextDrafts();
   const [imageDrafts, setImageDrafts] = useImageDrafts();
   const split = useWorkspaceSplit();
-  const projectOverflow = useScrollOverflow();
   const terminalSplit = useWorkspaceSplit({
     storageKey: 'agent-desk.terminal-chat-width',
     cssVariable: '--terminal-chat-width',
@@ -165,10 +170,10 @@ function App() {
     [navigating, setNavigating] = useState(false),
     [closedSelection, setClosedSelection] = useState<string>(),
     [confirmClose, setConfirmClose] = useState<{ session: Session; remove: boolean }>(),
-    [showDiff, setShowDiff] = useState(false),
+    [panelOpen, setPanelOpen] = useState(false),
+    [panelView, setPanelView] = useState<WorkspaceView>('details'),
+    [panelFile, setPanelFile] = useState<{ path: string; key: number }>(),
     [showBrowser, setShowBrowser] = useState(false),
-    [showDetails, setShowDetails] = useState(false),
-    [detailsToggleMount, setDetailsToggleMount] = useState<HTMLSpanElement | null>(null),
     [browserTab, setBrowserTab] = useState<string>(),
     [showTerminalPanel, setShowTerminalPanel] = useState(false),
     [terminalTarget, setTerminalTarget] = useState<'default' | 'freebuff'>('default'),
@@ -189,6 +194,9 @@ function App() {
     [editingName, setEditingName] = useState<{ kind: 'project' | 'session'; id: string }>(),
     [stick, setStick] = useState(true),
     [seen, setSeen] = useState<Record<string, number>>({});
+  const panelTrigger = useRef<HTMLButtonElement>(null);
+  const panelElement = useRef<HTMLElement>(null);
+  const showDiff = panelOpen && panelView === 'changes';
   const appearance = useInterfacePreferences(setError);
   useModalFocus(search || settings || attentionOpen || !!confirmClose || !!removeId);
   useEffect(() => {
@@ -252,7 +260,7 @@ function App() {
       new SnapshotSync<Snapshot>(
         () => window.desk.invoke({ type: 'snapshot' }),
         (snapshot) => {
-          stateRef.current = visibleState(snapshot);
+          stateRef.current = visibleState(reconcileSnapshot(stateRef.current, snapshot));
           setState(stateRef.current);
         },
       ),
@@ -271,7 +279,7 @@ function App() {
         setMultichat('off');
       }
       if (e.type === 'browserOpened' && !floatingSessionId) {
-        setShowDetails(false);
+        setPanelOpen(false);
         setShowBrowser(true);
         setBrowserTab(e.tabId ?? e.sessionId);
       }
@@ -309,6 +317,23 @@ function App() {
   const onboarding = !floatingSessionId && (!hasAccounts || !hasProjects);
   const gridVisible = hasChats && multichat === 'grid';
   const browserVisible = canBrowse && showBrowser && !onboarding;
+  const panelVisible = panelOpen && !!project && !gridVisible && !floatingSessionId;
+  const toolsPresence = usePanelPresence(panelVisible || browserVisible);
+  const openWorkspace = (view: WorkspaceView, path?: string) => {
+    setPanelView(view);
+    setPanelOpen(true);
+    setShowBrowser(false);
+    setMultichat((mode) => (mode === 'grid' ? 'focused' : mode));
+    if (path !== undefined) setPanelFile({ path, key: Date.now() });
+  };
+  const closeWorkspace = () => {
+    setPanelOpen(false);
+    panelTrigger.current?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    if (panelVisible) panelElement.current?.focus({ preventScroll: true });
+  }, [panelVisible]);
+  useEffect(() => setPanelFile(undefined), [project?.id, session?.worktree?.cwd]);
   useEffect(() => {
     if (!hasChats) setMultichat('off');
   }, [hasChats]);
@@ -454,13 +479,22 @@ function App() {
           sessionId: session?.id,
           url,
         }),
-      openPath: (path) =>
-        void runRef.current({
-          type: 'openPath',
-          projectId: project.id,
-          sessionId: session?.id,
-          path,
-        }),
+      openPath: (path) => {
+        if (floatingSessionId) {
+          void runRef.current({
+            type: 'openPath',
+            projectId: project.id,
+            sessionId: session?.id,
+            path,
+          });
+          return;
+        }
+        const absolute =
+          path.startsWith('/') || path.startsWith('~') || path.startsWith('file:')
+            ? path
+            : `${session?.worktree?.cwd ?? project.path}/${path}`;
+        openWorkspace('files', absolute);
+      },
       revealPath: (path) =>
         void runRef.current({
           type: 'openPath',
@@ -483,7 +517,7 @@ function App() {
         });
         document.querySelector<HTMLElement>('.terminal-pane .xterm-helper-textarea')?.focus();
       },
-      showChanges: () => setShowDiff(true),
+      showChanges: () => openWorkspace('changes'),
       reuse: (text) => {
         if (!session) return;
         setDrafts((d) => ({ ...d, [session.id]: text }));
@@ -708,6 +742,9 @@ function App() {
           setAttentionOpen(false);
           setConfirmClose(undefined);
           setRemoveId(undefined);
+        } else if (panelVisible) {
+          e.preventDefault();
+          closeWorkspace();
         } else if (multichat === 'focused') {
           e.preventDefault();
           setMultichat('grid');
@@ -719,7 +756,7 @@ function App() {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [search, settings, attentionOpen, confirmClose, removeId, multichat]);
+  }, [search, settings, attentionOpen, confirmClose, removeId, multichat, panelVisible]);
   const refreshDiff = async () => {
     if (!project) return;
     const request = ++diffRequest.current;
@@ -730,7 +767,7 @@ function App() {
         type: 'diff',
         projectId: project.id,
         sessionId: session?.worktree ? session.id : undefined,
-        ...(compatibleRuntime(stateRef.current) ? { summaryOnly: !showDiff } : {}),
+        ...(compatibleRuntime(stateRef.current) ? { summaryOnly: true } : {}),
       });
       if (request === diffRequest.current) setDiff(d);
     } catch (e) {
@@ -1009,7 +1046,7 @@ function App() {
     setMultichat('off');
     if (tab) {
       setBrowserTab(tab.id);
-      setShowDetails(false);
+      setPanelOpen(false);
       setShowBrowser(true);
       if (tab.suspended)
         await run({
@@ -1023,7 +1060,7 @@ function App() {
         // Keep existing tabs reachable if creating a preview fails (for example
         // at the saved-tab limit), so the user can close one and retry.
         setBrowserTab(undefined);
-        setShowDetails(false);
+        setPanelOpen(false);
         setShowBrowser(true);
         await run({
           type: 'browserNew',
@@ -1131,24 +1168,22 @@ function App() {
                   >
                     <Plus size={15} />
                   </button>
-                  {projectOverflow.overflow && (
-                    <button
-                      className="search-projects"
-                      aria-label="Buscar proyectos y sesiones"
-                      title="Buscar (⌘K)"
-                      onClick={() => {
-                        setSearch(true);
-                        setQuery('');
-                        setSearchIndex(0);
-                      }}
-                    >
-                      <Search size={15} />
-                    </button>
-                  )}
+                  <button
+                    className="search-projects"
+                    aria-label="Buscar proyectos y sesiones"
+                    title="Buscar (⌘K)"
+                    onClick={() => {
+                      setSearch(true);
+                      setQuery('');
+                      setSearchIndex(0);
+                    }}
+                  >
+                    <Search size={15} />
+                  </button>
                 </div>
               </div>
-              <nav ref={projectOverflow.viewportRef} className="projects" aria-label="Proyectos">
-                <div ref={projectOverflow.contentRef} className="project-list">
+              <nav className="projects" aria-label="Proyectos">
+                <div className="project-list">
                   {state.projects.map((p) => {
                     const projectFolded = foldedProjects.includes(p.id);
                     const accordionId = `project-chats-${p.id}`;
@@ -1409,7 +1444,19 @@ function App() {
                 <ArrowLeft size={15} />
               </button>
             )}
-            <span className="chat-details-toolbar-slot" ref={setDetailsToggleMount} />
+            {project && !floatingSessionId && (
+              <button
+                ref={panelTrigger}
+                className={`chat-details-toggle ${panelVisible ? 'on' : ''}`}
+                title="Panel de trabajo · Detalles, archivos y cambios"
+                aria-label="Panel de trabajo"
+                aria-expanded={panelVisible}
+                aria-controls={toolsPresence.present ? 'workspace-tools' : undefined}
+                onClick={() => (panelVisible ? closeWorkspace() : openWorkspace(panelView))}
+              >
+                <PanelRight size={17} />
+              </button>
+            )}
             {hasChats && (
               <button
                 className={gridVisible ? 'on' : ''}
@@ -1469,13 +1516,22 @@ function App() {
                 root: s.worktree?.cwd ?? state.projects.find((p) => p.id === s.projectId)?.path,
                 openUrl: async (url) => {
                   if (await activate()) {
-                    setShowDetails(false);
+                    setPanelOpen(false);
                     setShowBrowser(true);
                     await run({ type: 'browserNew', projectId: s.projectId, sessionId: s.id, url });
                   }
                 },
-                openPath: (path) =>
-                  void run({ type: 'openPath', projectId: s.projectId, sessionId: s.id, path }),
+                openPath: async (path) => {
+                  if (!(await activate())) return;
+                  const root =
+                    s.worktree?.cwd ?? state.projects.find((p) => p.id === s.projectId)?.path;
+                  openWorkspace(
+                    'files',
+                    path.startsWith('/') || path.startsWith('~') || path.startsWith('file:')
+                      ? path
+                      : `${root}/${path}`,
+                  );
+                },
                 revealPath: (path) =>
                   void run({
                     type: 'openPath',
@@ -1492,7 +1548,7 @@ function App() {
                     dryRun,
                   })) as RewindResult | undefined,
                 showChanges: async () => {
-                  if (await activate()) setShowDiff(true);
+                  if (await activate()) openWorkspace('changes');
                 },
                 reuse: (text) => {
                   setDrafts((v) => ({ ...v, [s.id]: text }));
@@ -1563,28 +1619,19 @@ function App() {
             <div
               ref={split.ref}
               style={split.style}
-              className={`workspace ${showDiff || browserVisible ? 'with-tools' : ''} ${split.dragging ? 'resizing' : ''}`}
+              className={`workspace workspace-shell ${toolsPresence.present ? 'with-tools' : ''} ${browserVisible ? 'showing-browser' : ''} ${split.dragging ? 'resizing' : ''}`}
+              data-tools-open={toolsPresence.visible}
             >
               <ChatActionsContext.Provider value={chatActions}>
                 <section className="conversation">
-                  {session && !detached && (
+                  {floatingSessionId && session && !detached && (
                     <ChatDetails
                       key={session.id}
-                      open={showDetails}
-                      onOpenChange={(open) => {
-                        setShowDetails(open);
-                        if (open) setShowBrowser(false);
-                      }}
-                      triggerMount={floatingSessionId ? undefined : detailsToggleMount}
                       session={session}
                       project={project.name}
                       root={project.path}
                       git={diff}
                       gitError={diffError}
-                      showChanges={() => {
-                        setShowDetails(false);
-                        setShowDiff(true);
-                      }}
                     />
                   )}
                   {floatingSessionId && session && (
@@ -1869,7 +1916,7 @@ function App() {
                           state={diff}
                           error={diffError}
                           expandedDiff={showDiff}
-                          onDiff={() => setShowDiff((v) => !v)}
+                          onDiff={() => (showDiff ? closeWorkspace() : openWorkspace('changes'))}
                           refresh={refreshDiff}
                           compatible={compatibleRuntime(state)}
                           locked={state.sessions.some(
@@ -1976,75 +2023,82 @@ function App() {
                   )}
                 </section>
               </ChatActionsContext.Provider>
-              {(showDiff || browserVisible) && split.separator}
-              {(showDiff || browserVisible) && (
+              {toolsPresence.present && (
+                <div className="workspace-resize-slot" inert={!panelVisible && !browserVisible}>
+                  {split.separator}
+                </div>
+              )}
+              {toolsPresence.present && (
                 <aside
-                  className={`drawer tools-drawer ${[showDiff, browserVisible].filter(Boolean).length > 1 ? 'split' : ''} ${browserVisible ? 'with-browser' : ''}`}
+                  id="workspace-tools"
+                  ref={panelElement}
+                  tabIndex={-1}
+                  aria-label={browserVisible ? 'Navegador del proyecto' : 'Panel lateral'}
+                  aria-hidden={!panelVisible && !browserVisible}
+                  inert={!panelVisible && !browserVisible}
+                  data-open={toolsPresence.visible}
+                  className={`drawer tools-drawer workspace-tools ${browserVisible ? 'with-browser' : ''}`}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape' || event.defaultPrevented || browserVisible) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeWorkspace();
+                  }}
                 >
-                  {browserVisible && compatibleRuntime(state) && browserPanel}
-                  {showDiff && (
-                    <section className="tool-pane diff-panel">
-                      <div className="drawer-head">
-                        <strong>
-                          <GitBranch size={14} />
-                        </strong>
-                        <div>
-                          <button title="Actualizar" onClick={refreshDiff}>
-                            <RefreshCw size={14} />
-                          </button>
-                          <button title="Cerrar" onClick={() => setShowDiff(false)}>
-                            <X size={16} />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="drawer-body">
-                        {diffError ? (
-                          <p className="muted">{diffError}</p>
-                        ) : !diff ? (
-                          <p className="muted">Consultando Git…</p>
-                        ) : !diff.repository ? (
-                          <p className="muted">Esta carpeta no es un repositorio Git.</p>
-                        ) : !diff.status ? (
-                          <div className="clean-git">
-                            <Check size={22} />
-                            <p>No hay cambios locales.</p>
-                          </div>
-                        ) : (
-                          <div className="diff-body">
-                            {diff.diffError && <p className="muted">{diff.diffError}</p>}
-                            <h5>Archivos</h5>
-                            <pre className="code">{diff.status}</pre>
-                            {[
-                              ['Sin preparar', diff.unstaged],
-                              ['Preparados', diff.staged],
-                            ].map(
-                              ([label, text]) =>
-                                text && (
-                                  <section key={label}>
-                                    <h5>{label}</h5>
-                                    <pre className="diff">
-                                      {text.split('\n').map((line: string, i: number) => (
-                                        <div
-                                          className={
-                                            line.startsWith('+')
-                                              ? 'added'
-                                              : line.startsWith('-')
-                                                ? 'removed'
-                                                : ''
-                                          }
-                                          key={i}
-                                        >
-                                          {line || ' '}
-                                        </div>
-                                      ))}
-                                    </pre>
-                                  </section>
-                                ),
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </section>
+                  {browserVisible && compatibleRuntime(state) ? (
+                    browserPanel
+                  ) : (
+                    <React.Suspense
+                      fallback={
+                        <p className="muted workspace-loading" role="status">
+                          Abriendo panel…
+                        </p>
+                      }
+                    >
+                      <WorkspacePanel
+                        key={`${project.id}:${session?.worktree?.cwd ?? project.path}`}
+                        project={project}
+                        session={session}
+                        git={diff}
+                        gitError={diffError}
+                        view={panelView}
+                        onViewChange={setPanelView}
+                        onClose={closeWorkspace}
+                        onRefresh={refreshDiff}
+                        openFile={panelFile}
+                        disabled={!compatibleRuntime(state)}
+                        invoke={async (action) => {
+                          assertCompatibleAction(stateRef.current, action);
+                          return window.desk.invoke(action);
+                        }}
+                        onOpenExternal={(path) =>
+                          void run({
+                            type: 'openPath',
+                            projectId: project.id,
+                            sessionId: session?.id,
+                            path,
+                            workspace: true,
+                          })
+                        }
+                        details={
+                          session ? (
+                            <ChatDetailsContent
+                              session={session}
+                              project={project.name}
+                              root={session.worktree?.cwd ?? project.path}
+                              git={diff}
+                              gitError={diffError}
+                              showChanges={() => setPanelView('changes')}
+                            />
+                          ) : (
+                            <p className="muted">
+                              Abre un chat para ver su actividad. Puedes explorar archivos y cambios
+                              de este proyecto.
+                            </p>
+                          )
+                        }
+                      />
+                    </React.Suspense>
                   )}
                 </aside>
               )}
@@ -2252,7 +2306,14 @@ function App() {
                   }
                 }}
               />
-              <kbd>esc</kbd>
+              <button
+                className="palette-close"
+                aria-label="Cerrar búsqueda"
+                title="Cerrar búsqueda (Esc)"
+                onClick={() => setSearch(false)}
+              >
+                <X size={15} />
+              </button>
             </div>
             <div
               className="palette-results"
@@ -2279,6 +2340,17 @@ function App() {
                 </button>
               ))}
               {!results.length && <p className="muted">No hay resultados.</p>}
+            </div>
+            <div className="palette-footer" aria-hidden="true">
+              <span>
+                <kbd>↑↓</kbd> Elegir
+              </span>
+              <span>
+                <kbd>↵</kbd> Abrir
+              </span>
+              <span>
+                <kbd>esc</kbd> Cerrar
+              </span>
             </div>
           </div>
         </div>

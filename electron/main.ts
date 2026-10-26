@@ -15,6 +15,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Manager } from './manager';
 import { actionSchema } from './core';
+import { listWorkspaceFiles, readWorkspaceFile, readWorkspaceDiff } from './workspace-files';
 import { mcpElicitationUrl } from '../src/mcp-elicitation';
 import {
   clearProjectFiles,
@@ -644,9 +645,14 @@ app.whenReady().then(async () => {
         case 'openPath': {
           const project = manager.project(a.projectId);
           const chat = a.sessionId ? manager.session(a.sessionId) : undefined;
+          if (chat && chat.projectId !== project.id)
+            throw new Error('La sesión pertenece a otro proyecto.');
           // Paths of an isolated chat resolve inside its worktree.
-          const base =
-            chat?.projectId === project.id && chat.worktree ? chat.worktree.cwd : project.path;
+          const base = a.workspace
+            ? await manager.workspaceRoot(a.projectId, a.sessionId)
+            : chat?.worktree
+              ? chat.worktree.cwd
+              : project.path;
           const target = await resolveProjectPath(base, a.path);
           if (a.reveal || (!target.directory && !opensAsText(target.path)))
             shell.showItemInFolder(target.path);
@@ -658,6 +664,22 @@ app.whenReady().then(async () => {
         }
         case 'listFiles':
           return searchProjectFiles(manager.project(a.projectId).path, a.query);
+        case 'workspaceFiles':
+          return listWorkspaceFiles(
+            await manager.workspaceRoot(a.projectId, a.sessionId),
+            a.directory,
+            a.query,
+          );
+        case 'workspaceFile':
+          return readWorkspaceFile(await manager.workspaceRoot(a.projectId, a.sessionId), a.path);
+        case 'workspaceDiff':
+          return readWorkspaceDiff(
+            await manager.workspaceRoot(a.projectId, a.sessionId),
+            a.path,
+            a.staged,
+          );
+        case 'workspaceStage':
+          return manager.workspaceStage(a.projectId, a.sessionId, a.path, a.staged);
         case 'setTheme':
           writeTheme(app.getPath('userData'), a.theme);
           nativeTheme.themeSource = a.theme;

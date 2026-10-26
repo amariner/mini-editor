@@ -99,6 +99,11 @@ export class ClaudeRuntime {
   private wake?: () => void;
   private closed = false;
   private interrupted = false;
+  private appliedModel?: string;
+  private appliedEffort?: string;
+  private effortApplied = false;
+  private controls = Promise.resolve();
+  private controlsRevision = 0;
   private pending = new Map<string, Pending>();
   private pid?: number;
   stderr = '';
@@ -134,10 +139,23 @@ export class ClaudeRuntime {
       await new Promise<void>((r) => (this.wake = r));
     }
   }
+  private invalidateControls() {
+    this.appliedModel = undefined;
+    this.appliedEffort = undefined;
+    this.effortApplied = false;
+    this.controlsRevision++;
+  }
+  private configureControl(run: () => Promise<void>) {
+    // Settings can change while a turn is preparing its own model/effort controls.
+    const work = this.controls.then(run);
+    this.controls = work.catch(() => {});
+    return work;
+  }
   async start() {
     const { query } = await sdk();
     if (this.closed) throw new Error('Arranque de Claude cancelado.');
     const s = this.s;
+    this.invalidateControls();
     this.query = query({
       prompt: this.prompt(),
       options: {
@@ -196,6 +214,8 @@ export class ClaudeRuntime {
       reason = 'Claude Code terminó.';
     try {
       for await (const m of this.query) {
+        // Native initialization is authoritative, including after a resumed session.
+        if (m.type === 'system' && m.subtype === 'init') this.invalidateControls();
         // A turn stopped by the user ends in an execution error; the note already explains it.
         const stopped =
           m.type === 'result' && this.interrupted && m.subtype === 'error_during_execution';
@@ -359,8 +379,20 @@ export class ClaudeRuntime {
     return this.query.rewindFiles(checkpoint, { dryRun }) as Promise<RewindResult>;
   }
   async setModel(model: string) {
-    await this.query?.setModel(model === 'default' ? undefined : model);
-    if (this.s.info) this.s.info.model = model;
+    return this.configureControl(async () => {
+      if (!this.query || this.appliedModel === model) return;
+      const query = this.query,
+        revision = this.controlsRevision;
+      // A failed acknowledgement does not prove that the process kept its old settings.
+      this.appliedModel = undefined;
+      this.effortApplied = false;
+      await query.setModel(model === 'default' ? undefined : model);
+      if (query !== this.query || revision !== this.controlsRevision) return;
+      this.appliedModel = model;
+      // A new model can have different effort defaults or capabilities.
+      this.effortApplied = false;
+      if (this.s.info) this.s.info.model = model;
+    });
   }
   async setPermissionMode(mode: string) {
     if (!this.query)
@@ -372,8 +404,17 @@ export class ClaudeRuntime {
     await this.query?.applyFlagSettings({ fastMode });
   }
   async setEffort(effort?: string) {
-    await this.query?.applyFlagSettings({ effortLevel: effort ?? null });
-    if (this.s.info) this.s.info.effort = (effort as any) ?? null;
+    return this.configureControl(async () => {
+      if (!this.query || (this.effortApplied && this.appliedEffort === effort)) return;
+      const query = this.query,
+        revision = this.controlsRevision;
+      this.effortApplied = false;
+      await query.applyFlagSettings({ effortLevel: effort ?? null });
+      if (query !== this.query || revision !== this.controlsRevision) return;
+      this.appliedEffort = effort;
+      this.effortApplied = true;
+      if (this.s.info) this.s.info.effort = (effort as any) ?? null;
+    });
   }
   async setThinking(enabled: boolean, budget?: number, display?: string) {
     await this.query?.setMaxThinkingTokens(enabled ? (budget ?? null) : 0, display ?? null);

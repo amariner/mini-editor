@@ -21,6 +21,7 @@
   height: 32px;
 }
 .account-settings .settings-tabs {
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0 0 22px;
   padding-bottom: 12px;
@@ -345,6 +346,18 @@
   color: var(--text);
   box-shadow: var(--shadow-soft);
 }
+.account-settings .interface-setting select.style-switch {
+  width: 180px;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+.account-settings .style-themes {
+  flex-wrap: wrap;
+}
+.account-settings .style-themes select {
+  min-width: 0;
+  flex: 1 1 140px;
+}
 .account-settings .interface-preview {
   padding: 18px;
   gap: 14px;
@@ -569,6 +582,11 @@
   }
   .account-settings .account-card {
     padding: 13px;
+  }
+}
+@media (max-width: 480px) {
+  .account-settings .settings-tabs button {
+    flex: 1 1 calc(50% - 6px);
   }
 }
 .account-settings .account-confirm-overlay {

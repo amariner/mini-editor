@@ -228,6 +228,18 @@ try {
               return ['src/main.tsx', 'src/chat.tsx', 'src/markdown.tsx', 'README.md'].filter((f) =>
                 f.includes(action.query),
               );
+            if (action.type === 'workspaceFiles')
+              return { root: '/tmp/chat-design', entries: [], truncated: false };
+            if (action.type === 'workspaceFile')
+              return {
+                root: '/tmp/chat-design',
+                path: 'docs/wiki/sistema-de-diseno.md',
+                content: '# Sistema de diseño',
+                language: 'markdown',
+                binary: false,
+                truncated: false,
+                size: 20,
+              };
             if (
               ['refreshUsage', 'openPath', 'browserNew', 'approve', 'refreshModels'].includes(
                 action.type,
@@ -265,9 +277,14 @@ try {
       path: `artifacts/chat-v2-respuesta-${colorScheme === 'dark' ? 'oscuro' : 'claro'}.png`,
     });
     await chat.locator('a.md-link.path').click();
+    await chat
+      .getByRole('region', { name: 'Contenido de docs/wiki/sistema-de-diseno.md', exact: true })
+      .waitFor();
+    await chat.getByRole('button', { name: 'Cerrar panel de trabajo', exact: true }).click();
+    await chat.locator('.workspace-tools').waitFor({ state: 'detached' });
     await chat.locator('a.md-link.url').click();
     const actions = await page.evaluate(() => window.fixture.actions.map((a) => a.type));
-    assert.ok(actions.includes('openPath') && actions.includes('browserNew'));
+    assert.ok(actions.includes('workspaceFile') && actions.includes('browserNew'));
     if (colorScheme === 'dark') {
       await summary.click();
       await chat.locator('.response-work .tool-head').filter({ hasText: 'Editó' }).click();
@@ -591,6 +608,7 @@ try {
     const listeners = new Set();
     window.detailsFixture = {
       state,
+      actions: [],
       publish: () => {
         for (const fn of listeners) fn({ type: 'state', state: structuredClone(state) });
       },
@@ -604,6 +622,7 @@ try {
         return () => listeners.delete(fn);
       },
       async invoke(action) {
+        window.detailsFixture.actions.push(action);
         if (action.type === 'snapshot') return structuredClone(state);
         if (action.type === 'diff') return { repository: false };
         return true;
@@ -619,34 +638,68 @@ try {
     'Leyó 1 archivo, ejecutó 1 comando y editó 1 archivo 47 s 1 error',
   );
   await codexSummary.click();
+  await chat.locator('.response-work .tool.failed').waitFor();
   assert.equal(await chat.locator('.response-work .tool.failed').count(), 1);
   await chat.locator('.turn-changes-toggle').click();
   assert.match(await chat.locator('.turn-changes').innerText(), /src\/dates\.ts/);
   assert.equal(await chat.locator('.todo-panel').count(), 1);
-  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
   assert.deepEqual(errors, []);
-  await chat.getByRole('complementary', { name: 'Detalles del chat' }).waitFor();
-  assert.match(await chat.locator('.chat-details').innerText(), /Entorno/);
-  assert.equal(await chat.locator('.chat-details details').count(), 1);
-  assert.equal(await page.getByRole('button', { name: 'Cerrar detalles' }).count(), 0);
+  await chat.locator('.workspace-tools .chat-details-content').waitFor();
+  assert.match(await chat.locator('.workspace-tools .chat-details-content').innerText(), /Entorno/);
+  assert.equal(await chat.locator('.workspace-tools .chat-details-content details').count(), 1);
+  const closeDetails = chat.getByRole('button', { name: 'Cerrar panel de trabajo', exact: true });
+  await closeDetails.click();
+  await chat.locator('.workspace-tools .chat-details-content').waitFor({ state: 'detached' });
+  assert.ok(
+    await page
+      .getByRole('button', { name: 'Panel de trabajo', exact: true })
+      .evaluate((element) => element === document.activeElement),
+  );
+  // Escape closes the workspace even after focus moves back to a running chat.
+  await page.evaluate(() => {
+    window.detailsFixture.state.sessions[0].status = 'working';
+    window.detailsFixture.publish();
+  });
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
+  await chat.locator('.workspace-tools .chat-details-status').getByText('Trabajando').waitFor();
+  const composer = chat.locator('.composer textarea');
+  await composer.focus();
+  assert.ok(await composer.evaluate((element) => element === document.activeElement));
+  await page.keyboard.press('Escape');
+  await chat.locator('.workspace-tools').waitFor({ state: 'detached' });
+  assert.ok(
+    await page
+      .getByRole('button', { name: 'Panel de trabajo', exact: true })
+      .evaluate((element) => element === document.activeElement),
+  );
+  assert.equal(
+    await page.evaluate(() => window.detailsFixture.actions.some((a) => a.type === 'interrupt')),
+    false,
+  );
+  await page.evaluate(() => {
+    window.detailsFixture.state.sessions[0].status = 'ready';
+    window.detailsFixture.publish();
+  });
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
   assert.doesNotMatch(
-    await chat.locator('.chat-details').innerText(),
+    await chat.locator('.workspace-tools .chat-details-content').innerText(),
     /Sin datos|Sin rama|default|Sin información/,
   );
   const toggleBox = await page
-    .getByRole('button', { name: 'Detalles del chat', exact: true })
+    .getByRole('button', { name: 'Panel de trabajo', exact: true })
     .boundingBox();
   const gridBox = await page.getByRole('button', { name: 'Multichat', exact: true }).boundingBox();
   assert.ok(toggleBox.x < gridBox.x && Math.abs(toggleBox.y - gridBox.y) < 3);
   await page.getByRole('button', { name: 'Navegador', exact: true }).click();
   await page.locator('.browser-pane').waitFor();
-  assert.equal(await chat.locator('.chat-details').count(), 0);
-  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  await chat.locator('.workspace-tools .chat-details-content').waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
   assert.equal(await page.locator('.browser-pane').count(), 0);
   await page.evaluate(() => window.detailsFixture.openBrowser());
   await page.locator('.browser-pane').waitFor();
-  assert.equal(await chat.locator('.chat-details').count(), 0);
-  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  await chat.locator('.workspace-tools .chat-details-content').waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
   await page.evaluate(() => {
     window.detailsFixture.state.sessions[0].stats = {
       contextPercent: 4,
@@ -661,12 +714,25 @@ try {
     };
     window.detailsFixture.publish();
   });
-  await page.waitForFunction(() => document.querySelector('.chat-details progress'));
-  assert.equal(await chat.locator('.chat-details details').count(), 2);
+  await page.waitForFunction(() =>
+    document.querySelector('.workspace-tools .chat-details-content progress'),
+  );
+  assert.equal(await chat.locator('.workspace-tools .chat-details-content details').count(), 2);
 
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('.workspace-tools');
+    return panel && getComputedStyle(panel).opacity === '1';
+  });
+  const widePanel = await chat.locator('.workspace-tools').boundingBox();
+  const wideConversation = await chat.locator('.conversation').boundingBox();
+  assert.ok(
+    wideConversation.x + wideConversation.width <= widePanel.x + 1,
+    'Wide workspace reserves a separate column for details',
+  );
+  assert.ok(await chat.getByRole('separator', { name: 'Ancho del chat', exact: true }).isVisible());
   await page.screenshot({ path: 'artifacts/chat-details-wide.png' });
-  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
-  assert.equal(await chat.locator('.chat-details').count(), 0);
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
+  await chat.locator('.workspace-tools .chat-details-content').waitFor({ state: 'detached' });
   await chat.locator('.tools-toggle').click();
   await chat.getByRole('button', { name: 'Velocidad de respuesta', exact: true }).click();
   assert.match(
@@ -676,11 +742,18 @@ try {
   await chat.getByRole('button', { name: 'Activar modo rápido' }).click();
 
   await page.setViewportSize({ width: 760, height: 800 });
-  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
-  const panelBounds = await chat.locator('.chat-details').boundingBox();
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
+  await page.waitForFunction(
+    () => getComputedStyle(document.querySelector('.workspace-tools')).opacity === '1',
+  );
+  const panelBounds = await chat.locator('.workspace-tools').boundingBox();
   assert.ok(panelBounds && panelBounds.x >= 0 && panelBounds.x + panelBounds.width <= 760);
+  assert.equal(
+    await chat.getByRole('separator', { name: 'Ancho del chat', exact: true }).isVisible(),
+    false,
+  );
   await page.screenshot({ path: 'artifacts/chat-details-narrow.png' });
-  await page.getByRole('button', { name: 'Detalles del chat', exact: true }).click();
+  await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
 
   await page.screenshot({ path: 'artifacts/chat-v2-codex.png' });
   await page.getByRole('button', { name: 'Multichat', exact: true }).click();
@@ -689,7 +762,7 @@ try {
   await detailsToggle.click();
   await card.locator('.chat-details').waitFor();
   await page.keyboard.press('Escape');
-  assert.equal(await card.locator('.chat-details').count(), 0);
+  await card.locator('.chat-details').waitFor({ state: 'detached' });
   assert.ok(await detailsToggle.evaluate((el) => el === document.activeElement));
 
   assert.deepEqual(errors, []);

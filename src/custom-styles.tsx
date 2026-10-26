@@ -245,24 +245,30 @@ export function StylePicker() {
   const [active, setActive] = useState(activeTheme);
   const [saved, setSaved] = useState(savedStyles);
   const [failed, setFailed] = useState(false);
+  const selection = useRef(0);
   useEffect(() => {
     const sync = () => {
+      selection.current++;
       setActive(activeTheme());
       setSaved(savedStyles());
     };
     window.addEventListener(STYLES_EVENT, sync);
-    return () => window.removeEventListener(STYLES_EVENT, sync);
+    return () => {
+      selection.current++;
+      window.removeEventListener(STYLES_EVENT, sync);
+    };
   }, []);
   const options = [{ id: '', name: 'Original' }, ...builtinThemes];
   const current = !saved ? '' : builtinThemes.some((t) => t.id === active) ? active! : 'custom';
   const choose = async (id: string) => {
+    const request = ++selection.current;
     try {
       const css = id ? await builtinThemes.find((t) => t.id === id)?.load() : '';
-      if (css === undefined) return;
+      if (request !== selection.current || css === undefined) return;
       store(css, id || undefined);
       setFailed(false);
     } catch {
-      setFailed(true);
+      if (request === selection.current) setFailed(true);
     }
   };
   const all =
@@ -273,36 +279,18 @@ export function StylePicker() {
         Estilo
         {failed && <small className="style-notice error">No se ha podido aplicar.</small>}
       </span>
-      <div
-        className="segmented theme-switch style-switch"
-        role="radiogroup"
+      <select
+        className="style-switch"
         aria-labelledby="style-label"
+        value={current}
+        onChange={(event) => void choose(event.target.value)}
       >
-        {all.map(({ id, name }, index) => (
-          <button
-            key={id || 'original'}
-            role="radio"
-            aria-checked={current === id}
-            tabIndex={current === id ? 0 : -1}
-            className={current === id ? 'on' : ''}
-            disabled={id === 'custom'}
-            title={id === 'custom' ? 'CSS propio o uno de tus temas (Temas y CSS)' : undefined}
-            onClick={() => void choose(id)}
-            onKeyDown={(event) => {
-              const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
-              if (!step) return;
-              event.preventDefault();
-              const next = (index + step + options.length) % options.length;
-              void choose(options[next].id);
-              event.currentTarget.parentElement
-                ?.querySelectorAll<HTMLButtonElement>('button')
-                [next]?.focus();
-            }}
-          >
+        {all.map(({ id, name }) => (
+          <option key={id || 'original'} value={id} disabled={id === 'custom'}>
             {name}
-          </button>
+          </option>
         ))}
-      </div>
+      </select>
     </div>
   );
 }
@@ -337,6 +325,8 @@ export function StyleEditor() {
       import('./onboarding.css?raw'),
       import('./project-navigation.css?raw'),
       import('./composer-dock.css?raw'),
+      import('./workspace-shell.css?raw'),
+      import('./workspace-panel.css?raw'),
     ]).then((styles) => alive && setBase(styles.map((style) => style.default).join('\n\n')));
     const sync = () => {
       documentVersion.current++;

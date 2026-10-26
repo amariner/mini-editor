@@ -222,8 +222,8 @@ try {
     );
     assert.equal(
       await page.getByRole('button', { name: 'Buscar proyectos y sesiones', exact: true }).count(),
-      0,
-      'Search stays hidden when projects fit',
+      1,
+      'Search stays available even when projects fit',
     );
     check(`${colorScheme}: removed top chrome and redundant controls`);
 
@@ -272,35 +272,26 @@ try {
     const restingRowBounds = await row.boundingBox();
     await firstProject.locator('.project-name').hover();
     await visiblyShown(page, '[data-project-id="p"] .project-new-chat');
-    assert.equal(await newChat.locator('.lucide-plus').count(), 1, 'New chat uses a quiet plus');
+    assert.equal(await newChat.locator('svg').count(), 1, 'New chat retains a compact icon');
     const newChatBounds = await newChat.boundingBox();
     const projectHeaderBounds = await firstProject.locator('.project-row').boundingBox();
     const hoveringRowBounds = await row.boundingBox();
     assert.ok(
-      newChatBounds.y >= projectHeaderBounds.y + projectHeaderBounds.height - 1 &&
-        newChatBounds.y + newChatBounds.height <= hoveringRowBounds.y + 1,
-      'Creation divider sits between the project header and newest chat',
+      newChatBounds.y >= projectHeaderBounds.y &&
+        newChatBounds.y + newChatBounds.height <=
+          projectHeaderBounds.y + projectHeaderBounds.height + 1,
+      'New chat stays within its project header',
     );
     assert.ok(
       Math.abs(hoveringRowBounds.y - restingRowBounds.y) <= 0.5,
-      'Revealing the divider does not move the chat rows',
+      'Revealing the new-chat control does not move the chat rows',
     );
-    await assertAligned(newChat, newChat.locator('svg'), 'x', 'Plus is centered in the divider');
-    await assertAligned(newChat, newChat.locator('svg'), 'y', 'Plus shares the horizontal line');
-    const lines = await newChat.evaluate((element) =>
-      ['::before', '::after'].map((pseudo) => {
-        const style = getComputedStyle(element, pseudo);
-        return {
-          content: style.content,
-          width: parseFloat(style.width),
-          height: parseFloat(style.height),
-        };
-      }),
-    );
-    assert.ok(
-      lines.every((line) => line.content !== 'none' && line.width > 20 && line.height <= 1) &&
-        Math.abs(lines[0].width - lines[1].width) <= 1,
-      'Matching fine divider lines flank the centered plus',
+    await assertAligned(newChat, newChat.locator('svg'), 'x', 'New-chat icon is centered');
+    await assertAligned(
+      newChat,
+      newChat.locator('svg'),
+      'y',
+      'New-chat icon is centered vertically',
     );
     await composer.focus();
     await page.mouse.move(1000, 150);
@@ -309,11 +300,11 @@ try {
     await visiblyShown(page, '[data-project-id="p"] .project-new-chat');
     assert.ok(
       Math.abs((await row.boundingBox()).y - restingRowBounds.y) <= 0.5,
-      'Keyboard focus reveals the divider without moving chats',
+      'Keyboard focus reveals the control without moving chats',
     );
     await page.screenshot({ path: `${artifactRoot}/${colorScheme}-desktop.png` });
     check(
-      `${colorScheme}: deletion replaces status; centered creation divider appears on hover and focus without layout shift`,
+      `${colorScheme}: deletion replaces status; creation control appears on hover and focus without layout shift`,
     );
 
     assert.equal(
@@ -550,7 +541,7 @@ try {
     assert.equal(
       await firstProject.locator('.project-new-chat').boundingBox(),
       null,
-      'Collapsed rail has no creation divider',
+      'Collapsed rail has no new-chat control',
     );
     await sidebar.locator('.traffic-space').hover();
     await assertAligned(
@@ -581,11 +572,10 @@ try {
     });
     const search = page.getByRole('button', { name: 'Buscar proyectos y sesiones', exact: true });
     await search.waitFor();
-    assert.ok(
-      await page
-        .locator('.projects')
-        .evaluate((element) => element.scrollHeight > element.clientHeight + 1),
-    );
+    await page.waitForFunction(() => {
+      const projects = document.querySelector('.projects');
+      return projects.scrollHeight > projects.clientHeight + 1;
+    });
     await search.click();
     await page.getByRole('dialog', { name: 'Buscar proyectos y sesiones', exact: true }).waitFor();
     await page.keyboard.press('Escape');
@@ -595,8 +585,8 @@ try {
       );
       window.fixture.publish();
     });
-    await search.waitFor({ state: 'detached' });
-    check(`${colorScheme}: search tracks project-list overflow dynamically`);
+    await search.waitFor({ state: 'visible' });
+    check(`${colorScheme}: search stays available with or without project-list overflow`);
 
     await page.mouse.move(1000, 150);
     await newChat.focus();
@@ -686,7 +676,7 @@ try {
       );
       window.fixture.publish();
     });
-    await search.waitFor({ state: 'detached' });
+    await search.waitFor({ state: 'visible' });
     await page.waitForFunction(
       () => document.querySelector('.composer textarea')?.value === 'Borrador que debe conservarse',
     );

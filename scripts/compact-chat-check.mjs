@@ -134,7 +134,15 @@ try {
   assert.ok(composer.y - (dock.y + dock.height) < 10);
   assert.ok(context.y >= composer.y + composer.height);
   assert.ok(dock.height <= 26);
-  assert.equal(await chat.locator('.task-signature').innerText(), 'Personal');
+  assert.equal(
+    await chat
+      .getByRole('combobox', { name: 'Cuenta del chat', exact: true })
+      .locator('option:checked')
+      .innerText(),
+    'Personal',
+  );
+  assert.equal(await chat.locator('.composer-model').innerText(), 'Sonnet 5.5');
+  assert.ok(await chat.locator('.composer-model').isVisible());
   const insight = chat.locator('.footer-insight');
   const insightCard = chat.locator('.footer-insight-card');
   assert.equal(await insightCard.isVisible(), false);
@@ -251,6 +259,7 @@ try {
     false,
   );
   await chat.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
+  await chat.locator('.response-work .tool').first().waitFor();
   assert.equal(await chat.locator('.response-work .tool').count(), 2);
   assert.ok(
     await chat
@@ -267,6 +276,7 @@ try {
     1,
   );
   await chat.getByText('Leyó 1 archivo y ejecutó 1 comando', { exact: true }).click();
+  await chat.locator('.response-work .tool').first().waitFor({ state: 'detached' });
   await page.screenshot({ path: 'artifacts/chat-compacto-respuesta.png' });
   // Existing final response must remain visible while the next process starts.
   await page.evaluate(() => {

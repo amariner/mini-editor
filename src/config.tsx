@@ -17,19 +17,55 @@ function Tiles<T extends string>({
   value,
   onChange,
   small,
+  label,
 }: {
+  label: string;
   options: { id: T; name: string; hint?: string }[];
   value: T | undefined;
   onChange: (v: T) => void;
   small?: boolean;
 }) {
   return (
-    <div className={`tiles ${small ? 'small' : ''}`}>
-      {options.map((o) => (
+    <div className={`tiles ${small ? 'small' : ''}`} role="radiogroup" aria-label={label}>
+      {options.map((o, index) => (
         <button
-          key={o.id}
+          key={o.id ?? 'auto'}
+          type="button"
+          role="radio"
+          aria-checked={o.id === value}
+          tabIndex={
+            o.id === value || (!options.some((option) => option.id === value) && index === 0)
+              ? 0
+              : -1
+          }
           className={`tile ${o.id === value ? 'on' : ''}`}
-          onClick={() => onChange(o.id)}
+          onClick={() => {
+            if (o.id !== value) onChange(o.id);
+          }}
+          onKeyDown={(event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey) return;
+            if (
+              !['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Home', 'End'].includes(
+                event.key,
+              )
+            )
+              return;
+            event.preventDefault();
+            const next =
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? options.length - 1
+                  : (index +
+                      (event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                        ? options.length - 1
+                        : 1)) %
+                    options.length;
+            event.currentTarget.parentElement
+              ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+              [next]?.focus();
+            if (options[next].id !== value) onChange(options[next].id);
+          }}
         >
           <span className="tile-title">{o.name}</span>
           {o.hint && <span className="tile-desc">{o.hint}</span>}
@@ -143,7 +179,12 @@ export function ConfigPanel({
         )}
         <section>
           <h4>Modelo</h4>
-          <Tiles options={models} value={c.model} onChange={(model) => set({ model })} />
+          <Tiles
+            label="Modelo"
+            options={models}
+            value={c.model}
+            onChange={(model) => set({ model })}
+          />
           <label className="field">
             Modelo de reserva si el principal está saturado
             <input
@@ -156,6 +197,7 @@ export function ConfigPanel({
         <section>
           <h4>Permisos</h4>
           <Tiles
+            label="Permisos"
             options={permissionModes}
             value={c.permissionMode}
             onChange={(permissionMode) =>
@@ -231,12 +273,14 @@ export function ConfigPanel({
           <h4>Razonamiento</h4>
           <FastModeControl session={session} run={run} />
           <Tiles
+            label="Esfuerzo de razonamiento"
             small
             options={[{ id: undefined as any, name: 'Auto' }, ...efforts]}
             value={c.effort}
             onChange={(effort) => set({ effort: (effort as any) ?? undefined })}
           />
           <Tiles
+            label="Razonamiento"
             small
             options={[
               { id: 'adaptive', name: 'Adaptativo' },
@@ -448,6 +492,7 @@ export function CodexConfigPanel({
         <section>
           <h4>Modelo</h4>
           <Tiles
+            label="Modelo"
             options={[
               { id: 'default', name: 'Por defecto', hint: 'El de tu cuenta de ChatGPT.' },
               ...models.map((m) => ({ id: m.value, name: m.displayName, hint: m.description })),
@@ -461,6 +506,7 @@ export function CodexConfigPanel({
             <>
               <h5>Esfuerzo de razonamiento</h5>
               <Tiles
+                label="Esfuerzo de razonamiento"
                 small
                 options={[
                   { id: undefined as any, name: 'Por defecto' },
@@ -475,12 +521,14 @@ export function CodexConfigPanel({
         <section>
           <h4>Aprobaciones</h4>
           <Tiles
+            label="Aprobaciones"
             options={codexApprovals}
             value={c.approvalPolicy}
             onChange={(approvalPolicy) => set({ approvalPolicy })}
           />
           <h5>Sandbox</h5>
           <Tiles
+            label="Sandbox"
             options={codexSandboxes}
             value={c.sandbox}
             onChange={(sandbox) => set({ sandbox })}
@@ -494,6 +542,7 @@ export function CodexConfigPanel({
         <section>
           <h4>Estilo</h4>
           <Tiles
+            label="Estilo"
             small
             options={[
               { id: 'none', name: 'Neutro' },

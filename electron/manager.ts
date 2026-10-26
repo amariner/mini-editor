@@ -9,6 +9,7 @@ import {
 import { effectiveMcpIds, supportsManagedMcp, type McpConnectionInput } from '../src/mcp-types';
 import { Teams } from './teams';
 import { readGit, changeGit, repositoryRoot } from './git';
+import { stageWorkspaceFile } from './workspace-files';
 import {
   commitWorktree,
   createWorktree,
@@ -478,11 +479,17 @@ export class Manager {
       for (const session of sessions) this.buffers.delete(session.id);
     });
   }
-  changed() {
+  changed(session?: Session) {
+    // Provider deltas affect one chat. Global configuration changes still refresh every chat.
     if (this.mcp)
-      for (const s of this.state.sessions) {
-        const rt = this.runtimes.get(s.id);
-        s.mcpAppliedIds = rt?.mcpIds ? [...rt.mcpIds] : undefined;
+      for (const s of session ? [session] : this.state.sessions) {
+        const ids = this.runtimes.get(s.id)?.mcpIds;
+        if (!ids) s.mcpAppliedIds = undefined;
+        else if (
+          s.mcpAppliedIds?.length !== ids.length ||
+          ids.some((id, index) => s.mcpAppliedIds![index] !== id)
+        )
+          s.mcpAppliedIds = [...ids];
         s.mcpPending = this.mcpNeedsRefresh(s);
       }
     if (!this.pumpQueued) {
@@ -880,7 +887,7 @@ export class Manager {
               project.path,
               this.profilesRoot,
               this.accounts.opencode,
-              () => this.changed(),
+              () => this.changed(s),
               () => this.selectedModels(s.profile),
               this.networkEnvironment,
             );
@@ -891,7 +898,7 @@ export class Manager {
               s,
               project.path,
               this.accounts.api(s.profile),
-              () => this.changed(),
+              () => this.changed(s),
               () => this.selectedModels(s.profile),
               () => savingInstructions(this.optimization(s.profile).level),
             );
@@ -912,7 +919,7 @@ export class Manager {
               binary,
               project.path,
               this.networkEnvironment(),
-              () => this.changed(),
+              () => this.changed(s),
             );
             rt.provider = runtime;
             await runtime.start();
@@ -928,7 +935,7 @@ export class Manager {
             project.path,
             this.state.profiles?.find((p) => p.id === s.profile)?.googleCloudProject,
           );
-          const gemini = new GeminiRuntime(s, rpc, project.path, () => this.changed());
+          const gemini = new GeminiRuntime(s, rpc, project.path, () => this.changed(s));
           rt.provider = gemini;
           await gemini.start();
         }
@@ -1163,7 +1170,7 @@ export class Manager {
     const runtime = (rt.claude = new ClaudeRuntime(
       s,
       options,
-      () => this.changed(),
+      () => this.changed(s),
       (reason, unexpected) => this.exited(s, reason, undefined, !unexpected),
     ));
     await runtime.start();
@@ -1473,17 +1480,17 @@ export class Manager {
           .then(() => this.codexModels(s))
           .catch((e) => {
             s.error = e.message;
-            this.changed();
+            this.changed(s);
           });
       else
         s.error = `No se ha completado el inicio de sesión. ${p.error ?? 'Puedes volver a intentarlo.'}`;
-      this.changed();
+      this.changed(s);
       return;
     }
     if (method === 'account/updated') {
       void this.account(s).catch((e) => {
         s.error = e.message;
-        this.changed();
+        this.changed(s);
       });
       return;
     }
@@ -1531,7 +1538,7 @@ export class Manager {
         rt.pendingUserText = undefined;
       }
     }
-    this.changed();
+    this.changed(s);
   }
   request(s: Session, m: any) {
     const supported = [
@@ -2264,6 +2271,41 @@ export class Manager {
       ? await readGit(s.worktree.cwd, summaryOnly)
       : await readGit(project.path, summaryOnly);
     return { ...snapshot, worktree: status };
+  }
+  /** The files panel uses the whole checkout, matching paths returned by Git status. */
+  async workspaceRoot(id: string, sessionId?: string) {
+    const project = this.project(id);
+    const session = sessionId ? this.session(sessionId) : undefined;
+    if (session && session.projectId !== id)
+      throw new Error('La sesión pertenece a otro proyecto.');
+    const cwd = session?.worktree?.cwd ?? project.path;
+    // A missing worktree is an error; never silently operate on the shared checkout instead.
+    const real = await fs.promises.realpath(cwd);
+    return (await repositoryRoot(real)) ?? real;
+  }
+  async workspaceStage(id: string, sessionId: string | undefined, file: string, staged: boolean) {
+    const root = await this.workspaceRoot(id, sessionId);
+    if (!(await repositoryRoot(root))) throw new Error('Esta carpeta no es un repositorio Git.');
+    const session = sessionId ? this.session(sessionId) : undefined;
+    const lockRoot = session?.worktree?.root ?? root;
+    if (this.gitJobs.has(lockRoot) || this.gitJobs.has(root))
+      throw new Error('Hay una operación de Git en curso.');
+    const running = this.state.sessions.some((s) => {
+      const cwd = s.worktree?.cwd ?? this.project(s.projectId).path;
+      return (
+        this.insideRepository(root, cwd) && (this.runtimes.has(s.id) || this.operations.has(s.id))
+      );
+    });
+    if (running) throw new Error('Detén los agentes de este repositorio antes de modificar Git.');
+    this.gitJobs.add(lockRoot);
+    const work = stageWorkspaceFile(root, file, staged);
+    this.gitWork.add(work);
+    try {
+      return await work;
+    } finally {
+      this.gitJobs.delete(lockRoot);
+      this.gitWork.delete(work);
+    }
   }
   setIsolation(id: string, isolation: 'worktree' | 'shared') {
     const s = this.session(id);

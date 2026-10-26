@@ -108,6 +108,16 @@ export function conversationEntries(session: Session): ConversationEntry[] {
   return entries;
 }
 export function currentActivity(session: Session) {
-  const tail = conversationEntries(session).at(-1);
-  return tail?.type === 'response' && tail.pending ? tail : undefined;
+  if (!['working', 'waiting'].includes(session.status) && !session.approvals.length)
+    return undefined;
+  // The live dock only needs the unfinished response, not every completed turn.
+  let start = session.messages.length;
+  while (start > 0) {
+    const role = session.messages[start - 1].role;
+    if (role !== 'assistant' && role !== 'tool') break;
+    start--;
+  }
+  return start < session.messages.length
+    ? response(session.messages.slice(start), true)
+    : undefined;
 }

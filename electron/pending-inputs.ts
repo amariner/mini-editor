@@ -46,9 +46,10 @@ export class PendingInputs {
   pump() {
     if (this.closed) return;
     for (const session of this.host.sessions()) {
-      if (this.delivering.has(session.id) || !this.host.ready(session)) continue;
+      if (this.delivering.has(session.id)) continue;
       const item = session.pendingInputs?.find((p) => p.status === 'pending');
-      if (!item) continue;
+      // Readiness may inspect runtime/MCP state; do it only for a queued message.
+      if (!item || !this.host.ready(session)) continue;
       item.status = 'sending';
       this.delivering.add(session.id);
       void this.host

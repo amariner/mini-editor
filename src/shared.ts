@@ -481,8 +481,30 @@ export type Action =
     }
   | { type: 'openProjectTerminal'; projectId: string }
   | { type: 'openFreebuff' | 'stopFreebuff'; projectId: string }
-  | { type: 'openPath'; projectId: string; sessionId?: string; path: string; reveal?: boolean }
+  | {
+      type: 'openPath';
+      projectId: string;
+      sessionId?: string;
+      path: string;
+      reveal?: boolean;
+      workspace?: boolean;
+    }
   | { type: 'listFiles'; projectId: string; query: string }
+  | {
+      type: 'workspaceFiles';
+      projectId: string;
+      sessionId?: string;
+      directory?: string;
+      query?: string;
+    }
+  | { type: 'workspaceFile'; projectId: string; sessionId?: string; path: string }
+  | {
+      type: 'workspaceDiff' | 'workspaceStage';
+      projectId: string;
+      sessionId?: string;
+      path: string;
+      staged: boolean;
+    }
   | { type: 'setTheme'; theme: Theme }
   | { type: 'accountRefresh' | 'accountCancel'; profile: Profile }
   | { type: 'accountLogin' | 'accountLogout'; profile: Profile; stopSessions: boolean }

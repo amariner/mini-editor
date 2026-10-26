@@ -230,8 +230,37 @@ export const actionSchema = z.discriminatedUnion('type', [
     sessionId: id.optional(),
     path: z.string().trim().min(1).max(4096),
     reveal: z.boolean().optional(),
+    workspace: z.boolean().optional(),
   }),
   z.object({ type: z.literal('listFiles'), projectId: id, query: z.string().max(300) }),
+  z
+    .object({
+      type: z.literal('workspaceFiles'),
+      projectId: id,
+      sessionId: id.optional(),
+      directory: z.string().max(4096).optional(),
+      query: z.string().max(300).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('workspaceFile'),
+      projectId: id,
+      sessionId: id.optional(),
+      path: z.string().min(1).max(4096),
+    })
+    .strict(),
+  ...(['workspaceDiff', 'workspaceStage'] as const).map((type) =>
+    z
+      .object({
+        type: z.literal(type),
+        projectId: id,
+        sessionId: id.optional(),
+        path: z.string().min(1).max(4096),
+        staged: z.boolean(),
+      })
+      .strict(),
+  ),
   z.object({ type: z.literal('setTheme'), theme: z.enum(['system', 'light', 'dark']) }),
   ...(['accountRefresh', 'accountCancel'] as const).map((type) =>
     z.object({ type: z.literal(type), profile }),

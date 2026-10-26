@@ -224,7 +224,7 @@ try {
 
     assert.equal(
       await page.getByRole('button', { name: 'Buscar proyectos y sesiones', exact: true }).count(),
-      0,
+      1,
     );
     await page.keyboard.press('Meta+k');
     await page

@@ -105,9 +105,10 @@ test('el progreso permanece visible durante el turno y se conserva dentro de act
     assert.match(render(), /Voy a revisar el proyecto\./);
     session.status = 'ready';
     const finished = render();
-    assert.equal(finished.split('Voy a revisar el proyecto.').length - 1, 1);
-    assert.ok(finished.indexOf('Voy a revisar el proyecto.') > finished.indexOf('<details'));
-    assert.ok(finished.indexOf('Voy a revisar el proyecto.') < finished.indexOf('</details>'));
+    // Closed history keeps its summary, without mounting hidden tool rows or markdown.
+    assert.doesNotMatch(finished, /Voy a revisar el proyecto\./);
+    assert.doesNotMatch(finished, /activity-messages/);
+    assert.match(finished, /response-work/);
     assert.doesNotMatch(finished, /<details[^>]* open=/);
     assert.match(finished, kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
   }

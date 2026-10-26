@@ -18,7 +18,7 @@ import { readDroppedFiles } from './image-drop';
 import { conversationEntries, currentActivity, working } from './conversation';
 import { CodexCatalogStatus } from './codex-catalog';
 import { signatureModel, reportedTokens, compactTokens } from './task-signature';
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Paperclip,
   Plus,
@@ -652,7 +652,7 @@ const answerText = (m: Message) =>
         .flatMap((b) => (b.type === 'text' && b.text.trim() ? [b.text.trim()] : []))
         .join('\n\n')
     : m.text;
-export function MessageView({
+export const MessageView = memo(function MessageView({
   m,
   kind,
   showAuthor = true,
@@ -688,7 +688,7 @@ export function MessageView({
         : m.text && <Markdown text={m.text} />}
     </div>
   );
-}
+});
 function TurnChanges({ messages }: { messages: Message[] }) {
   const { root, openPath, showChanges } = useChatActions();
   const [expanded, setExpanded] = useState(false);
@@ -755,81 +755,92 @@ function TurnChanges({ messages }: { messages: Message[] }) {
     </section>
   );
 }
-function ResponseGroup({
-  entry,
-  kind,
-}: {
-  entry: Extract<ReturnType<typeof conversationEntries>[number], { type: 'response' }>;
-  kind: ProviderKind;
-}) {
-  const { root } = useChatActions();
-  const items = workItems(entry.work, root);
-  const progress = items.filter((w) => w.type === 'text');
-  // An interrupted turn may have no final answer; keep its last narration in sight.
-  const showProgress = entry.pending || !entry.answer;
-  const details = showProgress ? items.filter((w) => w.type !== 'text') : items;
-  const steps = items.flatMap((w) => (w.type === 'step' ? [w.step] : []));
-  const blocked = steps.filter((step) => antigravityDenied(step.message)).length;
-  const errors = Math.max(0, entry.errors - blocked);
-  const ms = [...entry.messages].reverse().find((m) => m.durationMs)?.durationMs;
-  const model = prettyModel(entry.answer?.model ?? entry.messages.find((m) => m.model)?.model);
-  const summary =
-    summarize(steps.filter((step) => !antigravityDenied(step.message))) ||
-    (blocked
-      ? `${blocked} ${blocked === 1 ? 'acción sin ejecutar' : 'acciones sin ejecutar'}`
-      : items.some((w) => w.type === 'thinking')
-        ? 'Razonó'
-        : 'Ver actividad');
-  const time = duration(ms);
-  const text = entry.answer ? answerText(entry.answer) : '';
-  const at = entry.answer?.at ?? [...entry.messages].reverse().find((m) => m.at)?.at;
-  const clock = at
-    ? new Date(at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
-    : '';
-  return (
-    <div className="response-group">
-      {showProgress &&
-        progress.map((w) => (
-          <div className="row assistant progress-message" key={w.id}>
-            <Markdown text={w.text} />
-          </div>
-        ))}
-      {!entry.pending && details.length > 0 && (
-        <details className={`response-work ${errors ? 'has-errors' : ''}`}>
-          <summary>
-            <span className="work-summary" title={summary}>
-              {summary}
-            </span>
-            {time && <span className="work-time">{time}</span>}
-            {blocked > 0 && <span className="work-permissions">Requiere permiso</span>}
-            {errors ? (
-              <span className="work-errors">
-                {errors} {errors === 1 ? 'error' : 'errores'}
+const ResponseGroup = memo(
+  function ResponseGroup({
+    entry,
+    kind,
+  }: {
+    entry: Extract<ReturnType<typeof conversationEntries>[number], { type: 'response' }>;
+    kind: ProviderKind;
+  }) {
+    const { root } = useChatActions();
+    const [activityOpen, setActivityOpen] = useState(false);
+    const items = useMemo(() => workItems(entry.work, root), [entry.work, root]);
+    const progress = items.filter((w) => w.type === 'text');
+    // An interrupted turn may have no final answer; keep its last narration in sight.
+    const showProgress = entry.pending || !entry.answer;
+    const details = showProgress ? items.filter((w) => w.type !== 'text') : items;
+    const steps = items.flatMap((w) => (w.type === 'step' ? [w.step] : []));
+    const blocked = steps.filter((step) => antigravityDenied(step.message)).length;
+    const errors = Math.max(0, entry.errors - blocked);
+    const ms = [...entry.messages].reverse().find((m) => m.durationMs)?.durationMs;
+    const model = prettyModel(entry.answer?.model ?? entry.messages.find((m) => m.model)?.model);
+    const summary =
+      summarize(steps.filter((step) => !antigravityDenied(step.message))) ||
+      (blocked
+        ? `${blocked} ${blocked === 1 ? 'acción sin ejecutar' : 'acciones sin ejecutar'}`
+        : items.some((w) => w.type === 'thinking')
+          ? 'Razonó'
+          : 'Ver actividad');
+    const time = duration(ms);
+    const text = entry.answer ? answerText(entry.answer) : '';
+    const at = entry.answer?.at ?? [...entry.messages].reverse().find((m) => m.at)?.at;
+    const clock = at
+      ? new Date(at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    return (
+      <div className="response-group">
+        {showProgress &&
+          progress.map((w) => (
+            <div className="row assistant progress-message" key={w.id}>
+              <Markdown text={w.text} />
+            </div>
+          ))}
+        {!entry.pending && details.length > 0 && (
+          <details
+            className={`response-work ${errors ? 'has-errors' : ''}`}
+            onToggle={(event) => setActivityOpen(event.currentTarget.open)}
+          >
+            <summary>
+              <span className="work-summary" title={summary}>
+                {summary}
               </span>
-            ) : null}
-            <ChevronRight size={12} />
-          </summary>
-          <WorkFeed items={details} />
-        </details>
-      )}
-      {entry.answer && <MessageView m={entry.answer} kind={kind} showAuthor={false} />}
-      {!entry.pending && <TurnChanges messages={entry.messages} />}
-      {!entry.pending && (text || model || clock) && (
-        <div className="msg-actions response-actions">
-          {text && (
-            <>
-              <CopyButton text={text} label="Copiar respuesta" />
-              <ReadAloudButton text={text} />
-            </>
-          )}
-          <span className="msg-meta">
-            {[model, !entry.work.length && time ? time : '', clock].filter(Boolean).join(' · ')}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
+              {time && <span className="work-time">{time}</span>}
+              {blocked > 0 && <span className="work-permissions">Requiere permiso</span>}
+              {errors ? (
+                <span className="work-errors">
+                  {errors} {errors === 1 ? 'error' : 'errores'}
+                </span>
+              ) : null}
+              <ChevronRight size={12} />
+            </summary>
+            {activityOpen && <WorkFeed items={details} />}
+          </details>
+        )}
+        {entry.answer && <MessageView m={entry.answer} kind={kind} showAuthor={false} />}
+        {!entry.pending && <TurnChanges messages={entry.messages} />}
+        {!entry.pending && (text || model || clock) && (
+          <div className="msg-actions response-actions">
+            {text && (
+              <>
+                <CopyButton text={text} label="Copiar respuesta" />
+                <ReadAloudButton text={text} />
+              </>
+            )}
+            <span className="msg-meta">
+              {[model, !entry.work.length && time ? time : '', clock].filter(Boolean).join(' · ')}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  },
+  (previous, next) =>
+    previous.kind === next.kind &&
+    previous.entry.pending === next.entry.pending &&
+    previous.entry.messages.length === next.entry.messages.length &&
+    previous.entry.messages.every((message, index) => message === next.entry.messages[index]),
+);
 export function ConversationMessages({
   session,
   kind,
@@ -903,9 +914,15 @@ export function ActivityDock({
   useEffect(() => {
     if (!active) setOpen(false);
   }, [active]);
+  const activity = useMemo(
+    () => currentActivity(session),
+    [session.messages, session.status, session.approvals.length],
+  );
+  const items = useMemo(
+    () => (activity ? workItems(activity.messages, root) : []),
+    [activity, root],
+  );
   if (!active) return null;
-  const activity = currentActivity(session);
-  const items = activity ? workItems(activity.messages, root) : [];
   const last = items.at(-1);
   const waiting = !!session.approvals.length || session.status === 'waiting';
   const lastUser = [...session.messages].reverse().find((m) => m.role === 'user');
@@ -2490,13 +2507,16 @@ export function Composer({
       </div>
       <div className="composer-footer">
         {footerStartRef && <div className="composer-footer-start" ref={footerStartRef} />}
-        <div className="task-signature" aria-label="Cuenta y contexto">
+        <div className="task-signature" aria-label="Cuenta, modelo y contexto">
           {accountControl ?? (
             <span className="task-signature-account" title={`Cuenta: ${accountName}`}>
               {accountName}
             </span>
           )}
-          {/* Everything else waits behind the context ring: one hover, one quiet card. */}
+          <span className="composer-model" title={`Modelo: ${signature}`}>
+            {prettyModel(signature)}
+          </span>
+          {/* Detailed consumption stays behind the context ring. */}
           <span className="footer-insight" tabIndex={0} aria-describedby={insightId}>
             <ContextGauge
               percent={context !== undefined && Number.isFinite(context) ? context : undefined}

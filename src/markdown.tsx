@@ -74,7 +74,7 @@ export function fileReference(code: string): LinkTarget | undefined {
 }
 export function Link({ target, children }: { target: LinkTarget; children: React.ReactNode }) {
   const actions = useChatActions();
-  const open = target.kind === 'url' ? actions.openUrl : (actions.revealPath ?? actions.openPath);
+  const open = target.kind === 'url' ? actions.openUrl : (actions.openPath ?? actions.revealPath);
   if (!open)
     return (
       <span className="md-link" title={target.value}>
@@ -90,7 +90,7 @@ export function Link({ target, children }: { target: LinkTarget; children: React
       title={
         target.kind === 'url'
           ? `${target.value} · Abrir en el navegador integrado`
-          : `${target.value} · Mostrar en carpeta`
+          : `${target.value} · ${actions.openPath ? 'Abrir archivo' : 'Mostrar en carpeta'}`
       }
       onClick={(e) => {
         e.preventDefault();

@@ -1,0 +1,83 @@
+/* One workspace panel shares the existing splitter; only its entrance changes layout. */
+.app .workspace.workspace-shell {
+  position: relative;
+  grid-template-columns: minmax(0, 100%) 0px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  transition: grid-template-columns 180ms var(--motion-out, ease);
+}
+.app .workspace.workspace-shell[data-tools-open='true'] {
+  grid-template-columns: minmax(0, var(--chat-width)) 8px minmax(0, 1fr);
+}
+.app .workspace.workspace-shell:is(.resizing, .showing-browser) {
+  transition: none;
+}
+.workspace-resize-slot {
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+}
+.workspace-resize-slot > .workspace-separator {
+  width: 8px;
+  flex: 1;
+  animation: none;
+}
+.app .workspace-shell > .workspace-tools {
+  min-width: 0;
+  min-height: 0;
+  width: auto;
+  max-width: none;
+  overflow: hidden;
+  outline: none;
+  animation: none;
+  opacity: 0;
+  transform: translateX(12px);
+  transition:
+    opacity 180ms var(--motion-out, ease),
+    transform 180ms var(--motion-out, ease);
+}
+.app .workspace-tools[data-open='true'] {
+  opacity: 1;
+  transform: translateX(0);
+}
+.workspace-tools[aria-hidden='true'] {
+  pointer-events: none;
+}
+.workspace-tools.with-browser {
+  transition: none;
+}
+.workspace-loading {
+  padding: 20px;
+  font-size: 12px;
+}
+.app .work-area.terminal-at-right > .workspace.workspace-shell.with-tools {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(160px, 1fr) minmax(160px, 1fr);
+}
+.work-area.terminal-at-right > .workspace-shell > .workspace-resize-slot {
+  display: none;
+}
+@media (max-width: 900px) {
+  .app .workspace.workspace-shell:not(.showing-browser) {
+    grid-template-columns: minmax(0, 1fr) 0px minmax(0, 0fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .workspace-shell:not(.showing-browser) > .workspace-resize-slot {
+    display: none;
+  }
+  .app .workspace-shell > .workspace-tools:not(.with-browser) {
+    position: absolute;
+    z-index: 30;
+    inset: 0 0 0 auto;
+    width: min(560px, 100%);
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow-pop);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app .workspace.workspace-shell,
+  .app .workspace-shell > .workspace-tools {
+    transition: none;
+    transform: none;
+  }
+}

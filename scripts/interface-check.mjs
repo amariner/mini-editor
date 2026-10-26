@@ -186,6 +186,10 @@ try {
   await page.getByRole('button', { name: 'Guardar', exact: true }).click();
   assert.equal(await brand(), '#ff3366');
   assert.equal(await page.locator('.style-state').innerText(), 'Usando tus estilos');
+  const quickStyle = page.getByRole('combobox', { name: 'Estilo', exact: true });
+  assert.equal(await quickStyle.inputValue(), 'custom');
+  await quickStyle.focus();
+  assert.ok(await quickStyle.evaluate((element) => element === document.activeElement));
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/interfaz-css.png' });
   // Saved styles survive a restart and apply before the first paint.
@@ -331,6 +335,27 @@ try {
     await page.getByRole('button', { name: 'Eliminar', exact: true }).isDisabled(),
     true,
   );
+  // The compact style selector remains usable after custom CSS and in a small window.
+  await quickStyle.selectOption('builtin:ultraminimalista');
+  await state('Tema: Ultraminimalista');
+  await page.reload();
+  await page.locator('.desk-input').waitFor();
+  await openInterface();
+  assert.equal(await quickStyle.inputValue(), 'builtin:ultraminimalista');
+  await page.setViewportSize({ width: 400, height: 520 });
+  await quickStyle.scrollIntoViewIfNeeded();
+  assert.ok(
+    await quickStyle.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const dialog = element.closest('[role="dialog"]');
+      return (
+        box.left >= 0 && box.right <= innerWidth && dialog.scrollWidth <= dialog.clientWidth + 1
+      );
+    }),
+  );
+  await quickStyle.selectOption('');
+  await state('Estilos originales');
+  assert.equal(await brand(), original);
   assert.deepEqual(errors, []);
   console.log(
     'PASS: tema Sistema/Claro/Oscuro, CSS completo copiable, guardar, recarga, parcial, inválido, restablecer y temas guardados.',

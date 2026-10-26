@@ -9,6 +9,10 @@ const scripts = selected.length
   : [
       'onboarding',
       'design-audit',
+      'product-controls',
+      'details-motion',
+      'workspace-panel',
+      'streaming-performance',
       'state-sync',
       'chat-interactions',
       'ui-polish',

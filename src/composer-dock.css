@@ -40,6 +40,20 @@
 .app .desk-input .composer-footer .footer-insight {
   flex-shrink: 0;
 }
+.app .desk-input .composer-model {
+  min-width: 0;
+  max-width: 160px;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.app .desk-input .composer-model::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--muted);
+}
 .app .desk-input.solo > .git-context.git-compact {
   margin: 4px 12px;
   max-width: calc(100% - 24px);

@@ -50,7 +50,7 @@ try {
   await page.getByRole('button', { name: 'Añadir proyecto', exact: true }).first().click();
   await page.locator('.chat-watermark').waitFor();
   assert.equal(await page.locator('.search-trigger').count(), 0);
-  assert.equal(await page.getByRole('button', { name: 'Buscar proyectos y sesiones' }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Buscar proyectos y sesiones' }).count(), 1);
   assert.equal(await page.locator('.composer-hint, .conv-foot, .crumb > strong').count(), 0);
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundImage), 'none');
   assert.equal(await page.getByRole('button', { name: 'Navegador', exact: true }).count(), 0);
