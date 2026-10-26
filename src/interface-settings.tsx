@@ -19,7 +19,7 @@ type InterfacePreferences = {
 };
 const defaults: InterfacePreferences = {
   projectIconSize: 20,
-  chatFontSize: 13,
+  chatFontSize: 15,
   chatColor: null,
   iconColor: null,
   textColor: null,

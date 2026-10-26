@@ -66,7 +66,7 @@ export const savingLevels = [
     name: 'Equilibrado',
     hint: 'Respuesta directa, búsquedas acotadas y esfuerzo moderado.',
   },
-  { value: 3, name: 'Intenso', hint: 'Solo lo esencial y menor esfuerzo en tareas sencillas.' },
+  { value: 3, name: 'Intenso', hint: 'Solo lo esencial en el chat; conserva el esfuerzo elegido.' },
 ] as const;
 export type Theme = 'system' | 'light' | 'dark';
 export const isCodex = (profile?: string) => profile === 'codex' || !!profile?.startsWith('codex-');

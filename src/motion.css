@@ -176,6 +176,29 @@
   animation: desk-rise-in var(--motion-slow) var(--motion-out) both;
 }
 
+.app .conversation .response-group {
+  animation: none;
+}
+/* Complete sentences fade as a unit; already read text never moves or blurs. */
+.app .conversation .chat-sentence,
+.app .conversation .calm-response .md-code {
+  animation: chat-sentence-arrive 900ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+@keyframes chat-sentence-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app .conversation .chat-sentence,
+  .app .conversation .calm-response .md-code {
+    animation: none;
+  }
+}
+
 /* Side panels (diff, browser chrome, terminal) fade in rather than snapping open. */
 .app .tools-drawer,
 .app .terminal-panel,
@@ -540,4 +563,152 @@
 /* Same clearance for the macOS window controls with the wider folded rail. */
 .app:has(.sidebar.collapsed) > main > .topbar {
   padding-left: max(8px, calc(82px - var(--project-icon-size, 20px)));
+}
+
+/* Reading first: one quiet column and controls that do not compete with the answer. */
+.app .conversation .messages.compact-conversation {
+  font-size: var(--chat-font-size, 15px);
+  gap: 32px;
+  padding: 28px 8px 32px;
+}
+.app .conversation .messages.compact-conversation > :not(.chat-watermark):not(.jump-latest) {
+  max-width: 780px;
+}
+.app .conversation .md,
+.app .conversation .bubble {
+  font-size: var(--chat-font-size, 15px);
+  line-height: 1.72;
+  letter-spacing: 0.006em;
+  word-spacing: 0.025em;
+  font-weight: 400;
+}
+.app .conversation .md > * + * {
+  margin-top: 0.75em;
+}
+.app .conversation .md li + li {
+  margin-top: 0.4em;
+}
+.app .conversation .md :is(code, pre, kbd) {
+  letter-spacing: normal;
+  word-spacing: normal;
+}
+.app .conversation .md :is(h1, h2, h3, h4, strong) {
+  font-weight: 600;
+}
+.app .conversation .row.assistant {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.app .conversation .bubble {
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border-radius: 14px;
+}
+.response-answer,
+.response-answer > div {
+  min-width: 0;
+  width: 100%;
+}
+.app .response-expand,
+.app .code-expand {
+  min-height: 30px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--ui-text-color, var(--muted));
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+  text-align: left;
+}
+.app .response-expand {
+  margin: 0 0 8px -8px;
+}
+.app .response-expand[aria-expanded='true'] svg {
+  rotate: 180deg;
+}
+.app :is(.response-expand, .code-expand):hover {
+  background: var(--tile);
+  color: var(--ui-text-color, var(--text));
+}
+.app .code-expand {
+  margin: 0 8px 6px;
+}
+.md-code.single:has(.code-expand) .md-code-bar {
+  top: 5px;
+  transform: none;
+}
+.app .response-group > .response-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+.app .response-group:is(:hover, :focus-within) > .response-actions,
+.app .response-group > .response-actions:has(.reading, .reader-error) {
+  opacity: 1;
+  pointer-events: auto;
+}
+.app .response-group .turn-changes {
+  background: transparent;
+  border: 0;
+}
+.app .response-work > summary {
+  font-size: 12px;
+  color: var(--ui-text-color, var(--muted));
+}
+.app .desk-input .composer-bar {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.app .desk-input .composer-tools {
+  flex: 1;
+}
+.app .desk-input .composer-bar > .attach-image,
+.app .desk-input .send {
+  flex-shrink: 0;
+}
+.app .desk-input .composer textarea {
+  font-size: var(--chat-font-size, 15px);
+  line-height: 1.6;
+}
+.app .composer-footer {
+  min-height: 32px;
+  padding-top: 6px;
+  font-size: 12px;
+}
+.app .multichat-card {
+  box-shadow: none;
+}
+.app .multichat-card:is(.attention, .error, .unseen) {
+  border-color: var(--line);
+  box-shadow: none;
+}
+.app .multichat-card.attention > .multichat-card-head {
+  box-shadow: inset 3px 0 var(--warn);
+}
+.app .multichat-card.error > .multichat-card-head {
+  box-shadow: inset 3px 0 var(--danger);
+}
+.app .multichat-card.unseen:not(.attention, .error) > .multichat-card-head {
+  box-shadow: inset 3px 0 var(--ok);
+}
+.app .multichat-preview .md {
+  font-size: calc(var(--chat-font-size, 15px) * 0.94);
+  line-height: 1.55;
+}
+.app .multichat-earlier {
+  font-size: 12px;
+  color: var(--ui-text-color, var(--muted));
+  background: transparent;
+}
+@media (hover: none) {
+  .app .response-group > .response-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (max-width: 600px) {
+  .app .conversation .messages.compact-conversation {
+    padding-inline: 8px;
+    gap: 26px;
+  }
 }

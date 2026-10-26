@@ -844,6 +844,17 @@ function App() {
   const lastBlocks = last?.blocks?.length ?? 0;
   const lastText = last?.blocks?.at(-1);
   useEffect(() => {
+    const element = list.current;
+    if (!element || !stick) return;
+    // Buffered sentences can arrive after the provider's last event.
+    // Follow actual text changes only while the reader remains at the bottom.
+    const observer = new MutationObserver(() => {
+      element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+  }, [session?.id, multichat, stick]);
+  useEffect(() => {
     if (stick && list.current) list.current.scrollTop = list.current.scrollHeight;
   }, [
     session?.id,
@@ -1793,7 +1804,7 @@ function App() {
                               )}
                             </div>
                           )}
-                        <ConversationMessages session={session} kind={kind} />
+                        <ConversationMessages session={session} kind={kind} animateReplies />
                         {needsGeminiPermission && !terminalMode && (
                           <section
                             className="gemini-permission-card"

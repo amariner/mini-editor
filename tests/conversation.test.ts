@@ -83,7 +83,7 @@ test('progreso activo en el dock; no oculta una respuesta terminada durante arra
     assert.equal(tail.type === 'response' && tail.answer?.id, 'a3');
   }
 });
-test('el progreso permanece visible durante el turno y se conserva dentro de actividad al terminar', () => {
+test('solo el último progreso queda visible y el historial completo se conserva en actividad', () => {
   for (const kind of ['claude', 'codex'] as const) {
     const session = fixture();
     if (kind === 'codex') {
@@ -99,10 +99,16 @@ test('el progreso permanece visible durante el turno y se conserva dentro de act
       renderToStaticMarkup(React.createElement(ConversationMessages, { session, kind }));
     const active = render();
     assert.match(active, /progress-message/);
-    assert.match(active, /Voy a revisar el proyecto\./);
+    assert.doesNotMatch(active, /Voy a revisar el proyecto\./);
+    assert.match(active, kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
     assert.doesNotMatch(active, /<details|class="tool|Revisar archivos/);
     session.status = 'waiting';
-    assert.match(render(), /Voy a revisar el proyecto\./);
+    assert.match(render(), kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
+    const pending = conversationEntries(session).find((entry) => entry.type === 'response');
+    assert.ok(
+      pending?.type === 'response' &&
+        JSON.stringify(pending.work).includes('Voy a revisar el proyecto.'),
+    );
     session.status = 'ready';
     const finished = render();
     // Closed history keeps its summary, without mounting hidden tool rows or markdown.

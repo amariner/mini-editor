@@ -610,7 +610,7 @@ function Card({
   move: (direction: number) => void;
 }) {
   const [tone, label] = status(session);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(1);
   const [editingTitle, setEditingTitle] = useState(false);
   const {
     handleProps: detachHandle,
@@ -973,6 +973,7 @@ function Card({
                 kind={providerKind(session.profile)}
                 limit={limit}
                 entries={entries}
+                compact
               />
               {!session.messages.length && !terminal && (
                 <p className="multichat-hint">Escribe abajo para empezar.</p>

@@ -1,4 +1,5 @@
 import { Popover } from './chat-popover';
+import { useCalmText } from './calm-text';
 import { FastModeControl } from './fast-mode';
 import { ReadAloudButton } from './read-aloud-button';
 import { McpElicitation } from './mcp-elicitation-view';
@@ -67,7 +68,7 @@ import type {
   TokenOptimization,
 } from './shared';
 import { efforts, permissionModes, defaultOptimization, savingLevels } from './shared';
-import { CodeBlock, Markdown, useChatActions } from './markdown';
+import { CodeBlock, CodePreviewContext, Markdown, useChatActions } from './markdown';
 import { antigravityDenied } from './antigravity-permissions';
 import {
   duration,
@@ -132,14 +133,25 @@ const VERBS: Record<StepKind, [done: string, running: string]> = {
   skill: ['Skill', 'Usando skill'],
   tool: ['Usó', 'Usando'],
 };
-/** Live seconds for running work; one interval per mounted consumer. */
+/** Live seconds only while the window is visible; resume with the current time. */
 function useNow(active: boolean, every = 1000) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!active) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), every);
-    return () => clearInterval(timer);
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const sync = () => {
+      clearInterval(timer);
+      timer = undefined;
+      if (document.hidden) return;
+      setNow(Date.now());
+      timer = setInterval(() => setNow(Date.now()), every);
+    };
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', sync);
+    };
   }, [active, every]);
   return now;
 }
@@ -755,13 +767,87 @@ function TurnChanges({ messages }: { messages: Message[] }) {
     </section>
   );
 }
+function ResponseAnswer({
+  message,
+  kind,
+  compact,
+}: {
+  message: Message;
+  kind: ProviderKind;
+  compact: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const text = answerText(message);
+  const long =
+    text.length > (compact ? 650 : 1600) || text.split('\n').length > (compact ? 14 : 28);
+  const size = compact ? 280 : 520;
+  const boundary = text.indexOf('\n\n');
+  const end =
+    boundary > 0 && boundary <= size ? boundary : Math.max(size / 2, text.lastIndexOf(' ', size));
+  // Never offer "copy code" on an excerpt: its original code remains behind the disclosure.
+  const excerpt = text
+    .slice(0, end)
+    .split(/(?:^|\n)\s{0,3}(?:`{3,}|~{3,})/)[0]
+    .trimEnd();
+  const preview =
+    long && !expanded
+      ? {
+          ...message,
+          blocks: undefined,
+          text: excerpt
+            ? excerpt + (boundary > 0 && end === boundary ? '' : '…')
+            : 'Respuesta con código. Abre la respuesta completa para consultarlo.',
+        }
+      : message;
+  return (
+    <div className="response-answer">
+      {long && (
+        <button
+          type="button"
+          className="response-expand"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? 'Mostrar menos' : 'Ver respuesta completa'}
+          <ChevronDown size={13} aria-hidden="true" />
+        </button>
+      )}
+      <div id={id}>
+        <MessageView m={preview} kind={kind} showAuthor={false} />
+      </div>
+    </div>
+  );
+}
+
+function CalmResponse({ text, pending }: { text: string; pending: boolean }) {
+  const { visible, reveal } = useCalmText(text, pending);
+  return (
+    <div className="response-answer calm-response">
+      <div className="row assistant">
+        <Markdown text={visible} animate />
+      </div>
+      {!pending && visible !== text && (
+        <button className="response-expand" onClick={reveal}>
+          Mostrar todo ahora
+        </button>
+      )}
+    </div>
+  );
+}
+
 const ResponseGroup = memo(
   function ResponseGroup({
     entry,
     kind,
+    animate = false,
+    compact = false,
   }: {
     entry: Extract<ReturnType<typeof conversationEntries>[number], { type: 'response' }>;
     kind: ProviderKind;
+    animate?: boolean;
+    compact?: boolean;
   }) {
     const { root } = useChatActions();
     const [activityOpen, setActivityOpen] = useState(false);
@@ -790,8 +876,9 @@ const ResponseGroup = memo(
       : '';
     return (
       <div className="response-group">
-        {showProgress &&
-          progress.map((w) => (
+        {!animate &&
+          showProgress &&
+          (entry.pending ? progress.slice(-1) : progress).map((w) => (
             <div className="row assistant progress-message" key={w.id}>
               <Markdown text={w.text} />
             </div>
@@ -817,7 +904,20 @@ const ResponseGroup = memo(
             {activityOpen && <WorkFeed items={details} />}
           </details>
         )}
-        {entry.answer && <MessageView m={entry.answer} kind={kind} showAuthor={false} />}
+        {animate && (progress.length > 0 || !!text) && (
+          <CalmResponse
+            text={entry.answer ? text : progress.at(-1)!.text}
+            pending={entry.pending}
+          />
+        )}
+        {!animate && entry.answer && (
+          <ResponseAnswer
+            key={entry.answer.id}
+            message={entry.answer}
+            kind={kind}
+            compact={compact}
+          />
+        )}
         {!entry.pending && <TurnChanges messages={entry.messages} />}
         {!entry.pending && (text || model || clock) && (
           <div className="msg-actions response-actions">
@@ -837,6 +937,8 @@ const ResponseGroup = memo(
   },
   (previous, next) =>
     previous.kind === next.kind &&
+    previous.animate === next.animate &&
+    previous.compact === next.compact &&
     previous.entry.pending === next.entry.pending &&
     previous.entry.messages.length === next.entry.messages.length &&
     previous.entry.messages.every((message, index) => message === next.entry.messages[index]),
@@ -846,25 +948,42 @@ export function ConversationMessages({
   kind,
   limit,
   entries: suppliedEntries,
+  animateReplies = false,
+  compact = false,
 }: {
   session: Session;
   kind: ProviderKind;
   limit?: number;
   entries?: ReturnType<typeof conversationEntries>;
+  animateReplies?: boolean;
+  compact?: boolean;
 }) {
+  // Restored history is immediately readable. Only replies received in this visit enter softly.
+  const initialMessages = useMemo(
+    () => new Set(animateReplies ? session.messages.map((m) => m.id) : []),
+    [session.id, animateReplies],
+  );
   const entries = useMemo(
     () => suppliedEntries ?? conversationEntries(session),
     [suppliedEntries, session.messages, session.status, session.approvals.length],
   );
   const visible = limit === undefined ? entries : entries.slice(-limit);
   return (
-    <>
+    <CodePreviewContext.Provider value={true}>
       {visible.map((entry) => {
         if (entry.type === 'message')
           return <MessageView key={entry.id} m={entry.message} kind={kind} />;
-        return <ResponseGroup key={entry.id} entry={entry} kind={kind} />;
+        return (
+          <ResponseGroup
+            key={`${session.id}:${entry.id}`}
+            entry={entry}
+            kind={kind}
+            compact={compact}
+            animate={animateReplies && !initialMessages.has(entry.id)}
+          />
+        );
       })}
-    </>
+    </CodePreviewContext.Provider>
   );
 }
 // Claude Code's spinner shows a playful verb while nothing more specific is happening.
@@ -971,7 +1090,7 @@ export function ActivityDock({
     >
       {open && activity && (
         <div className="activity-log" id={`activity-${session.id}`}>
-          <WorkFeed items={items.filter((w) => w.type !== 'text')} />
+          <WorkFeed items={items} />
         </div>
       )}
       <button
@@ -2106,6 +2225,15 @@ export function Composer({
           }}
         />
         <div className="composer-bar">
+          <button
+            className="chip-btn attach-image"
+            aria-label="Adjuntar archivos"
+            title="Adjuntar archivos · PDF, CSV, Office, texto, código e imágenes"
+            disabled={!enabled || sending || picking}
+            onClick={() => void attach()}
+          >
+            <Paperclip size={15} />
+          </button>
           <div
             ref={tools}
             className={`composer-tools ${toolsOpen ? 'open' : ''}`}
@@ -2119,7 +2247,7 @@ export function Composer({
             <button
               className="chip-btn tools-toggle"
               aria-label={toolsOpen ? 'Ocultar herramientas' : 'Herramientas del chat'}
-              title="Adjuntar, modelo, esfuerzo y permisos"
+              title="Modelo, esfuerzo, conexiones y permisos"
               aria-expanded={toolsOpen}
               onClick={() => setToolsOpen((v) => !v)}
             >
@@ -2144,15 +2272,6 @@ export function Composer({
                   Conexiones
                   {session.mcpAppliedIds?.length ? ` · ${session.mcpAppliedIds.length}` : ''}
                 </span>
-              </button>
-              <button
-                className="chip-btn attach-image"
-                aria-label="Adjuntar archivos"
-                title="Adjuntar archivos · PDF, CSV, Office, texto, código e imágenes"
-                disabled={!enabled || sending || picking}
-                onClick={() => void attach()}
-              >
-                <Paperclip size={15} />
               </button>
               {!connected && (
                 <Popover

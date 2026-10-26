@@ -53,7 +53,7 @@ createRoot(document.getElementById('root')).render(<Fixture/>);
 });
 let browser;
 try {
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
   const page = await browser.newPage({
     viewport: { width: 920, height: 680 },
     colorScheme: 'dark',

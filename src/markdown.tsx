@@ -3,6 +3,7 @@ import React, {
   memo,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -37,6 +38,7 @@ export interface ChatActions {
   ): Promise<import('./shared').RewindResult | undefined>;
 }
 export const ChatActionsContext = createContext<ChatActions>({});
+export const CodePreviewContext = createContext(false);
 export const useChatActions = () => useContext(ChatActionsContext);
 
 export type LinkTarget = { kind: 'url' | 'path'; value: string };
@@ -129,9 +131,23 @@ const INLINE = new RegExp(
   ].join('|'),
   'g',
 );
+const TextArrivalContext = createContext(false);
+const sentenceSegmenter = new Intl.Segmenter('es', { granularity: 'sentence' });
+function FlowText({ value }: { value: string }) {
+  const animate = useContext(TextArrivalContext);
+  if (!animate) return value;
+  return Array.from(sentenceSegmenter.segment(value), ({ segment, index }) => (
+    <span className="chat-sentence" key={index}>
+      {segment}
+    </span>
+  ));
+}
 function text(s: string, key: string): React.ReactNode[] {
   const lines = restoreMarks(s).split('\n');
-  return lines.flatMap((line, i) => (i ? [<br key={`${key}-br${i}`} />, line] : [line]));
+  return lines.flatMap((line, i) => {
+    const content = <FlowText key={`${key}-text${i}`} value={line} />;
+    return i ? [<br key={`${key}-br${i}`} />, content] : [content];
+  });
 }
 const MAX_NESTING = 48;
 export function inline(source: string, prefix = 'i', links = true, depth = 0): React.ReactNode[] {
@@ -207,22 +223,34 @@ export const CodeBlock = memo(function CodeBlock({
 }) {
   const actions = useChatActions();
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const codeId = useId();
+  const previewCode = useContext(CodePreviewContext);
+  const lines = useMemo(() => code.split('\n'), [code]);
+  const long = previewCode && (lines.length > 24 || code.length > 2400);
+  const visibleCode =
+    long && !expanded ? lines.slice(0, 12).join('\n').slice(0, 1800) + '\n…' : code;
   const reset = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(reset.current), []);
-  const highlighted = useMemo(() => highlight(code, lang), [code, lang]);
+  const highlighted = useMemo(() => highlight(visibleCode, lang), [visibleCode, lang]);
   const runnable = isShell(lang) && !!actions.runCommand && !!code.trim();
   const copy = async () => {
+    setCopyError(false);
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
       clearTimeout(reset.current);
       reset.current = setTimeout(() => setCopied(false), 1400);
     } catch {
-      /* clipboard unavailable: the code stays selectable */
+      setCopied(false);
+      setCopyError(true);
     }
   };
   return (
-    <div className={`md-code ${code.includes('\n') ? 'multiline' : 'single'}`}>
+    <div
+      className={`md-code ${code.includes('\n') ? 'multiline' : 'single'} ${copyError ? 'copy-failed' : ''}`}
+    >
       <div className="md-code-bar">
         {lang && <span className="md-lang">{lang}</span>}
         {runnable && (
@@ -244,9 +272,25 @@ export const CodeBlock = memo(function CodeBlock({
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
       </div>
-      <pre>
+      <pre id={long ? codeId : undefined}>
         <code>{highlighted}</code>
       </pre>
+      {long && (
+        <button
+          type="button"
+          className="code-expand"
+          aria-expanded={expanded}
+          aria-controls={codeId}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? 'Mostrar menos código' : `Mostrar código completo (${lines.length} líneas)`}
+        </button>
+      )}
+      {copyError && (
+        <p className="md-copy-error" role="alert">
+          No se pudo copiar. Selecciona el código y usa ⌘C o Ctrl+C.
+        </p>
+      )}
     </div>
   );
 });
@@ -468,6 +512,16 @@ function blocks(source: string[], prefix: string, tight = false, depth = 0): Rea
   flush();
   return nodes;
 }
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
-  return <div className="md">{blocks(text.replace(/\r\n?/g, '\n').split('\n'), 'b')}</div>;
+export const Markdown = memo(function Markdown({
+  text,
+  animate = false,
+}: {
+  text: string;
+  animate?: boolean;
+}) {
+  return (
+    <TextArrivalContext.Provider value={animate}>
+      <div className="md">{blocks(text.replace(/\r\n?/g, '\n').split('\n'), 'b')}</div>
+    </TextArrivalContext.Provider>
+  );
 });

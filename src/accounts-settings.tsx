@@ -223,7 +223,7 @@ export function AccountsSettings({
           hidden={tab !== 'network'}
         >
           {tab === 'network' && (
-            <NetworkSettings snapshot={state.proxy} compatible={compatible} run={run} />
+            <NetworkSettings snapshot={state.proxy} compatible={compatible} run={runLocal} />
           )}
         </div>
         <div

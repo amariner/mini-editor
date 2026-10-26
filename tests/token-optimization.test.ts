@@ -27,7 +27,7 @@ test('tres niveles, desactivado, complejidad, esfuerzo compatible y catálogo de
   for (const [level, effort] of [
     [1, 'high'],
     [2, 'medium'],
-    [3, 'low'],
+    [3, 'high'],
   ] as const) {
     const choice = turnOptimization({ ...base, preferences: { level, autoModel: true } });
     assert.equal(choice.model, 'haiku');
@@ -61,6 +61,20 @@ test('tres niveles, desactivado, complejidad, esfuerzo compatible y catálogo de
     }).effort,
     'high',
   );
+});
+test('Intenso conserva el esfuerzo manual también en tareas de código normales y sencillas', () => {
+  for (const text of ['Renombra el título', 'Implementa un formulario con validación']) {
+    for (const baseEffort of ['low', 'medium', 'high']) {
+      const result = turnOptimization({
+        ...base,
+        text,
+        baseEffort,
+        preferences: { level: 3, autoModel: false },
+      });
+      assert.equal(result.effort, baseEffort);
+      assert.equal(result.model, base.baseModel);
+    }
+  }
 });
 test('preferencias aisladas por cuenta, persistencia y límites IPC', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desk-saving-'));
@@ -159,7 +173,7 @@ test('Claude aplica controles antes del envío, conserva colas y restaura ajuste
   await manager.send('s', base.text);
   assert.deepEqual(calls, [
     ['model', 'haiku'],
-    ['effort', 'low'],
+    ['effort', 'high'],
     ['send', base.text],
   ]);
   calls.length = 0;
@@ -185,7 +199,7 @@ test('Codex mantiene permisos, aplica política, actualiza al desactivar y resta
   assert.ok(calls[0][1].developerInstructions.includes(savingInstructions(3)));
   assert.equal(calls[1][0], 'turn/start');
   assert.equal(calls[1][1].model, 'haiku');
-  assert.equal(calls[1][1].effort, 'low');
+  assert.equal(calls[1][1].effort, 'high');
   assert.equal(calls[1][1].approvalPolicy, 'untrusted');
   assert.equal(session.codexConfig.model, 'opus');
   manager.configureOptimization('codex', { level: 0, autoModel: false });

@@ -131,6 +131,22 @@ try {
         async invoke(a) {
           window.fixture.actions.push(a);
           if (a.type === 'snapshot') return structuredClone(state);
+          if (a.type === 'workspaceFiles')
+            return {
+              root: state.projects.find((p) => p.id === a.projectId).path,
+              entries: [],
+              truncated: false,
+            };
+          if (a.type === 'workspaceFile')
+            return {
+              root: state.projects.find((p) => p.id === a.projectId).path,
+              path: 'report.md',
+              content: '# Informe del proyecto correcto',
+              binary: false,
+              size: 38,
+              truncated: false,
+              language: 'md',
+            };
           if (a.type === 'select') {
             state.selectedProject = a.projectId;
             state.selectedSession =
@@ -311,8 +327,22 @@ try {
   const movedTeam = await teamPopup.boundingBox();
   assert.notEqual(movedTeam.y + movedTeam.height, teamBounds.y + teamBounds.height);
   await page.setViewportSize({ width: 900, height: 620 });
-  await page.waitForTimeout(50);
-  assert.equal(await teamContained(), true, 'An open team must remain bounded after resizing');
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('.team-popover:popover-open');
+    if (!panel) return false;
+    const bounds = panel.getBoundingClientRect();
+    return (
+      bounds.left >= 8 &&
+      bounds.top >= 8 &&
+      bounds.right <= innerWidth - 8 &&
+      bounds.bottom <= innerHeight - 8
+    );
+  });
+  assert.equal(
+    await teamContained(),
+    true,
+    `An open team must remain bounded after resizing: ${JSON.stringify(await teamPopup.boundingBox())}`,
+  );
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/multichat-team-menu.png' });
   await page.keyboard.press('Escape');
@@ -402,6 +432,10 @@ try {
   await detailsToggle.click();
   const detailsPanel = activityCard.getByRole('complementary', { name: 'Detalles del chat' });
   await detailsPanel.waitFor();
+  await activityCard.locator('.chat-details[data-open="true"]').waitFor();
+  await detailsPanel.evaluate(async (panel) => {
+    await Promise.all(panel.getAnimations().map((animation) => animation.finished.catch(() => {})));
+  });
   assert.match(await detailsPanel.innerText(), /Entorno/);
   const panelBox = await detailsPanel.boundingBox();
   const cardBox = await activityCard.boundingBox();
@@ -941,16 +975,21 @@ try {
   );
   await page.getByRole('button', { name: 'Volver al grid' }).click();
   await rich.getByRole('link', { name: 'Informe', exact: true }).click();
-  const revealed = await page.evaluate(() =>
-    window.fixture.actions.filter((a) => a.type === 'openPath').at(-1),
+  await page.getByRole('region', { name: 'Contenido de report.md', exact: true }).waitFor();
+  const openedFile = await page.evaluate(() =>
+    window.fixture.actions.filter((a) => a.type === 'workspaceFile').at(-1),
   );
-  assert.deepEqual(revealed, {
-    type: 'openPath',
+  assert.deepEqual(openedFile, {
+    type: 'workspaceFile',
     projectId: 'p1',
     sessionId: 's4',
-    path: './report.md',
-    reveal: true,
+    path: '/tmp/grid-1/./report.md',
   });
+  assert.match(
+    await page.getByRole('region', { name: 'Contenido de report.md', exact: true }).innerText(),
+    /Informe del proyecto correcto/,
+  );
+  await page.getByRole('button', { name: 'Volver al grid' }).click();
   await rich.getByRole('link', { name: 'Abrir gestor', exact: true }).click();
   await page.waitForFunction(() => window.fixture.actions.some((a) => a.type === 'browserNew'));
   const openedBrowser = await page.evaluate(() =>

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { actionError } from './runtime';
 import { defaultProxy, type ProxySnapshot, type ProxyUpdate } from './proxy-types';
 import type { Action } from './shared';
 
@@ -17,6 +18,7 @@ export function NetworkSettings({
   const [password, setPassword] = useState('');
   const [clearPassword, setClearPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
   const [result, setResult] = useState<{ ok: boolean; message: string }>();
   const edit = (patch: Partial<typeof draft>) => {
     setDraft((v) => ({ ...v, ...patch }));
@@ -34,11 +36,26 @@ export function NetworkSettings({
     clearPassword,
   });
   const execute = async (action: Action) => {
+    if (!compatible || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setResult(undefined);
     try {
-      return await run(action);
+      const response = await run(action);
+      if (
+        action.type !== 'chooseProxyCertificate' &&
+        (response === undefined || response === false)
+      )
+        setResult({
+          ok: false,
+          message:
+            'No se pudo completar la operación. Tus ajustes se conservan; vuelve a intentarlo.',
+        });
+      return response;
+    } catch (error) {
+      setResult({ ok: false, message: actionError(error) });
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
@@ -46,14 +63,15 @@ export function NetworkSettings({
   return (
     <form
       className="network-settings"
+      aria-busy={busy}
       onSubmit={async (e) => {
         e.preventDefault();
         const saved = await execute({ type: 'saveProxy', config: config() });
-        if (saved) {
+        if (saved?.ok) {
           setPassword('');
           setClearPassword(false);
-          setResult(saved);
         }
+        if (saved) setResult(saved);
       }}
     >
       <div className="proxy-heading">

@@ -300,3 +300,16 @@
     padding: 10px;
   }
 }
+/* A failed clipboard action stays actionable without obscuring selectable code. */
+.md-copy-error {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.md-code.copy-failed .md-code-bar {
+  top: 5px;
+  transform: none;
+}

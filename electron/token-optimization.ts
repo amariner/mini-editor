@@ -4,7 +4,7 @@ const policies = [
   '',
   'Responde con brevedad, sin repetir la petición ni resumir dos veces. Conserva los detalles que el usuario solicite.',
   'Prioriza una respuesta directa y breve. Decide con supuestos razonables en cambios reversibles. Acota búsquedas y salidas de herramientas; reutiliza lo ya leído. Evita planes y comprobaciones repetidos.',
-  'Salida muy escueta, directa y esquemática: por defecto 1–3 viñetas cortas y un máximo orientativo de 60 palabras. Sin introducción, recapitulación, explicaciones obvias ni pregunta de cierre. Para preguntas simples, una frase. Menciona solo resultado, verificación o bloqueo relevante. Amplía únicamente si lo exige la petición, el código solicitado o la corrección. Decide pronto en cambios reversibles, acota herramientas y reutiliza evidencia.',
+  'Estilo telegráfico: mínimo texto, máxima precisión. Por defecto 1–3 líneas cortas, 3–8 palabras por línea y unas 25 palabras en total como máximo orientativo. Una idea por línea; viñetas solo si hay varios puntos. Preguntas simples: una frase mínima. Ejemplo de cierre: «Corregido el guardado. Pruebas: OK». Sin introducción, recapitulación, títulos, fórmulas de cortesía, explicaciones obvias ni pregunta de cierre. Evita negritas salvo un bloqueo crítico. Omite sujetos y conectores prescindibles sin volver ambiguo el mensaje. En avances, una sola línea únicamente si aporta información nueva. Menciona solo resultado, verificación o bloqueo relevante, sin inventar comprobaciones. La brevedad afecta a lo que muestras en el chat, no a la profundidad del trabajo: investiga, implementa y verifica todo lo necesario, sin omitir pruebas pertinentes ni dejar trabajo incompleto. Conserva visibles los errores, riesgos materiales y permisos necesarios. Amplía si lo exige la petición, el código solicitado o la corrección. Reutiliza evidencia y evita trabajo redundante.',
 ];
 export function savingInstructions(level: TokenOptimization['level']) {
   return level
@@ -89,17 +89,20 @@ export function turnOptimization(input: {
   const supported = selected?.supportedEffortLevels ?? [];
   const changedModel = model !== input.baseModel;
   let effort = changedModel ? selected?.defaultEffort : input.baseEffort;
+  // Intense changes the visible response, preserving an explicitly chosen effort
+  // across automatic model selection whenever the target model supports it.
+  if (pref.level === 3 && input.baseEffort) effort = input.baseEffort;
   if (pref.autoModel && complexity === 'continuation' && model === input.previousModel)
     effort = input.previousEffort;
   if (effort && supported.length && !supported.includes(effort)) effort = selected?.defaultEffort;
   if (
-    pref.level >= 2 &&
+    pref.level === 2 &&
     supported.length &&
     complexity !== 'complex' &&
     complexity !== 'continuation'
   ) {
-    const target = pref.level === 3 && complexity === 'simple' ? 'low' : 'medium';
-    const cap = effortOrder.indexOf(target);
+    // Intense limits communication, not the selected reasoning effort.
+    const cap = effortOrder.indexOf('medium');
     const before = effort ? effortOrder.indexOf(effort) : -1;
     // Never increase an explicitly lower effort, and never send an unsupported value.
     const ceiling = before >= 0 ? Math.min(before, cap) : cap;

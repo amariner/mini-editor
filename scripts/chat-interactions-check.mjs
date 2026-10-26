@@ -74,7 +74,7 @@ const { outputFiles } = await build({
   define: { 'process.env.NODE_ENV': '"development"' },
 });
 const html = `<html><head><meta charset="utf-8"></head><body><div id="root"></div><script>${outputFiles[0].text.replaceAll('</script', '<\\/script')}</script></body></html>`;
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
 try {
   const context = await browser.newContext();
   await context.route('http://drafts.test/**', (route) =>
