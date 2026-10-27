@@ -682,15 +682,7 @@
   border-color: var(--line);
   box-shadow: none;
 }
-.app .multichat-card.attention > .multichat-card-head {
-  box-shadow: inset 3px 0 var(--warn);
-}
-.app .multichat-card.error > .multichat-card-head {
-  box-shadow: inset 3px 0 var(--danger);
-}
-.app .multichat-card.unseen:not(.attention, .error) > .multichat-card-head {
-  box-shadow: inset 3px 0 var(--ok);
-}
+/* The labelled state mark already communicates attention, errors and unread work. */
 .app .multichat-preview .md {
   font-size: calc(var(--chat-font-size, 15px) * 0.94);
   line-height: 1.55;

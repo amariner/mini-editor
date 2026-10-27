@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import {
   X,
   LayoutGrid,
-  CornerDownLeft,
+  ArrowUp,
   Square,
   Paperclip,
   Globe,
@@ -1145,7 +1145,7 @@ function Card({
                 }
                 disabled={!enabled || (!draft.trim() && !images.length)}
               >
-                <CornerDownLeft size={13} />
+                <ArrowUp size={14} />
               </button>
             </div>
           </form>

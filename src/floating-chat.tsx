@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Maximize2, Pin, PinOff, PictureInPicture2, Settings2, X } from 'lucide-react';
+import { GripHorizontal, Maximize2, Pin, PinOff, PictureInPicture2, Settings2, X } from 'lucide-react';
 import type { Action, Session } from './shared';
 import { MIN_FLOATING_OPACITY, type FloatingChatState } from './floating-chat-state';
 import { ChatStateMark } from './chat-state-mark';
@@ -70,6 +70,14 @@ export function FloatingChatHeader({
         setOptions(true);
       }}
     >
+      <span
+        className="floating-chat-drag-handle"
+        role="img"
+        aria-label="Mover ventana"
+        title="Arrastra la cabecera para mover la ventana"
+      >
+        <GripHorizontal size={16} strokeWidth={1.5} aria-hidden="true" />
+      </span>
       <ChatStateMark tone={tone} status={status} />
       <div
         className="floating-chat-title"

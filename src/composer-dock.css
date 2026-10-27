@@ -11,20 +11,20 @@
 /* One writing surface, with all primary controls in its bottom row. */
 .app .desk-input {
   container-type: inline-size;
-  --desk-radius: 22px;
+  --desk-radius: 18px;
   padding-bottom: 10px;
 }
 .app .desk-input .composer-area .composer {
   background: color-mix(in srgb, var(--text) 6%, var(--bg));
   border: 1px solid transparent;
-  padding: 14px 14px 10px;
+  padding: 10px 12px 8px;
 }
 .app .desk-input .composer-area .composer.enabled:focus-within {
   border-color: color-mix(in srgb, var(--text) 15%, transparent);
 }
 .app .desk-input .composer textarea {
-  min-height: 46px;
-  padding: 0 2px 12px;
+  min-height: 36px;
+  padding: 0 2px 6px;
 }
 .app .desk-input .composer-bar {
   gap: 4px;

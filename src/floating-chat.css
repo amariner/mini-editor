@@ -302,7 +302,7 @@ html.floating-chat-document,
 .app.floating-chat-app .desk-input .composer-area .composer,
 .app.floating-chat-app .desk-input .composer-area .composer.enabled:focus-within {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: 3px;
   min-height: 48px;
@@ -323,8 +323,10 @@ html.floating-chat-document,
   border-color: color-mix(in srgb, var(--floating-edge) 95%, var(--text));
 }
 .app.floating-chat-app .desk-input .composer > textarea {
+  grid-column: 1 / -1;
+  width: 100%;
   min-width: 0;
-  min-height: 30px;
+  min-height: 36px;
   height: auto !important;
   max-height: min(120px, 30vh);
   field-sizing: content;
@@ -339,9 +341,13 @@ html.floating-chat-document,
 .app.floating-chat-app .composer-bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
   align-self: end;
-  gap: 6px;
+  gap: 4px;
   min-height: 32px;
   padding: 0;
   margin: 0;
@@ -526,4 +532,40 @@ html.floating-chat-document,
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* The writing row always spans the window; controls may wrap below it. */
+.app.floating-chat-app .desk-input .composer-bar {
+  flex-wrap: wrap;
+}
+.app.floating-chat-app .desk-input .composer-account {
+  flex: 0 1 100px;
+  max-width: 100px;
+}
+.app.floating-chat-app .desk-input .composer-chips {
+  flex: 1 1 100px;
+  min-width: 0;
+}
+.app.floating-chat-app .desk-input .composer-bar .send {
+  flex: 0 0 32px;
+  margin-left: auto;
+}
+.app.floating-chat-app .desk-input .composer-bar .send > svg {
+  color: inherit;
+}
+
+.app.floating-chat-app .floating-chat-drag-handle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  cursor: grab;
+  -webkit-app-region: drag;
+}
+.app.floating-chat-app .floating-chat-title {
+  cursor: grab;
 }

@@ -32,6 +32,17 @@ try {
   const floating = await opened;
   floating.on('pageerror', (error) => errors.push(error.message));
   await floating.locator('.floating-chat-header').waitFor();
+  assert.equal(await floating.getByRole('button', { name: 'Detalles del chat', exact: true }).count(), 0);
+  const drag = await floating.getByRole('img', { name: 'Mover ventana', exact: true }).evaluate((el) => ({
+    width: el.getBoundingClientRect().width,
+    height: el.getBoundingClientRect().height,
+    region: getComputedStyle(el).getPropertyValue('-webkit-app-region'),
+    controls: getComputedStyle(document.querySelector('.floating-chat-controls')).getPropertyValue('-webkit-app-region'),
+  }));
+  assert.ok(drag.width >= 24 && drag.height >= 24, 'Visible drag handle needs a usable area');
+  assert.equal(drag.region, 'drag');
+  assert.equal(drag.controls, 'no-drag');
+
   await floating.getByRole('button', { name: 'Opciones de ventana flotante', exact: true }).click();
   await floating.locator('#floating-opacity').fill('45');
   assert.equal(
@@ -199,6 +210,33 @@ try {
       .setSize(340, 360);
   }, session.id);
   await floating.waitForFunction(() => innerWidth === 340 && innerHeight === 360);
+  for (const width of [340, 460, 520]) {
+    await app.evaluate(({ BrowserWindow }, { id, width }) => {
+      BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(id)).setSize(width, 580);
+    }, { id: session.id, width });
+    await floating.waitForFunction((width) => innerWidth === width, width);
+    for (const text of ['', 'Mensaje de prueba', 'Primera línea\nSegunda línea']) {
+      await floating.getByRole('textbox', { name: 'Mensaje', exact: true }).fill(text);
+      const geometry = await floating.locator('.composer').evaluate((composer) => {
+        const rect = composer.getBoundingClientRect();
+        const area = composer.querySelector('textarea').getBoundingClientRect();
+        const bar = composer.querySelector('.composer-bar').getBoundingClientRect();
+        return {
+          fullWritingRow: area.width >= rect.width - 32 && area.bottom <= bar.top + 1,
+          controlsFit: [...composer.querySelectorAll('.composer-bar button:not(.composer-extras button)')]
+            .filter((el) => el.getBoundingClientRect().width > 0)
+            .every((el) => { const r = el.getBoundingClientRect(); return r.left >= rect.left && r.right <= rect.right + 1; }),
+        };
+      });
+      assert.ok(geometry.fullWritingRow, `Writing row at ${width}px: ${JSON.stringify(geometry)}`);
+      assert.ok(geometry.controlsFit, `Controls overflow at ${width}px`);
+    }
+    await floating.screenshot({ path: `artifacts/floating-composer-${width}.png` });
+  }
+  await app.evaluate(({ BrowserWindow }, id) => {
+    BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(id)).setSize(340, 360);
+  }, session.id);
+  await floating.waitForFunction(() => innerWidth === 340 && innerHeight === 360);
   await floating.getByRole('button', { name: 'Opciones de ventana flotante', exact: true }).click();
   await floating.waitForTimeout(200);
   const compactLayout = await floating.evaluate(() => {
@@ -229,6 +267,24 @@ try {
   assert.equal(saved.glass, true);
   assert.equal(saved.blur, false);
   if (process.platform === 'darwin') assert.equal(saved.glassStrength, 2);
+  await call(restored, { type: 'floatingChat', sessionId: session.id, operation: 'dock' });
+  await page.getByRole('button', { name: 'Multichat', exact: true }).click();
+  const card = page.locator('.multichat-card').first();
+  await card.locator('textarea').fill('Borrador sin enviar');
+  for (const color of ['#001908', '#ffffff']) {
+    await call(page, { type: 'setAccountColor', profile: session.profile, color });
+    await page.waitForTimeout(100);
+    const contrast = await card.locator('button[type="submit"]').evaluate((button) => ({
+      background: getComputedStyle(button).backgroundColor,
+      icon: getComputedStyle(button.querySelector('svg')).color,
+      ink: getComputedStyle(button).color,
+      visible: button.querySelector('svg').getBoundingClientRect().width > 0,
+    }));
+    assert.notEqual(contrast.background, contrast.icon, 'Send icon must contrast with its surface');
+    assert.equal(contrast.icon, contrast.ink, 'Account icon colours must not override send contrast');
+    assert.equal(contrast.visible, true);
+  }
+  await page.screenshot({ path: 'artifacts/grid-send-contrast.png' });
   assert.deepEqual(errors, []);
   console.log(
     'Floating appearance: independent effects, compact controls, stable composer focus, themes and persistence OK.',

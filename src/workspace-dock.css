@@ -10,9 +10,9 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 6px;
+  padding: 3px 6px;
   border-bottom: 1px solid var(--line);
-  min-height: 43px;
+  min-height: 36px;
   flex-shrink: 0;
 }
 .app .dock-tabs {
@@ -38,7 +38,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px;
+  padding: 5px 7px;
+  min-height: 28px;
   border: 0;
   background: none;
   color: inherit;

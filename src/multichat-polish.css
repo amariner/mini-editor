@@ -487,3 +487,18 @@
 .app .multichat-card .multichat-compose-row > button {
   transform: translateY(-1px);
 }
+
+/* Keep the action and its icon on the same contrast pair, including account tints. */
+.app .multichat-card .multichat-compose-row > button[type='submit']:enabled {
+  background: var(--text);
+  color: var(--card);
+}
+.app .multichat-card .multichat-compose-row > button[type='submit']:enabled:hover {
+  background: color-mix(in srgb, var(--text) 85%, var(--card));
+  color: var(--card);
+}
+.app .multichat-card .multichat-compose-row > button[type='submit'] > svg {
+  color: inherit;
+  stroke: currentColor;
+  flex-shrink: 0;
+}

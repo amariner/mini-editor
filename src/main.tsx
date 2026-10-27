@@ -1,5 +1,5 @@
 import { WorkspaceDock, type ToolView } from './workspace-dock';
-import { ChatDetails, ChatDetailsContent } from './chat-details';
+import { ChatDetailsContent } from './chat-details';
 import { usePanelPresence } from './panel-presence';
 import type { WorkspaceView } from './workspace-panel';
 import { FloatingChatHeader, DetachedChat } from './floating-chat';
@@ -347,6 +347,20 @@ function App() {
     if (panelVisible) panelElement.current?.focus({ preventScroll: true });
   }, [panelVisible]);
   useEffect(() => setPanelFile(undefined), [project?.id, session?.worktree?.cwd]);
+  const previousToolSession = useRef<string | undefined>(undefined);
+  // A fresh conversation starts with its writing surface, not inherited tools.
+  // Depend on selection only so explicitly opened tools stay open while drafting.
+  useLayoutEffect(() => {
+    const previous = previousToolSession.current;
+    previousToolSession.current = session?.id;
+    if (previous && session && !session.messages.length && !session.approvals.length) {
+      setPanelOpenRaw(false);
+      setShowBrowserRaw(false);
+      setShowTerminalPanelRaw(false);
+      setToolLauncher(false);
+      setDockExpanded(false);
+    }
+  }, [session?.id]);
   useEffect(() => {
     if (!hasChats) setMultichat('off');
   }, [hasChats]);
@@ -1760,16 +1774,6 @@ function App() {
             >
               <ChatActionsContext.Provider value={chatActions}>
                 <section className="conversation">
-                  {floatingSessionId && session && !detached && (
-                    <ChatDetails
-                      key={session.id}
-                      session={session}
-                      project={project.name}
-                      root={project.path}
-                      git={diff}
-                      gitError={diffError}
-                    />
-                  )}
                   {floatingSessionId && session && (
                     <FloatingChatHeader
                       session={session}

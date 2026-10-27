@@ -143,7 +143,8 @@ try {
   assert.ok(draft.startsWith('Conserva el diseño de la cabecera.\n\n'));
   assert.ok(draft.includes('El trabajo, en su sitio.'));
   assert.ok(draft.includes(origin));
-  assert.equal(await composer.evaluate((element) => element === document.activeElement), true);
+  await until(async () => composer.evaluate((element) => element === document.activeElement),
+    'La captura debe devolver el foco al borrador');
   assert.deepEqual(
     (await snap()).sessions.find((s) => s.id === tab.sessionId).messages,
     messagesBefore,
@@ -260,6 +261,25 @@ try {
     '0s',
   );
   await capture('browser-refined-compact-light');
+  // New conversations must not inherit an open browser from the previous chat.
+  const previous = await snap();
+  await call({
+    type: 'newSession',
+    projectId: previous.selectedProject,
+    profile: previous.profiles[0].id,
+  });
+  await until(async () => !(await page.locator('.workspace').getAttribute('data-tools-open') === 'true'),
+    'Un chat nuevo debe comenzar sin paneles heredados');
+  assert.equal(await guestGeometry(), undefined, 'La página nativa también debe ocultarse');
+  // Explicitly opening the browser in this empty chat remains possible.
+  await call({ type: 'browserNew', projectId: previous.selectedProject, url: origin + '/fresh' });
+  await until(async () => await page.locator('.workspace').getAttribute('data-tools-open') === 'true');
+  await until(geometryMatches);
+  if (await options.getAttribute('aria-expanded') === 'true') await options.click();
+  await until(geometryMatches);
+  const chromeHeight = await page.locator('.browser-viewport').evaluate((element) =>
+    element.getBoundingClientRect().top - element.closest('.workspace-dock').getBoundingClientRect().top);
+  assert.ok(chromeHeight <= 110, `Cabecera demasiado alta: ${chromeHeight}px`);
   assert.deepEqual(errors, []);
   console.log(
     'PASS: grouped controls, live native geometry, zero navigation hide/show, preserved drafts + real screenshot attachments without sends, project isolation, editable address preservation, focus/Escape, adjacent tabs, compact viewport and reduced motion.',
