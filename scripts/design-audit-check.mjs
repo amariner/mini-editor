@@ -213,7 +213,7 @@ try {
     await page.getByRole('button', { name: 'Herramientas del chat', exact: true }).click();
     assert.equal(
       await page
-        .locator('.composer-tools.open .composer-chips')
+        .locator('.composer-tools.open .composer-extras')
         .evaluate((el) =>
           [...el.children].every((child) => getComputedStyle(child).animationDelay === '0s'),
         ),

@@ -95,7 +95,7 @@ const localCommands: SlashCommand[] = [
   { name: 'status', description: 'Cuenta, modelo y versión' },
   { name: 'mcp', description: 'Gestionar conexiones MCP del chat' },
   { name: 'rename', description: 'Renombrar la sesión', argumentHint: '[nombre]' },
-  { name: 'terminal', description: 'Abrir la terminal oficial de Claude Code' },
+  { name: 'terminal', description: 'Terminal del proyecto' },
   { name: 'help', description: 'Lista de comandos' },
 ];
 const ICONS: Record<StepKind, typeof FileText> = {
@@ -1724,6 +1724,7 @@ export function Composer({
   accountName,
   accountControl,
   disabled = false,
+  minimal = false,
   optimization = defaultOptimization,
   draft,
   setDraft,
@@ -1739,6 +1740,7 @@ export function Composer({
   accountName: string;
   accountControl?: React.ReactNode;
   disabled?: boolean;
+  minimal?: boolean;
   optimization?: TokenOptimization;
   draft: string;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
@@ -1758,6 +1760,8 @@ export function Composer({
   const [imageError, setImageError] = useState('');
   const [flash, setFlash] = useState<{ ok: boolean; text: string }>();
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [modelApplying, setModelApplying] = useState(false);
+  const modelApplyingRef = useRef(false);
   const [effortMenu, setEffortMenu] = useState<{ value: string; name: string; levels: string[] }>();
   const insightId = useId();
   const menuId = useId();
@@ -1791,14 +1795,22 @@ export function Composer({
     )
       void run({ type: 'refreshModels', sessionId: session.id });
   };
-  const chooseModel = async (model: string) => {
-    const changed = await run({
-      type: connected ? 'configureProvider' : claude ? 'configure' : 'configureCodex',
-      sessionId: session.id,
-      config: { model },
-    });
-    if (changed && !connected) await optimize({ autoModel: false });
-    return changed;
+  const chooseModel = async (model: string, effort?: string) => {
+    if (modelApplyingRef.current) return false;
+    modelApplyingRef.current = true;
+    setModelApplying(true);
+    try {
+      const changed = await run({
+        type: connected ? 'configureProvider' : claude ? 'configure' : 'configureCodex',
+        sessionId: session.id,
+        config: connected ? { model } : { model, effort },
+      } as Action);
+      if (changed && !connected) await optimize({ autoModel: false });
+      return changed;
+    } finally {
+      modelApplyingRef.current = false;
+      setModelApplying(false);
+    }
   };
   const openModelOptions = () => {
     setEffortMenu(undefined);
@@ -1821,13 +1833,8 @@ export function Composer({
     const currentModel = claude ? config?.model : session.codexConfig?.model;
     const currentEffort = claude ? config?.effort : session.codexConfig?.effort;
     const apply = async (effort?: string) => {
-      const result = await run({
-        type: claude ? 'configure' : 'configureCodex',
-        sessionId: session.id,
-        config: { model: effortMenu.value, effort },
-      } as Action);
+      const result = await chooseModel(effortMenu.value, effort);
       if (result) {
-        await optimize({ autoModel: false });
         setEffortMenu(undefined);
         close();
       }
@@ -1839,6 +1846,7 @@ export function Composer({
         </div>
         <button
           autoFocus
+          disabled={modelApplying}
           className={currentModel === effortMenu.value && !currentEffort ? 'on' : ''}
           onClick={() => void apply()}
         >
@@ -1847,6 +1855,7 @@ export function Composer({
         {effortMenu.levels.map((level) => (
           <button
             key={level}
+            disabled={modelApplying}
             className={currentModel === effortMenu.value && level === currentEffort ? 'on' : ''}
             onClick={() => void apply(level)}
           >
@@ -1863,6 +1872,7 @@ export function Composer({
   const autoOption = (close: () => void) => (
     <button
       className={optimization.autoModel ? 'on' : ''}
+      disabled={modelApplying}
       onClick={() => {
         void optimize({ autoModel: true });
         close();
@@ -1876,8 +1886,20 @@ export function Composer({
     const outside = (e: MouseEvent) => {
       if (!tools.current?.contains(e.target as Node)) setToolsOpen(false);
     };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setToolsOpen(false);
+      tools.current?.querySelector<HTMLButtonElement>('.tools-toggle')?.focus();
+    };
+    const composer = tools.current?.closest('.composer-area');
     window.addEventListener('mousedown', outside);
-    return () => window.removeEventListener('mousedown', outside);
+    composer?.addEventListener('keydown', escape as EventListener);
+    return () => {
+      window.removeEventListener('mousedown', outside);
+      composer?.removeEventListener('keydown', escape as EventListener);
+    };
   }, [toolsOpen]);
   const working = session.status === 'working' || session.status === 'waiting';
   const enabled =
@@ -1962,22 +1984,26 @@ export function Composer({
     };
   }, [enabled, session.id]);
   const commands = useMemo(() => {
-    if (!claude || !draft.startsWith('/') || draft.includes('\n')) return [];
+    if (minimal || !draft.startsWith('/') || draft.includes('\n')) return [];
     const q = draft.slice(1).split(' ')[0].toLowerCase();
     if (draft.includes(' ')) return [];
-    const remote = (session.info?.commands ?? []).filter(
+    const local = claude
+      ? localCommands
+      : localCommands.filter((command) =>
+          ['copy', 'config', 'mcp', 'terminal'].includes(command.name),
+        );
+    const remote = (claude ? (session.info?.commands ?? []) : []).filter(
       (c) => !localCommands.some((l) => l.name === c.name),
     );
-    return [...localCommands, ...remote]
-      .filter((c) => c.name.toLowerCase().startsWith(q))
-      .slice(0, 12);
-  }, [draft, session.info?.commands, claude]);
+    return [...local, ...remote].filter((c) => c.name.toLowerCase().startsWith(q)).slice(0, 12);
+  }, [draft, session.info?.commands, claude, minimal]);
   // `@` before the caret opens a fuzzy list of project files (Git's view of the folder).
   const mention = useMemo(() => {
+    if (minimal) return undefined;
     const before = draft.slice(0, caret);
     const m = /(^|\s)@([^\s@]*)$/.exec(before);
     return m ? { start: caret - m[2].length - 1, end: caret, query: m[2] } : undefined;
-  }, [draft, caret]);
+  }, [draft, caret, minimal]);
   useEffect(() => {
     if (!mention) return;
     let cancelled = false;
@@ -2012,6 +2038,10 @@ export function Composer({
   useEffect(() => setIndex(0), [menuKey, menuSize, menu?.type]);
   const selected = Math.max(0, Math.min(index, menuSize - 1));
   useEffect(() => {
+    if (menuSize)
+      document.getElementById(`${menuId}-${selected}`)?.scrollIntoView({ block: 'nearest' });
+  }, [menuId, menuSize, selected]);
+  useEffect(() => {
     const el = area.current;
     if (!el) return;
     el.style.height = 'auto';
@@ -2040,7 +2070,14 @@ export function Composer({
   };
   const send = async () => {
     const text = draft.trim();
-    if ((!text && !images.length) || !enabled || sendingRef.current || pickingRef.current) return;
+    if (
+      (!text && !images.length) ||
+      !enabled ||
+      sendingRef.current ||
+      pickingRef.current ||
+      modelApplyingRef.current
+    )
+      return;
     if (!images.length && text === '/copy') {
       const last = conversationEntries(session)
         .reverse()
@@ -2114,7 +2151,7 @@ export function Composer({
   const context = session.stats?.contextPercent;
   return (
     <div className="composer-area">
-      {session.notice && (
+      {!minimal && session.notice && (
         <p className="codex-permission-timing" role="status">
           {session.notice}
         </p>
@@ -2182,21 +2219,23 @@ export function Composer({
             {images.map((i) => (
               <div className="attachment-thumb" key={i.id}>
                 <AttachmentPreview attachment={i} />
-                <button
-                  aria-label={`Quitar ${i.name}`}
-                  title="Quitar archivo"
-                  disabled={sending || picking}
-                  onClick={() => {
-                    setImages((current) => current.filter((x) => x.id !== i.id));
-                    void run({
-                      type: 'discardImages',
-                      sessionId: session.id,
-                      attachmentIds: [i.id],
-                    });
-                  }}
-                >
-                  <X size={12} />
-                </button>
+                {!minimal && (
+                  <button
+                    aria-label={`Quitar ${i.name}`}
+                    title="Quitar archivo"
+                    disabled={sending || picking}
+                    onClick={() => {
+                      setImages((current) => current.filter((x) => x.id !== i.id));
+                      void run({
+                        type: 'discardImages',
+                        sessionId: session.id,
+                        attachmentIds: [i.id],
+                      });
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -2212,8 +2251,12 @@ export function Composer({
             sending || session.status === 'starting'
               ? 'Conectando agente…'
               : working
-                ? 'Añade indicaciones…'
-                : 'Escribe una tarea…'
+                ? minimal
+                  ? 'El modelo está respondiendo…'
+                  : 'Añade indicaciones…'
+                : minimal
+                  ? 'Escribe…'
+                  : 'Escribe una tarea…'
           }
           // readOnly instead of disabled: the caret stays in the composer while a message is sent.
           readOnly={!enabled || sending}
@@ -2221,6 +2264,7 @@ export function Composer({
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
+            setDismissed('');
             setCaret(e.target.selectionStart);
             setRecall(-1);
           }}
@@ -2270,6 +2314,7 @@ export function Composer({
             const el = e.currentTarget;
             const firstLine = !draft.slice(0, el.selectionStart).includes('\n');
             if (
+              !minimal &&
               e.key === 'ArrowUp' &&
               !e.shiftKey &&
               history.length &&
@@ -2282,7 +2327,7 @@ export function Composer({
               edit(history[next]);
               return;
             }
-            if (e.key === 'ArrowDown' && recall >= 0 && draft === history[recall]) {
+            if (!minimal && e.key === 'ArrowDown' && recall >= 0 && draft === history[recall]) {
               e.preventDefault();
               const next = recall - 1;
               setRecall(next);
@@ -2295,7 +2340,7 @@ export function Composer({
             }
           }}
         />
-        <div className="composer-bar">
+        <div className="composer-bar" hidden={minimal} inert={minimal}>
           <div
             ref={tools}
             className={`composer-tools ${toolsOpen ? 'open' : ''}`}
@@ -2381,10 +2426,14 @@ export function Composer({
                 {(close) => (
                   <>
                     <button
-                      disabled={working}
-                      onClick={() => {
-                        void chooseModel('default');
-                        close();
+                      disabled={working || modelApplying}
+                      className={
+                        !session.providerConfig?.model || session.providerConfig.model === 'default'
+                          ? 'on'
+                          : ''
+                      }
+                      onClick={async () => {
+                        if (await chooseModel('default')) close();
                       }}
                     >
                       Predeterminado
@@ -2392,10 +2441,10 @@ export function Composer({
                     {(session.info?.models ?? []).map((m) => (
                       <button
                         key={m.value}
-                        disabled={working}
-                        onClick={() => {
-                          void chooseModel(m.value);
-                          close();
+                        disabled={working || modelApplying}
+                        className={m.value === session.providerConfig?.model ? 'on' : ''}
+                        onClick={async () => {
+                          if (await chooseModel(m.value)) close();
                         }}
                       >
                         <strong>{m.displayName}</strong>
@@ -2431,6 +2480,7 @@ export function Composer({
                         <button
                           key={m.value}
                           aria-label={m.displayName}
+                          disabled={modelApplying}
                           data-pending-model={effortMenu?.value === m.value || undefined}
                           aria-haspopup="dialog"
                           aria-expanded={effortMenu?.value === m.value}
@@ -2505,9 +2555,20 @@ export function Composer({
                       {autoOption(close)}
                       <button
                         aria-label="Por defecto"
+                        disabled={modelApplying}
                         data-pending-model={effortMenu?.value === 'default' || undefined}
-                        aria-haspopup="dialog"
-                        aria-expanded={effortMenu?.value === 'default'}
+                        aria-haspopup={
+                          session.info?.models.find((m) => m.isDefault)?.supportedEffortLevels
+                            ?.length
+                            ? 'dialog'
+                            : undefined
+                        }
+                        aria-expanded={
+                          session.info?.models.find((m) => m.isDefault)?.supportedEffortLevels
+                            ?.length
+                            ? effortMenu?.value === 'default'
+                            : undefined
+                        }
                         className={
                           !optimization.autoModel &&
                           (!session.codexConfig?.model || session.codexConfig.model === 'default')
@@ -2530,9 +2591,14 @@ export function Composer({
                         <button
                           key={m.value}
                           aria-label={m.displayName}
+                          disabled={modelApplying}
                           data-pending-model={effortMenu?.value === m.value || undefined}
-                          aria-haspopup="dialog"
-                          aria-expanded={effortMenu?.value === m.value}
+                          aria-haspopup={m.supportedEffortLevels?.length ? 'dialog' : undefined}
+                          aria-expanded={
+                            m.supportedEffortLevels?.length
+                              ? effortMenu?.value === m.value
+                              : undefined
+                          }
                           className={
                             !optimization.autoModel && m.value === session.codexConfig?.model
                               ? 'on'
@@ -2651,9 +2717,11 @@ export function Composer({
           ) : (
             <button
               className="send"
-              title="Enviar (↵)"
+              title={modelApplying ? 'Aplicando modelo…' : 'Enviar (↵)'}
               aria-label="Enviar"
-              disabled={!enabled || sending || picking || (!draft.trim() && !images.length)}
+              disabled={
+                !enabled || sending || picking || modelApplying || (!draft.trim() && !images.length)
+              }
               onClick={send}
             >
               <ArrowUp size={17} />

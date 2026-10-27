@@ -287,6 +287,7 @@ export class LocalService extends OpenRouterService {
     return job;
   }
   private async download(url: string, target: string, signal: AbortSignal) {
+    signal.throwIfAborted();
     const response = await (this.services.downloadFetch ?? this.services.fetch ?? fetch)(url, {
       signal,
       redirect: 'follow',

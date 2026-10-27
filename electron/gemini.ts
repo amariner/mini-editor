@@ -206,7 +206,7 @@ export class GeminiRuntime implements ProviderRuntime {
     this.s.status = 'ready';
     this.changed();
   }
-  async send(text: string, attachments: PreparedAttachment[]) {
+  async send(text: string, attachments: PreparedAttachment[], promptText = text) {
     if (this.work) throw new Error('Espera a que termine la respuesta.');
     const model = this.s.providerConfig?.model;
     if (model && model !== 'default')
@@ -215,7 +215,7 @@ export class GeminiRuntime implements ProviderRuntime {
     const prompt: any[] = [
       {
         type: 'text',
-        text: [inherited, text || 'Revisa los archivos adjuntos.'].filter(Boolean).join('\n\n'),
+        text: [inherited, promptText || 'Revisa los archivos adjuntos.'].filter(Boolean).join('\n\n'),
       },
     ];
     for (const file of attachments) {

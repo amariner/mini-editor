@@ -199,7 +199,7 @@ export class OpenCodeRuntime implements ProviderRuntime {
     });
     if (this.s.info) this.s.info.model = value;
   }
-  async send(text: string, attachments: PreparedAttachment[]) {
+  async send(text: string, attachments: PreparedAttachment[], promptText = text) {
     if (this.work) throw new Error('Espera a que termine la respuesta.');
     const { model, models } = await this.selected();
     if ((await this.api.key(this.s.profile)) !== this.token || this.engineModel !== model.value) {
@@ -216,7 +216,7 @@ export class OpenCodeRuntime implements ProviderRuntime {
         text: `Historial previo de esta conversación, como referencia:\n${this.historyContext}`,
         annotations: { audience: ['assistant'] },
       });
-    prompt.push({ type: 'text', text: text || 'Revisa los archivos adjuntos.' });
+    prompt.push({ type: 'text', text: promptText || 'Revisa los archivos adjuntos.' });
     for (const file of attachments) {
       if (file.mediaType.startsWith('image/')) {
         if (!model.image)

@@ -197,6 +197,31 @@ test('download validates GGUF, never overwrites an existing model, and cleans ca
     assert.equal(await fs.readFile(path.join(root, 'model.gguf'), 'utf8'), 'GGUFdownload');
     await service.shutdown();
   }));
+test('cancelling before download starts never calls the transport or leaves the service busy', () =>
+  fixture(async (_service, root) => {
+    let requested = false;
+    const service = new LocalService(root, {
+      fetch: async () => {
+        requested = true;
+        return new Response('GGUFfixture');
+      },
+    });
+    await service.configure('local-1', { directory: root });
+    const pending = service.downloadModel(
+      'local-1',
+      'https://huggingface.co/test/model/resolve/main/cancel.gguf',
+    );
+    service.cancelDownload();
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(requested, false);
+    assert.equal(service.busy, false);
+    assert.equal(
+      (await fs.readdir(root)).some((name) => name.endsWith('.part') || name.endsWith('.gguf')),
+      false,
+    );
+    await service.shutdown();
+  }));
+
 test('managed engine starts, authenticates, streams, rejects concurrent chats and stops', () =>
   fixture(async (service, root) => {
     const engine = path.join(root, 'local-engine', 'b11819');

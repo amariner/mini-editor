@@ -11,15 +11,21 @@ export class PendingInputs {
     private host: {
       sessions: () => Session[];
       ready: (s: Session) => boolean;
-      send: (id: string, text: string, files: PreparedAttachment[]) => Promise<unknown>;
+      send: (
+        id: string,
+        text: string,
+        files: PreparedAttachment[],
+        responseStyle?: 'study',
+      ) => Promise<unknown>;
       changed: () => void;
     },
   ) {}
-  enqueue(session: Session, text: string, files: PreparedAttachment[]) {
+  enqueue(session: Session, text: string, files: PreparedAttachment[], responseStyle?: 'study') {
     const id = randomUUID();
     (session.pendingInputs ??= []).push({
       id,
       text,
+      responseStyle,
       attachments: files.map((f) => f.attachment),
       status: 'pending',
     });
@@ -53,7 +59,7 @@ export class PendingInputs {
       item.status = 'sending';
       this.delivering.add(session.id);
       void this.host
-        .send(session.id, item.text, this.files.get(item.id) ?? [])
+        .send(session.id, item.text, this.files.get(item.id) ?? [], item.responseStyle)
         .then(() => {
           session.pendingInputs = session.pendingInputs?.filter((p) => p !== item);
         })

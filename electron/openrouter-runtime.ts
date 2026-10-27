@@ -117,7 +117,7 @@ export class OpenRouterRuntime implements ProviderRuntime {
       .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.text.trim()))
       .map((m) => ({ role: m.role, content: m.text }));
   }
-  async send(text: string, attachments: PreparedAttachment[]) {
+  async send(text: string, attachments: PreparedAttachment[], promptText = text) {
     if (this.work) throw new Error('Espera a que termine la respuesta.');
     const models = await this.models(),
       model =
@@ -128,7 +128,7 @@ export class OpenRouterRuntime implements ProviderRuntime {
     if (!model) throw new Error('Selecciona un modelo habilitado en Ajustes → Cuenta → Modelos.');
     const key = await this.api.key(this.s.profile);
     if (!key) throw new Error(`Conecta la clave de ${this.api.name} en Ajustes.`);
-    const content: any[] = [{ type: 'text', text: text || 'Revisa los archivos adjuntos.' }];
+    const content: any[] = [{ type: 'text', text: promptText || 'Revisa los archivos adjuntos.' }];
     for (const file of attachments) {
       const data = await fs.readFile(file.path);
       if (file.mediaType.startsWith('image/') && file.mediaType !== 'image/svg+xml') {

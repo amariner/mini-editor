@@ -157,6 +157,33 @@ try {
     const composer = page.locator('.desk-input .composer');
     const account = composer.getByRole('button', { name: 'Cuenta del chat', exact: true });
     await account.waitFor();
+    const message = page.getByRole('textbox', { name: 'Mensaje', exact: true });
+    await message.fill('/term');
+    await page.getByRole('option', { name: /terminal.*Terminal del proyecto/i }).waitFor();
+    await message.press('Escape');
+    assert.equal(await page.getByRole('listbox', { name: 'Comandos' }).count(), 0);
+    await message.fill('');
+    await page.evaluate(() => {
+      window.fixture.state.sessions[0].status = 'working';
+      window.fixture.publish();
+    });
+    await composer.getByRole('button', { name: 'Herramientas del chat', exact: true }).click();
+    await message.focus();
+    await message.press('Escape');
+    assert.equal(
+      await composer
+        .getByRole('button', { name: 'Herramientas del chat', exact: true })
+        .getAttribute('aria-expanded'),
+      'false',
+    );
+    assert.equal(
+      await page.evaluate(() => window.fixture.actions.some((a) => a.type === 'interrupt')),
+      false,
+    );
+    await page.evaluate(() => {
+      window.fixture.state.sessions[0].status = 'ready';
+      window.fixture.publish();
+    });
     await page.getByRole('button', { name: 'Multichat', exact: true }).click();
     const smallCard = page.locator('.multichat-card').first();
     await smallCard.waitFor();
@@ -284,6 +311,29 @@ try {
     await page.getByRole('tab', { name: 'Terminal', exact: true }).waitFor();
     await page.locator('.xterm').waitFor();
     assert.equal(await page.locator('.terminal-pane').count(), 1);
+    await page.evaluate(() => {
+      window.fixture.state.sessions[0].status = 'working';
+      window.fixture.publish();
+    });
+    const shellInput = page.locator('.xterm-helper-textarea');
+    await shellInput.focus();
+    await shellInput.press('Escape');
+    assert.equal(
+      await page.evaluate(() => window.fixture.actions.some((a) => a.type === 'interrupt')),
+      false,
+      'terminal Escape never interrupts the agent',
+    );
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Panel de trabajo', exact: true })
+        .getAttribute('aria-expanded'),
+      'true',
+    );
+    await page.evaluate(() => {
+      window.fixture.state.sessions[0].status = 'ready';
+      window.fixture.publish();
+    });
+
     await page.getByRole('button', { name: 'Abrir herramienta', exact: true }).click();
     await page
       .locator('.dock-launcher')
@@ -319,6 +369,29 @@ try {
       .getByRole('button', { name: /Navegador/ })
       .click();
     await page.getByRole('region', { name: 'Navegador integrado' }).waitFor();
+    // Escape from the composer closes tools; it must not interrupt an active agent.
+    await page.evaluate(() => {
+      window.fixture.state.sessions[0].status = 'working';
+      window.fixture.publish();
+    });
+    await message.focus();
+    await message.press('Escape');
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[aria-label="Panel de trabajo"]').getAttribute('aria-expanded') ===
+        'false',
+    );
+    assert.equal(
+      await page.evaluate(() => window.fixture.actions.some((a) => a.type === 'interrupt')),
+      false,
+    );
+    await page.evaluate(() => {
+      window.fixture.state.sessions[0].status = 'ready';
+      window.fixture.publish();
+    });
+    await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
+
+    await page.getByRole('tab', { name: 'Navegador', exact: true }).click();
     const panelButton = page.getByRole('button', { name: 'Panel de trabajo', exact: true });
     assert.equal(await panelButton.getAttribute('aria-expanded'), 'true');
     await panelButton.click();
@@ -344,6 +417,13 @@ try {
     );
     await page.getByRole('button', { name: 'Cerrar pestaña Terminal', exact: true }).click();
     assert.equal(await page.getByRole('tab', { name: 'Terminal', exact: true }).count(), 0);
+    assert.equal(
+      await page
+        .getByRole('tab', { name: 'Navegador', exact: true })
+        .evaluate((el) => el === document.activeElement),
+      true,
+      'closing the active tab restores focus to its replacement',
+    );
     await page.getByRole('button', { name: 'Ocultar panel de herramientas', exact: true }).click();
     await page.setViewportSize({ width: 620, height: 780 });
     await page.waitForTimeout(200);

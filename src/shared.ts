@@ -350,6 +350,7 @@ export interface Session {
   pendingInputs?: {
     id: string;
     text: string;
+    responseStyle?: 'study';
     attachments: Attachment[];
     status: 'pending' | 'sending' | 'failed';
     error?: string;
@@ -529,7 +530,13 @@ export type Action =
   | { type: 'discardImages'; sessionId: string; attachmentIds: string[] }
   | { type: 'refreshUsage'; profile: Profile }
   | { type: 'cancelPendingInput'; sessionId: string; messageId: string }
-  | { type: 'send'; sessionId: string; text: string; attachmentIds?: string[] }
+  | {
+      type: 'send';
+      sessionId: string;
+      text: string;
+      attachmentIds?: string[];
+      responseStyle?: 'study';
+    }
   | {
       type: 'approve';
       sessionId: string;

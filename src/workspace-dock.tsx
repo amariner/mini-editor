@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import React, { useId, useLayoutEffect, useRef } from 'react';
 import {
   FileDiff,
   FolderOpen,
@@ -46,8 +46,15 @@ export function WorkspaceDock({
   children: React.ReactNode;
 }) {
   const id = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const restoreTabFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!restoreTabFocus.current) return;
+    restoreTabFocus.current = false;
+    root.current?.querySelector<HTMLButtonElement>('[role="tab"][tabindex="0"]')?.focus();
+  }, [tabs, active]);
   return (
-    <div className="workspace-dock">
+    <div className="workspace-dock" ref={root}>
       <header className="dock-header">
         <div className="dock-tabs" role="tablist" aria-label="Herramientas abiertas">
           {tabs.map((tab) => {
@@ -75,7 +82,10 @@ export function WorkspaceDock({
                   className="dock-close-tab"
                   aria-label={`Cerrar pestaña ${tool.name}`}
                   title="Cerrar vista"
-                  onClick={() => onCloseTab(tab)}
+                  onClick={() => {
+                    restoreTabFocus.current = true;
+                    onCloseTab(tab);
+                  }}
                 >
                   <X size={12} />
                 </button>

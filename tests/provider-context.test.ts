@@ -1,3 +1,4 @@
+import { responsePrompt } from '../electron/response-style';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -160,4 +161,19 @@ test('a remote text-only model is directed to model selection, not local account
   assert.match(f.context(), /select a model with tool support/);
   assert.doesNotMatch(f.context(), /Permitir herramientas del proyecto/);
   assert.equal(f.bodies[0].tools, undefined);
+});
+
+test('study presentation reaches the provider without changing the displayed question', async (t) => {
+  const f = await fixture(t);
+  const text = 'Explica la fotosíntesis';
+  await f.runtime.send(text, [], responsePrompt(text, 'study'));
+  await f.ready();
+  assert.equal(f.session.messages.find((m) => m.role === 'user')?.text, text);
+  const sent = f.bodies[0].messages.find((m: any) => m.role === 'user');
+  assert.match(JSON.stringify(sent.content), /response_style/);
+  await f.runtime.send('Ahora escribe un poema', []);
+  await f.ready();
+  const users = f.bodies.at(-1).messages.filter((m: any) => m.role === 'user');
+  assert.doesNotMatch(JSON.stringify(users.at(-1).content), /response_style/);
+  assert.equal(responsePrompt(text), text);
 });

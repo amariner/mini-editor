@@ -1,3 +1,4 @@
+import { responsePrompt } from './response-style';
 import { PendingInputs } from './pending-inputs';
 import { McpConnections } from './mcp';
 import {
@@ -136,7 +137,7 @@ export class Manager {
       !this.startingInputs.has(s.id) &&
       !this.operations.has(s.id) &&
       this.acceptsInput(s),
-    send: (id, text, files) => this.sendNow(id, text, files),
+    send: (id, text, files, style) => this.sendNow(id, text, files, style),
     changed: () => this.changed(),
   });
   private acceptsInput(s: Session) {
@@ -1493,7 +1494,7 @@ export class Manager {
           if (m) {
             const previous = s.messages.find((old) => old.id === m.id);
             m.attachments = previous?.attachments;
-            if (previous?.attachments?.length) m.text = previous.text;
+            if (previous?.role === 'user') m.text = previous.text;
             restored.push(m);
           }
         }
@@ -1541,7 +1542,7 @@ export class Manager {
     }
     const previousUser =
       p?.item?.type === 'userMessage'
-        ? s.messages.find((m) => m.id === p.item.id && m.attachments?.length)
+        ? s.messages.find((m) => m.id === p.item.id && m.role === 'user')
         : undefined;
     const previousUserText = previousUser?.text;
     applyCodexEvent(s, method, p);
@@ -1563,7 +1564,7 @@ export class Manager {
         message.attachments = steered.attachments;
         rt.steeredInputs!.delete(inputId);
       }
-      if (message && !steered && rt.pendingImages?.length) {
+      if (message && !steered && rt.pendingUserText !== undefined) {
         message.attachments = rt.pendingImages;
         message.text = rt.pendingUserText ?? message.text;
         rt.pendingImages = undefined;
@@ -1792,7 +1793,7 @@ export class Manager {
       previousEffort: s.optimization?.effort,
     });
   }
-  async send(id: string, text: string, images: PreparedAttachment[] = []) {
+  async send(id: string, text: string, images: PreparedAttachment[] = [], responseStyle?: 'study') {
     const session = this.session(id);
     this.project(session.projectId);
     if (
@@ -1808,11 +1809,11 @@ export class Manager {
         !this.acceptsInput(session)) ||
       session.pendingInputs?.some((p) => p.status === 'pending' || p.status === 'sending')
     )
-      return this.pendingInputs.enqueue(session, text, images);
+      return this.pendingInputs.enqueue(session, text, images, responseStyle);
     const starting = !this.runtimes.has(id);
     if (starting) this.startingInputs.add(id);
     try {
-      return await this.sendNow(id, text, images);
+      return await this.sendNow(id, text, images, responseStyle);
     } finally {
       if (starting) {
         this.startingInputs.delete(id);
@@ -1824,16 +1825,19 @@ export class Manager {
     id: string,
     text: string,
     images: PreparedAttachment[] = [],
+    responseStyle?: 'study',
   ): Promise<boolean> {
     if (this.accounts.removing(this.session(id).profile))
       throw new Error('Se está eliminando esta cuenta.');
     if (!this.runtimes.has(id)) await this.start(id);
+    const prompt = responsePrompt(text, responseStyle);
     return this.exclusive(id, async () => {
       const s = this.session(id);
       let rt = this.runtime(id);
       if (this.mcp && supportsManagedMcp(s.profile, s.mode)) {
         if (['working', 'waiting'].includes(s.status)) {
-          if (this.mcpNeedsRefresh(s)) return this.pendingInputs.enqueue(s, text, images);
+          if (this.mcpNeedsRefresh(s))
+            return this.pendingInputs.enqueue(s, text, images, responseStyle);
         } else {
           // Refresh expiring OAuth credentials before considering the existing process current.
           await this.resolveMcp(s);
@@ -1846,7 +1850,7 @@ export class Manager {
       }
       if (rt.provider) {
         if (s.status !== 'ready') throw new Error('Espera a que termine la respuesta.');
-        await rt.provider.send(text, images);
+        await rt.provider.send(text, images, prompt);
         if (s.title.startsWith('Sesión ')) s.title = text.slice(0, 48) || 'Archivo adjunto';
         this.changed();
         return true;
@@ -1883,7 +1887,7 @@ export class Manager {
         this.coordinator.task(id, text);
         this.assertCurrentMcp(s);
         s.accountLocked = true;
-        rt.claude.send(text, images);
+        rt.claude.send(text, images, prompt);
         if (s.title.startsWith('Sesión ') && !text.startsWith('/'))
           s.title = text.slice(0, 48) || 'Archivo adjunto';
         this.changed();
@@ -1900,7 +1904,7 @@ export class Manager {
             threadId: s.reference,
             expectedTurnId: s.turnId,
             clientUserMessageId,
-            input: codexAttachmentContent(text, images),
+            input: codexAttachmentContent(prompt, images),
           });
         } catch (error) {
           rt.steeredInputs.delete(clientUserMessageId);
@@ -1928,7 +1932,7 @@ export class Manager {
         rt.pendingUserText = text;
         await rt.rpc!.call('turn/start', {
           threadId: s.reference,
-          input: codexAttachmentContent(text, images),
+          input: codexAttachmentContent(prompt, images),
           ...codexParams(
             { ...mergeCodexConfig(s.codexConfig), model: decision.model, effort: decision.effort },
             s.worktree?.cwd ?? this.project(s.projectId).path,

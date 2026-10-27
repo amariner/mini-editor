@@ -2,6 +2,22 @@
 
 Aplicación local para macOS: una ventana Electron con tus proyectos, cuentas independientes de Claude Code, Codex, OpenRouter y Google · Gemini (sin cuentas precreadas). Claude funciona como un **chat nativo equivalente a Claude Code** (streaming, herramientas, permisos, preguntas, comandos, modelo, permisos y esfuerzo desde el compositor) y conserva su terminal oficial como modo opcional. La interfaz está en español, con un diseño plano y claro.
 
+## Hiperfocus
+
+El icono **Hiperfocus** de la esquina superior derecha del chat abre una vista centrada con un campo de escritura sutil, tu último mensaje y la última respuesta terminada. No muestra proyectos, paneles, razonamiento, herramientas ni accesos al historial. Las respuestas aparecen al finalizar el turno para no confundir narración de trabajo con respuesta final. Los textos extensos se pueden desplazar sin perder el campo de escritura. La caja queda anclada a la misma altura aunque cambie la longitud del intercambio; los adjuntos y el borrador crecen hacia abajo. El intercambio anterior se desvanece durante 280 ms y el nuevo aparece en 620 ms, sin desplazamiento ni desenfoque. Se respeta la preferencia de movimiento reducido. La respuesta se lee en una ventana de unas tres líneas, desplazable con rueda, trackpad o teclado; los bordes se atenúan solo cuando hay más texto fuera de vista. Una pequeña línea respira mientras se prepara la respuesta y desaparece al terminar o pedir un permiso. Con movimiento reducido permanece estática.
+
+**Enter** envía, **Shift+Enter** añade una línea y las imágenes o documentos se adjuntan arrastrándolos o pegándolos. El único control visible permite volver al modo normal; **Esc** también vuelve, sin interrumpir al agente. Si hay una solicitud pendiente, ese control indica **Revisar solicitud**. Al volver se recuperan el historial, borrador, adjuntos y paneles, sin cambiar cuenta, modelo o permisos. El modo se activa por chat y no se conserva al reiniciar.
+
+Verificación con datos sintéticos: `npx tsx --test tests/hyperfocus.test.ts` y, con dev activo, `node scripts/hyperfocus-check.mjs`. Capturas de claro, oscuro y ventanas pequeñas en `artifacts/hyperfocus`.
+
+## Revisión de fluidez y controles
+
+Los selectores de modelos se reajustan cuando llega el catálogo y señalan también la selección de los proveedores conectados. Las flechas derecha/izquierda abren y cierran la intensidad; **Volver a modelos** permite regresar con el ratón en espacios pequeños. El foco empieza en la intensidad actual. Mientras se confirma un cambio no se duplican solicitudes ni se envía un mensaje con el modelo anterior; el borrador sigue editable y los fallos conservan el menú para reintentar.
+
+Escape cierra las herramientas abiertas antes de interrumpir un agente. Dentro del terminal pertenece al shell. Cerrar una pestaña devuelve el foco a la herramienta activa. `/copy`, `/config`, `/mcp` y `/terminal` se sugieren en todos los proveedores; los comandos propios de Claude se mantienen en Claude. Las sugerencias acompañan la navegación por teclado. El tema Original suaviza la opción seleccionada y distingue el botón de envío disponible.
+
+La cancelación de una descarga local se comprueba también antes de iniciar la petición, para cubrir cancelaciones durante la preparación. Pruebas aisladas: `npm test`, `npm run build`, `node scripts/model-flow-check.mjs`, `node scripts/minimal-workspace-check.mjs`, `node scripts/design-audit-check.mjs` y `node scripts/browser-ux-check.mjs`. Las comprobaciones de controles, escritura, archivos, recuperación y streaming admiten `PLAYWRIGHT_CHANNEL=chrome`. Se usan cuentas y respuestas sintéticas; no se verifica inferencia de proveedores reales.
+
 ## Chat y herramientas · 0.1.6
 
 El cuadro de escritura reúne la cuenta, los permisos, el modelo y el contexto. El selector de cuenta comparte el estilo de los demás menús. Al elegir un modelo se abre al lado el submenú de intensidad; ambos se aplican al elegir la intensidad, y Escape cancela la elección pendiente. La rama y las acciones de Git están en **Información**, en el lateral. El panel comparte pestañas de **Terminal**, **Navegador**, **Archivos**, **Cambios** e **Información**: `+` abre el selector de herramientas, cada pestaña se puede cerrar y el panel se puede ampliar para ocupar el espacio de trabajo. Ocultar o cerrar la vista del terminal conserva el shell y su buffer; cambiar de proyecto cambia a su terminal. El navegador puede abrir una página vacía sin necesitar un servidor local.

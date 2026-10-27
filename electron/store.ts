@@ -99,6 +99,7 @@ const schema = z.object({
           z.object({
             id: z.string(),
             text: z.string(),
+            responseStyle: z.literal('study').optional(),
             attachments: z.array(
               z.object({
                 id: z.string(),

@@ -210,3 +210,64 @@ test('una indicación durante el arranque nunca adelanta al primer mensaje', asy
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('study style survives the queue without changing visible text', async () => {
+  const s = chat();
+  const sent: unknown[][] = [];
+  const q = new PendingInputs({
+    sessions: () => [s],
+    ready: () => true,
+    changed: () => {},
+    send: async (...args) => {
+      sent.push(args);
+    },
+  });
+  q.enqueue(s, 'Fotosíntesis', [], 'study');
+  assert.equal(s.pendingInputs![0].text, 'Fotosíntesis');
+  q.pump();
+  await tick();
+  assert.deepEqual(sent, [['s', 'Fotosíntesis', [], 'study']]);
+});
+
+test('Codex study prompt stays out of visible text on repeated server events', async () => {
+  const { s, manager } = harness();
+  manager.runtimes.get(s.id)!.rpc!.call = async (_method: string, params: any) => {
+    assert.match(JSON.stringify(params.input), /response_style/);
+    const event = {
+      threadId: s.reference,
+      item: {
+        id: 'study-message',
+        clientId: params.clientUserMessageId,
+        type: 'userMessage',
+        content: params.input,
+      },
+    };
+    manager.notification(s, { method: 'item/started', params: event });
+    manager.notification(s, { method: 'item/completed', params: event });
+    return { turnId: s.turnId };
+  };
+  await manager.send(s.id, 'Fotosíntesis', [], 'study');
+  assert.equal(s.messages.length, 1);
+  assert.equal(s.messages[0].text, 'Fotosíntesis');
+});
+
+test('Codex initial study echo without attachments preserves the original phrase', () => {
+  const { s, manager } = harness();
+  const rt = manager.runtimes.get(s.id)!;
+  rt.pendingUserText = 'Mi pregunta';
+  rt.pendingImages = [];
+  const params = {
+    threadId: s.reference,
+    item: {
+      id: 'initial-study',
+      type: 'userMessage',
+      content: [
+        { type: 'text', text: 'Mi pregunta\n<response_style>Formato de estudio</response_style>' },
+      ],
+    },
+  };
+  manager.notification(s, { method: 'item/started', params });
+  manager.notification(s, { method: 'item/completed', params });
+  assert.equal(s.messages[0].text, 'Mi pregunta');
+  assert.equal(rt.pendingUserText, undefined);
+});

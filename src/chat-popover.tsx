@@ -83,11 +83,15 @@ export function Popover({
     const observer = new ResizeObserver(place);
     observer.observe(boundary);
     observer.observe(ref.current);
+    observer.observe(panel.current);
+    const contentObserver = new MutationObserver(place);
+    contentObserver.observe(panel.current, { childList: true, subtree: true, characterData: true });
     window.addEventListener('resize', place);
     // A drawer can scroll without resizing; keep the menu in its visible bounds.
     boundary.addEventListener('scroll', place, true);
     return () => {
       observer.disconnect();
+      contentObserver.disconnect();
       window.removeEventListener('resize', place);
       boundary.removeEventListener('scroll', place, true);
     };
@@ -124,13 +128,29 @@ export function Popover({
       popup.style.top = `${Math.max(margin, Math.min(main.top, window.innerHeight - margin - height))}px`;
     };
     placeSide();
+    const observer = new ResizeObserver(placeSide);
+    observer.observe(panel.current);
+    observer.observe(side.current);
     window.addEventListener('resize', placeSide);
     window.addEventListener('scroll', placeSide, true);
     return () => {
+      observer.disconnect();
       window.removeEventListener('resize', placeSide);
       window.removeEventListener('scroll', placeSide, true);
     };
   }, [open, !!sidePanel]);
+  useEffect(() => {
+    if (!open || !sidePanel) return;
+    const current = side.current?.querySelector<HTMLButtonElement>('button.on:not(:disabled)');
+    const first = side.current?.querySelector<HTMLButtonElement>(
+      'button:not(.popover-back):not(:disabled)',
+    );
+    focusOption(current ?? first ?? undefined);
+  }, [open, !!sidePanel]);
+  const closeSide = () => {
+    onSideClose?.();
+    panel.current?.querySelector<HTMLButtonElement>('[data-pending-model="true"]')?.focus();
+  };
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => {
@@ -141,8 +161,7 @@ export function Popover({
         e.preventDefault();
         e.stopPropagation();
         if (sidePanel && onSideClose) {
-          onSideClose();
-          panel.current?.querySelector<HTMLButtonElement>('[data-pending-model="true"]')?.focus();
+          closeSide();
           return;
         }
         setOpen(false);
@@ -203,6 +222,14 @@ export function Popover({
             )
               return;
             if (e.altKey || e.metaKey || e.ctrlKey || e.nativeEvent.isComposing) return;
+            if (
+              e.key === 'ArrowRight' &&
+              (e.target as HTMLElement).matches('[aria-haspopup="dialog"]')
+            ) {
+              e.preventDefault();
+              (e.target as HTMLButtonElement).click();
+              return;
+            }
             const options = buttons();
             if (!options.length) return;
             const index = options.indexOf(document.activeElement as HTMLButtonElement);
@@ -252,6 +279,12 @@ export function Popover({
           aria-label={sideLabel}
           ref={side}
           onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft' && onSideClose) {
+              e.preventDefault();
+              e.stopPropagation();
+              closeSide();
+              return;
+            }
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
             const options = Array.from(
               side.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [],
@@ -268,6 +301,11 @@ export function Popover({
             options[next]?.focus();
           }}
         >
+          {onSideClose && (
+            <button className="popover-back" onClick={closeSide} aria-label="Volver a modelos">
+              ← Modelos
+            </button>
+          )}
           {sidePanel(close)}
         </div>
       )}

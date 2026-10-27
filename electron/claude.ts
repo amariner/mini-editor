@@ -323,7 +323,7 @@ export class ClaudeRuntime {
       throw new Error('Esta versión de Claude Code no permite consultar la cuota desde el chat.');
     return method.call(this.query, { skipBehaviors: true });
   }
-  send(text: string, images: PreparedAttachment[] = []) {
+  send(text: string, images: PreparedAttachment[] = [], promptText = text) {
     const s = this.s;
     // Our UUID becomes the transcript id of this prompt, so rewindFiles can target the turn.
     const checkpoint = randomUUID();
@@ -343,7 +343,7 @@ export class ClaudeRuntime {
       type: 'user',
       message: {
         role: 'user',
-        content: images.length ? claudeAttachmentContent(text, images) : text,
+        content: images.length ? claudeAttachmentContent(promptText, images) : promptText,
       },
       parent_tool_use_id: null,
       uuid: checkpoint,

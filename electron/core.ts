@@ -314,6 +314,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('send'),
+      responseStyle: z.literal('study').optional(),
       sessionId: id,
       text: z.string().trim().max(100000),
       attachmentIds: z.array(z.string().uuid()).optional(),

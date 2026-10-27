@@ -1,3 +1,4 @@
+import { Hyperfocus } from './hyperfocus';
 import { WorkspaceDock, type ToolView } from './workspace-dock';
 import { ChatDetailsContent } from './chat-details';
 import { usePanelPresence } from './panel-presence';
@@ -23,6 +24,7 @@ import React, {
 import { createRoot } from 'react-dom/client';
 import {
   LayoutGrid,
+  Focus,
   ArrowLeft,
   Folder,
   Plus,
@@ -116,6 +118,7 @@ function App() {
   const split = useWorkspaceSplit();
   const [state, setState] = useState<Snapshot>(),
     [error, setError] = useState(''),
+    [hyperfocusSession, setHyperfocusSession] = useState<string>(),
     [multichat, setMultichat] = useState<'off' | 'grid' | 'focused'>('off'),
     [hiddenChats, setHiddenChats] = useState<string[]>(() => {
       try {
@@ -234,6 +237,11 @@ function App() {
     pendingActions = useRef(new Map<string, number>()),
     recentSessions = useRef<Record<string, string | null>>({}),
     stateRef = useRef<Snapshot | undefined>(undefined);
+  const hyperfocusTrigger = useRef<HTMLButtonElement>(null);
+  const exitHyperfocus = () => {
+    setHyperfocusSession(undefined);
+    requestAnimationFrame(() => hyperfocusTrigger.current?.focus({ preventScroll: true }));
+  };
   const projectDrag = useRef<string | undefined>(undefined);
   const suppressProjectClick = useRef(false);
   const projectAccordionClick = useRef<{ id: string; folded: boolean } | undefined>(undefined);
@@ -319,6 +327,7 @@ function App() {
       selectedSession && selectedSession.id === closedSelection ? undefined : selectedSession,
     profile = selectedSession?.profile ?? state?.defaultProfile ?? accountProfiles[0]?.id,
     kind = providerKind(profile);
+  const hyperfocus = !!session && hyperfocusSession === session.id && session.mode !== 'terminal';
   const availability = workspaceAvailability(state);
   const { hasAccounts, hasProjects, hasChats, canBrowse } = availability;
   const onboarding = !floatingSessionId && (!hasAccounts || !hasProjects);
@@ -344,7 +353,8 @@ function App() {
     panelTrigger.current?.focus({ preventScroll: true });
   };
   useEffect(() => {
-    if (panelVisible) panelElement.current?.focus({ preventScroll: true });
+    if (panelVisible && !panelElement.current?.contains(document.activeElement))
+      panelElement.current?.focus({ preventScroll: true });
   }, [panelVisible]);
   useEffect(() => setPanelFile(undefined), [project?.id, session?.worktree?.cwd]);
   const previousToolSession = useRef<string | undefined>(undefined);
@@ -704,6 +714,15 @@ function App() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+      if (hyperfocus) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          exitHyperfocus();
+        } else if ((e.metaKey || e.ctrlKey) && ['k', ',', 'n', 'b'].includes(e.key.toLowerCase())) {
+          e.preventDefault();
+        }
+        return;
+      }
       if (floatingSessionId && (e.metaKey || e.ctrlKey) && ['n', 'k'].includes(e.key)) {
         e.preventDefault();
         return;
@@ -769,7 +788,10 @@ function App() {
           setAttentionOpen(false);
           setConfirmClose(undefined);
           setRemoveId(undefined);
-        } else if (panelVisible) {
+        } else if ((e.target as HTMLElement)?.closest('.xterm')) {
+          // Escape belongs to the shell (readline, Vim, etc.), never to the agent.
+          return;
+        } else if (toolsVisible) {
           e.preventDefault();
           closeWorkspace();
         } else if (multichat === 'focused') {
@@ -783,7 +805,16 @@ function App() {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [search, settings, attentionOpen, confirmClose, removeId, multichat, panelVisible]);
+  }, [
+    search,
+    settings,
+    attentionOpen,
+    confirmClose,
+    removeId,
+    multichat,
+    toolsVisible,
+    hyperfocus,
+  ]);
   const refreshDiff = async () => {
     if (!project) return;
     const request = ++diffRequest.current;
@@ -880,7 +911,7 @@ function App() {
     });
     observer.observe(element, { childList: true, characterData: true, subtree: true });
     return () => observer.disconnect();
-  }, [session?.id, multichat, stick]);
+  }, [session?.id, multichat, stick, hyperfocus]);
   useEffect(() => {
     if (stick && list.current) list.current.scrollTop = list.current.scrollHeight;
   }, [
@@ -1006,13 +1037,19 @@ function App() {
     void arg;
     return false;
   };
-  const sendText = async (s: Session, text: string, images: Attachment[]) => {
+  const sendText = async (
+    s: Session,
+    text: string,
+    images: Attachment[],
+    responseStyle?: 'study',
+  ) => {
     if (!compatibleRuntime(stateRef.current)) {
       setError(RESTART_NOTICE);
       return false; // Preserve the draft while the main process is out of date.
     }
     const result = await run({
       type: 'send',
+      responseStyle,
       sessionId: s.id,
       text,
       attachmentIds: images.map((i) => i.id),
@@ -1285,6 +1322,57 @@ function App() {
       else closeWorkspace();
     }
   };
+
+  if (hyperfocus && session && !detached)
+    return (
+      <ChatActionsContext.Provider
+        value={{
+          ...chatActions,
+          openUrl: (url) => {
+            exitHyperfocus();
+            chatActions.openUrl?.(url);
+          },
+          openPath: (path) => {
+            exitHyperfocus();
+            chatActions.openPath?.(path);
+          },
+        }}
+      >
+        <Hyperfocus
+          key={`${session.id}:${session.profile}`}
+          session={session}
+          accountName={
+            accountProfiles.find((p) => p.id === session.profile)?.name ?? session.profile
+          }
+          optimization={accountProfiles.find((p) => p.id === session.profile)?.optimization}
+          disabled={navigating || !!busy[session.id] || !compatibleRuntime(state)}
+          error={error}
+          needsAttention={needsGeminiPermission}
+          onExit={exitHyperfocus}
+          draft={drafts[session.id] ?? ''}
+          setDraft={(value) =>
+            setDrafts((d) => ({
+              ...d,
+              [session.id]: typeof value === 'function' ? value(d[session.id] ?? '') : value,
+            }))
+          }
+          images={imageDrafts[session.id] ?? []}
+          setImages={(value) =>
+            setImageDrafts((d) => ({
+              ...d,
+              [session.id]: typeof value === 'function' ? value(d[session.id] ?? []) : value,
+            }))
+          }
+          run={run}
+          onSend={(text, images) => sendText(session, text, images, 'study')}
+          onLocalCommand={(name, arg) => {
+            const handled = localCommand(name, arg);
+            if (handled) exitHyperfocus();
+            return handled;
+          }}
+        />
+      </ChatActionsContext.Provider>
+    );
 
   return (
     <div
@@ -1587,6 +1675,16 @@ function App() {
         <header className="topbar">
           <div className="topbar-slot" ref={setTopbarSlot} />
           <div className="top-actions">
+            {session && !terminalMode && !detached && !gridVisible && (
+              <button
+                ref={hyperfocusTrigger}
+                aria-label="Entrar en hiperfocus"
+                title="Hiperfocus · Solo la última conversación"
+                onClick={() => setHyperfocusSession(session.id)}
+              >
+                <Focus size={17} aria-hidden="true" />
+              </button>
+            )}
             {hasChats && (attention.length > 0 || attentionOpen) && (
               <button
                 className={`attention-trigger ${attentionOpen ? 'on' : ''}`}
@@ -2143,8 +2241,8 @@ function App() {
                   data-open={toolsPresence.visible}
                   className={`drawer tools-drawer workspace-tools ${browserVisible ? 'with-browser' : ''}`}
                   onKeyDown={(event) => {
-                    if (event.key !== 'Escape' || event.defaultPrevented || showTerminalPanel)
-                      return;
+                    if (event.key !== 'Escape' || event.defaultPrevented) return;
+                    if ((event.target as HTMLElement).closest('.xterm')) return;
                     event.preventDefault();
                     event.stopPropagation();
                     closeWorkspace();

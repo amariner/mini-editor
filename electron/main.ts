@@ -828,7 +828,7 @@ app.whenReady().then(async () => {
         case 'send': {
           const images = await attachments.resolve(a.sessionId, a.attachmentIds ?? []);
           attachments.markUsed(a.attachmentIds ?? []);
-          return manager.send(a.sessionId, a.text, images);
+          return manager.send(a.sessionId, a.text, images, a.responseStyle);
         }
         case 'approve':
           return manager.approve(a.sessionId, a.requestId, a.decision, a.answers, a.message);

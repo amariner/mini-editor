@@ -14,6 +14,7 @@
   border-bottom: 1px solid var(--line);
   min-height: 36px;
   flex-shrink: 0;
+  color: var(--text-2);
 }
 .app .dock-tabs {
   display: flex;
@@ -196,4 +197,18 @@
 .app .dock-views[hidden],
 .app .dock-view[hidden] {
   display: none;
+}
+
+.app .dock-header > .dock-icon {
+  flex-shrink: 0;
+}
+.app .dock-tab > .dock-close-tab {
+  min-width: 24px;
+}
+.app .dock-launcher button:hover {
+  background: color-mix(in srgb, var(--text) 10%, var(--bg));
+}
+.app .dock-launcher button:focus-visible {
+  outline: 2px solid var(--focus, var(--muted));
+  outline-offset: 2px;
 }

@@ -286,3 +286,22 @@
     margin-right: 8px;
   }
 }
+
+/* Selected options stay legible without a bright block in a dark conversation. */
+:root[data-original-style] .app .composer .popover button.on {
+  background: color-mix(in srgb, var(--text) 10%, var(--bg));
+  color: var(--text);
+  box-shadow: inset 2px 0 var(--muted);
+}
+.app .composer .popover .popover-back {
+  min-height: 30px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.app .composer .popover button {
+  overflow-wrap: anywhere;
+}
+:root[data-original-style] .app .desk-input .composer .send:not(.stop):not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, var(--bg));
+}
