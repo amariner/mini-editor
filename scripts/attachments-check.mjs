@@ -91,6 +91,7 @@ try {
   assert.equal(await page.locator('.attachment-thumb img').count(), 0);
   await transferFiles(Array.from({ length: 6 }, (_, i) => ({ name: `extra${i}.txt`, text: 'x' })));
   await page.locator('.attachment-file').filter({ hasText: 'extra5.txt' }).waitFor();
+  await openComposerTools(page);
   assert.equal(
     await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).isEnabled(),
     true,

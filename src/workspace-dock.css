@@ -1,0 +1,198 @@
+.app .workspace-dock {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.app .dock-header {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  min-height: 43px;
+  flex-shrink: 0;
+}
+.app .dock-tabs {
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.app .dock-tab {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.app .dock-tab.selected {
+  background: var(--tile);
+  color: var(--text);
+}
+.app .dock-tab > button,
+.app .dock-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 0;
+  background: none;
+  color: inherit;
+  border-radius: 7px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.app .dock-tab > .dock-close-tab {
+  padding: 5px;
+  margin-right: 2px;
+  opacity: 0.45;
+}
+.app .dock-tab:hover > .dock-close-tab,
+.app .dock-tab > .dock-close-tab:focus-visible {
+  opacity: 1;
+}
+.app .dock-window-actions {
+  display: flex;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.app .dock-icon:hover,
+.app .dock-tab button:hover {
+  background: var(--tile);
+}
+.app .dock-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.app .dock-view > .workspace-panel,
+.app .dock-view > .browser-pane,
+.app .dock-view > .terminal-pane {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.app .dock-view > .terminal-pane {
+  margin: 0;
+}
+.app .dock-content .workspace-panel-header {
+  display: none;
+}
+.app .dock-content .terminal-panel-heading {
+  min-height: 32px;
+  padding: 4px 10px;
+  background: none;
+  border: 0;
+}
+.app .dock-content .terminal-panel-heading > strong {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.app .dock-launcher {
+  padding: 30px 24px;
+  overflow: auto;
+}
+.app .dock-launcher h2 {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0 0 18px;
+}
+.app .dock-launcher > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+.app .dock-launcher button {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 12px;
+  padding: 14px;
+  background: var(--tile);
+  border: 0;
+  border-radius: 10px;
+  color: var(--text);
+}
+.app .dock-launcher button > span {
+  flex: 1;
+  font-size: 12px;
+}
+.app .dock-launcher small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.app .workspace.dock-expanded > .conversation,
+.app .workspace.dock-expanded > .workspace-resize-slot {
+  display: none;
+}
+.app .workspace.dock-expanded > .workspace-tools {
+  flex: 1;
+  width: 100%;
+  max-width: none;
+}
+.app .workspace-tools:has(.workspace-dock) {
+  padding: 0;
+  overflow: hidden;
+}
+.app .workspace-panel-details > .git-context {
+  margin: 12px;
+}
+@media (max-width: 1050px) {
+  .app .dock-tab:not(.selected) [role='tab'] span {
+    display: none;
+  }
+  .app .dock-tab:not(.selected) .dock-close-tab {
+    display: none;
+  }
+}
+
+.app .workspace.workspace-shell.dock-expanded[data-tools-open='true'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app .workspace.workspace-shell.dock-expanded > .workspace-tools {
+  grid-column: 1 / -1;
+  position: relative;
+  inset: auto;
+  width: 100%;
+}
+@media (max-width: 900px) {
+  .app .workspace.workspace-shell.showing-browser {
+    grid-template-columns: minmax(0, 1fr) 0px minmax(0, 0fr);
+  }
+  .app .workspace.workspace-shell.showing-browser > .workspace-resize-slot {
+    display: none;
+  }
+  .app .workspace.workspace-shell > .workspace-tools.with-browser {
+    position: absolute;
+    z-index: 30;
+    inset: 0 0 0 auto;
+    width: min(560px, 100%);
+    border-left: 1px solid var(--line);
+  }
+}
+
+.app .dock-views,
+.app .dock-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.app .dock-views[hidden],
+.app .dock-view[hidden] {
+  display: none;
+}

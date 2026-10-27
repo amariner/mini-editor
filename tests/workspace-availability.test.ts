@@ -36,10 +36,11 @@ test('el inicio ofrece solo los controles para los datos existentes', () => {
   );
 });
 test('una página local necesita un puerto confirmado, y desaparece al cerrarse', () => {
-  assert.equal(workspaceAvailability(fixture({ browsers: [tab()] })).canBrowse, false);
+  assert.equal(workspaceAvailability(fixture({ browsers: [tab()] })).browserTabs.length, 0);
   assert.equal(
-    workspaceAvailability(fixture({ browsers: [tab({ hostStatus: 'offline' })] })).canBrowse,
-    false,
+    workspaceAvailability(fixture({ browsers: [tab({ hostStatus: 'offline' })] })).browserTabs
+      .length,
+    0,
   );
   assert.equal(
     workspaceAvailability(fixture({ browsers: [tab({ hostStatus: 'online', suspended: true })] }))
@@ -66,7 +67,10 @@ test('las páginas solicitadas desde el chat sirven, las pestañas vacías o hu�
     { url: 'https://example.com/', projectId: 'other' },
     { url: 'https://example.com/', sessionId: 'deleted' },
   ])
-    assert.equal(workspaceAvailability(fixture({ browsers: [tab(changes)] })).canBrowse, false);
+    assert.equal(
+      workspaceAvailability(fixture({ browsers: [tab(changes)] })).browserTabs.length,
+      0,
+    );
   assert.equal(
     workspaceAvailability(
       fixture({ profiles: [], browsers: [tab({ url: 'https://example.com/' })] }),
@@ -93,4 +97,9 @@ test('la consola del proyecto también puede anunciar un servidor sin crear un c
     ).canBrowse,
     true,
   );
+});
+
+test('un proyecto puede abrir una página vacía aunque no tenga servidores', () => {
+  assert.equal(workspaceAvailability(fixture()).canBrowse, true);
+  assert.equal(workspaceAvailability(fixture({ selectedProject: undefined })).canBrowse, false);
 });

@@ -8,55 +8,231 @@
 .app .desk-input .composer-area .composer.enabled:focus-within {
   border-radius: var(--desk-radius);
 }
-.app .desk-input .composer-footer {
-  padding-top: 4px;
-  gap: 8px;
+/* One writing surface, with all primary controls in its bottom row. */
+.app .desk-input {
+  container-type: inline-size;
+  --desk-radius: 22px;
+  padding-bottom: 10px;
 }
-.app .desk-input .composer-footer-start {
-  display: flex;
-  align-items: center;
-  flex: 1 1 180px;
-  min-width: 0;
-  max-width: min(360px, 45%);
-  margin-right: auto;
+.app .desk-input .composer-area .composer {
+  background: color-mix(in srgb, var(--text) 6%, var(--bg));
+  border: 1px solid transparent;
+  padding: 14px 14px 10px;
 }
-.app .desk-input .composer-footer .task-signature {
-  flex: 0 1 auto;
-  min-width: 0;
+.app .desk-input .composer-area .composer.enabled:focus-within {
+  border-color: color-mix(in srgb, var(--text) 15%, transparent);
+}
+.app .desk-input .composer textarea {
+  min-height: 46px;
+  padding: 0 2px 12px;
+}
+.app .desk-input .composer-bar {
+  gap: 4px;
   flex-wrap: nowrap;
 }
-.app .desk-input .composer-footer .usage-switcher {
-  flex-shrink: 1;
+.app .desk-input .composer-tools {
+  position: relative;
+  flex: 0 0 auto;
+}
+.app .desk-input .composer-account {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.app .desk-input .usage-switcher,
+.app .desk-input .usage-account {
   min-width: 0;
 }
-.app .desk-input .composer-footer .usage-account {
-  min-width: 0;
-}
-.app .desk-input .composer-footer .usage-account select {
+.app .desk-input .usage-account select {
+  max-width: 130px;
   width: 100%;
   min-width: 0;
   text-overflow: ellipsis;
+  background: transparent;
+  font-size: 11px;
+  padding-left: 4px;
 }
-.app .desk-input .composer-footer .footer-insight {
-  flex-shrink: 0;
-}
-.app .desk-input .composer-model {
+.app .desk-input .composer-chips {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  flex-direction: row;
+  align-items: center;
   min-width: 0;
-  max-width: 160px;
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-2);
+  justify-content: flex-end;
+  gap: 2px;
 }
-.app .desk-input .composer-model::before {
-  content: '·';
-  margin-right: 8px;
+.app .desk-input .composer-chips .popover-host {
+  min-width: 0;
+}
+.app .desk-input .composer-chips .chip-btn.labeled {
+  max-width: 180px;
+}
+.app .desk-input .composer .popover-side {
+  position: fixed;
+  inset: auto;
+  min-width: 0;
+  max-width: none;
+  z-index: 50;
+}
+.app .desk-input .composer .popover button[aria-haspopup='dialog'] {
+  position: relative;
+  padding-right: 26px;
+}
+.app .desk-input .composer .popover button[aria-haspopup='dialog']::after {
+  content: '›';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--muted);
+  font-size: 16px;
 }
-.app .desk-input.solo > .git-context.git-compact {
-  margin: 4px 12px;
-  max-width: calc(100% - 24px);
+.app .desk-input .composer .popover button[data-pending-model='true']:not(.on) {
+  background: var(--tile);
+}
+.app .desk-input .composer-chips .popover-host:has(> button[title^='Permisos']),
+.app .desk-input .composer-chips .popover-host:has(> button[title^='Modo de permisos']) {
+  order: -1;
+  margin-right: auto;
+}
+.app .desk-input .composer .send {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  margin-left: 4px;
+}
+/* Keep Original's controls quiet while retaining hover and keyboard feedback. */
+:root[data-original-style] .app .desk-input .composer-bar .chip-btn,
+:root[data-original-style] .app .desk-input .composer-bar .chip-btn.labeled,
+:root[data-original-style] .app .desk-input .usage-account select {
+  color: var(--ui-text-color, var(--muted));
+}
+:root[data-original-style] .app .desk-input .composer-bar .chip-btn:hover,
+:root[data-original-style] .app .desk-input .composer-bar .chip-btn:focus-visible,
+:root[data-original-style] .app .desk-input .usage-account select:focus-visible {
+  color: var(--ui-text-color, var(--text-2));
+}
+:root[data-original-style] .app .desk-input .composer .send:not(.stop):not(:disabled) {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--ui-text-color, var(--muted));
+}
+:root[data-original-style] .app .desk-input .composer .send:not(.stop):not(:disabled):hover,
+:root[data-original-style]
+  .app
+  .desk-input
+  .composer
+  .send:not(.stop):not(:disabled):focus-visible {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+  color: var(--ui-text-color, var(--text-2));
+}
+.app .desk-input .footer-insight {
+  flex: 0 0 auto;
+  position: relative;
+}
+.app .desk-input .composer-extras:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: min(420px, calc(100cqw - 24px));
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 0;
+  padding: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px #0002;
+  z-index: 35;
+}
+.app .desk-input .composer-extras > .chip-btn {
+  width: auto;
+  gap: 6px;
+}
+.app .desk-input .composer-extras[hidden] {
+  display: none;
+}
+@container (max-width: 570px) {
+  .app .desk-input .composer-chips .popover-host:has(> button[title^='Permisos']) .chip-text,
+  .app
+    .desk-input
+    .composer-chips
+    .popover-host:has(> button[title^='Modo de permisos'])
+    .chip-text,
+  .app
+    .desk-input
+    .composer-chips
+    .popover-host:has(> button[title='Esfuerzo de razonamiento'])
+    .chip-text {
+    display: none;
+  }
+  .app .desk-input .composer-account {
+    flex-basis: 85px;
+  }
+  .app .desk-input .composer-chips .chip-btn.labeled {
+    max-width: 140px;
+  }
+}
+@container (max-width: 390px) {
+  .app .desk-input .composer-bar {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 2px;
+  }
+  .app .desk-input .composer-account {
+    flex: 0 1 76px;
+    max-width: 76px;
+  }
+  .app .desk-input .composer-chips {
+    flex: 1 1 0;
+    gap: 0;
+  }
+  .app .desk-input .composer-chips > .popover-host:has(> button[title^='Permisos']),
+  .app .desk-input .composer-chips > .popover-host:has(> button[title^='Modo de permisos']) {
+    flex: 0 0 auto;
+  }
+  .app
+    .desk-input
+    .composer-chips
+    > .popover-host:not(:has(> button[title^='Permisos'])):not(
+      :has(> button[title^='Modo de permisos'])
+    ) {
+    flex: 1 1 72px;
+    min-width: 0;
+  }
+  .app .desk-input .composer-chips .popover-host > .chip-btn.labeled {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding-inline: 4px;
+  }
+  .app .desk-input .composer-chips .chip-text {
+    min-width: 0;
+  }
+  .app .desk-input .composer .send {
+    margin-left: 0;
+  }
+  .app .desk-input .footer-insight {
+    padding: 2px;
+  }
+  .app .desk-input .footer-insight-card {
+    width: min(248px, calc(100cqw - 32px));
+    right: -34px;
+  }
+}
+@container (max-width: 250px) {
+  .app .desk-input .composer-bar .tools-toggle,
+  .app .desk-input .composer-chips .popover-host > .chip-btn.labeled {
+    padding-inline: 3px;
+  }
+  .app .desk-input .composer-account {
+    flex-basis: 48px;
+    max-width: 48px;
+  }
+  .app .desk-input .usage-switcher .chip-btn > svg {
+    display: none;
+  }
 }
 
 /* Scroll at the workspace edge; only the reading and writing columns are bounded. */

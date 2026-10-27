@@ -1,3 +1,4 @@
+import { continuationContext } from './session-continuation';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -210,7 +211,13 @@ export class GeminiRuntime implements ProviderRuntime {
     const model = this.s.providerConfig?.model;
     if (model && model !== 'default')
       await this.rpc.call('session/set_model', { sessionId: this.s.reference, modelId: model });
-    const prompt: any[] = [{ type: 'text', text: text || 'Revisa los archivos adjuntos.' }];
+    const inherited = this.s.continuationPending ? continuationContext(this.s) : '';
+    const prompt: any[] = [
+      {
+        type: 'text',
+        text: [inherited, text || 'Revisa los archivos adjuntos.'].filter(Boolean).join('\n\n'),
+      },
+    ];
     for (const file of attachments) {
       if (file.mediaType.startsWith('image/'))
         prompt.push({
@@ -243,7 +250,9 @@ export class GeminiRuntime implements ProviderRuntime {
     this.changed();
     this.work = this.rpc
       .call('session/prompt', { sessionId: s.reference, prompt }, 30 * 60 * 1000)
-      .then(() => {})
+      .then(() => {
+        this.s.continuationPending = false;
+      })
       .catch((e) => {
         if (!this.stopping) s.error = (e as Error).message;
       })

@@ -265,6 +265,7 @@ export interface SlashCommand {
   builtin?: boolean;
 }
 export interface ModelInfo {
+  upgrade?: string;
   categories?: string[];
   tools?: boolean;
   image?: boolean;
@@ -336,6 +337,10 @@ export interface Session {
     level: number;
     autoModel: boolean;
   };
+  /** Local history before the current provider session. Never sent as new user instructions. */
+  historyBoundary?: number;
+  continuationPending?: boolean;
+  modelsFetchedAt?: number;
   modelsLoading?: boolean;
   modelsError?: string;
   id: string;

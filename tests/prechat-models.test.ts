@@ -72,3 +72,31 @@ test('catalog requests coalesce and cancel on account switch/removal; late resul
     assert.equal(m.state.sessions.length, 0);
     assert.equal(m.runtimes.size, 0);
   }));
+
+test('manual refresh uses a fresh account catalogue even when a Codex process is already running', () =>
+  fixture(async (m) => {
+    const session = m.newSession('p', 'codex');
+    session.codexConfig = { ...session.codexConfig!, model: 'retired-model' };
+    let reads = 0;
+    m.accounts.readModels = async () => {
+      reads++;
+      return models;
+    };
+    m.runtimes.set(session.id, {
+      buffer: '',
+      sequence: 0,
+      rpc: {
+        call: async () => {
+          throw Error('stale runtime catalogue');
+        },
+      } as any,
+    });
+    await m.refreshModels(session.id);
+    assert.equal(reads, 1);
+    assert.equal(session.info?.models[0].value, 'fixture-model');
+    assert.ok(session.modelsFetchedAt);
+    assert.equal(session.codexConfig?.model, 'default');
+    assert.equal(session.modelsError, undefined);
+    assert.equal(m.runtimes.has(session.id), true);
+    m.runtimes.delete(session.id);
+  }));

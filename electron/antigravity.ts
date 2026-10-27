@@ -1,3 +1,4 @@
+import { continuationContext } from './session-continuation';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -280,6 +281,7 @@ export class AntigravityRuntime implements ProviderRuntime {
         if (event.event === 'result') {
           resultSeen = true;
           const result = event.result;
+          if (result.status === 'SUCCESS') s.continuationPending = false;
           if (typeof result.conversation_id === 'string' && result.conversation_id)
             s.reference = 'agy:' + result.conversation_id;
           if (typeof result.response === 'string' && result.response)
@@ -355,7 +357,13 @@ export class AntigravityRuntime implements ProviderRuntime {
       s.status = 'error';
       this.changed();
     });
-    child.stdin.write(JSON.stringify({ event: 'user', message: { content: text } }) + '\n');
+    const inherited = s.continuationPending ? continuationContext(s) : '';
+    child.stdin.write(
+      JSON.stringify({
+        event: 'user',
+        message: { content: [inherited, text].filter(Boolean).join('\n\n') },
+      }) + '\n',
+    );
     this.changed();
   }
   async interrupt() {

@@ -110,9 +110,11 @@ test('la tarjeta de consumo muestra la franja vigente: Claude 5h y Codex semanal
   };
   const switcher = renderToStaticMarkup(React.createElement(UsageSwitcher, props));
   assert.doesNotMatch(switcher, /%/);
-  const locked = renderToStaticMarkup(
-    React.createElement(UsageSwitcher, { ...props, locked: true }),
+  const disabled = renderToStaticMarkup(
+    React.createElement(UsageSwitcher, { ...props, disabled: true }),
   );
-  assert.match(locked, /disabled=""/);
-  assert.match(locked, /Abre otra pestaña/);
+  assert.match(disabled, /disabled=""/);
+  assert.doesNotMatch(switcher, /disabled=""/);
+  assert.match(switcher, /aria-label="Cuenta del chat"/);
+  assert.match(switcher, /aria-haspopup="dialog"/);
 });

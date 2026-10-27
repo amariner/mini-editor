@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, LockKeyhole } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { Popover } from './chat-popover';
 import type { Profile, ProfileDefinition } from './shared';
 import { providerKind, type ApiUsage, type SessionStats, isCodex } from './shared';
 import { currentUsageWindow, resetCountdown, type SubscriptionUsage } from './subscription-usage';
@@ -9,46 +10,40 @@ export function UsageSwitcher({
   profiles,
   profile,
   disabled,
-  locked = false,
   change,
 }: {
   profiles: ProfileDefinition[];
   profile: Profile;
   disabled: boolean;
-  locked?: boolean;
   change: (p: Profile) => void;
 }) {
   return (
-    <div
-      className={`account-switcher usage-switcher${locked ? ' locked' : ''}`}
-      aria-label="Cuenta del chat"
-    >
-      <div
-        className="usage-account"
-        title={
-          locked
-            ? 'Este chat ya ha comenzado. Abre otra pestaña para cambiar de cuenta.'
-            : 'Cuenta de este chat · Se puede cambiar antes del primer mensaje'
-        }
+    <div className="usage-switcher">
+      <Popover
+        label={profiles.find((p) => p.id === profile)?.name ?? 'Cuenta'}
+        title="Cuenta del chat"
+        suffixIcon={ChevronDown}
+        showLabel
+        disabled={disabled}
       >
-        <select
-          aria-label="Cuenta del chat"
-          disabled={disabled || locked}
-          value={profile}
-          onChange={(e) => change(e.target.value as Profile)}
-        >
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        {locked ? (
-          <LockKeyhole size={11} aria-hidden="true" />
-        ) : (
-          <ChevronDown size={11} aria-hidden="true" />
+        {(close) => (
+          <>
+            {profiles.map((p) => (
+              <button
+                key={p.id}
+                className={p.id === profile ? 'on' : ''}
+                aria-pressed={p.id === profile}
+                onClick={() => {
+                  if (p.id !== profile) change(p.id);
+                  close();
+                }}
+              >
+                <strong>{p.name}</strong>
+              </button>
+            ))}
+          </>
         )}
-      </div>
+      </Popover>
     </div>
   );
 }

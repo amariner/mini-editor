@@ -116,3 +116,18 @@ test('restaurar la app conserva modelo y esfuerzo de cada sesión Codex y admite
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('refresh drops a retired saved model and uses the server default, without invented models', () => {
+  const next = selectCodexConfig(
+    mergeCodexConfig({ model: 'retired-model', effort: 'ultra' }),
+    {},
+    models,
+  );
+  assert.equal(next.model, 'default');
+  assert.equal(next.effort, undefined);
+  assert.equal(resolveCodexModel(next, models).model, 'model-a');
+  assert.equal(
+    selectCodexConfig(mergeCodexConfig({ model: 'retired-model' }), {}, []).model,
+    'retired-model',
+  );
+});

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Manager } from '../electron/manager';
 import { Store } from '../electron/store';
 import { sessionAccountLocked } from '../src/session-tabs';
+import { continuationContext } from '../electron/session-continuation';
 import { actionSchema } from '../electron/core';
 
 async function fixture(run: (m: Manager, root: string) => Promise<void>) {
@@ -64,7 +65,7 @@ test('changing an empty chat preserves its id and title and resets provider stat
     );
   }));
 
-test('the first send locks the account durably even after clearing history and restarting', () =>
+test('a previously used account can be changed after clearing history and restarting', () =>
   fixture(async (m, root) => {
     const chat = m.newSession('p');
     chat.status = 'ready';
@@ -88,8 +89,9 @@ test('the first send locks the account durably even after clearing history and r
     m.store.flush();
     const restored = new Store(root).state.sessions[0];
     assert.equal(sessionAccountLocked(restored), true);
-    await assert.rejects(m.changeSessionAccount(chat.id, 'codex'), /Abre otra pestaña/);
-    assert.equal(chat.profile, 'claude-1');
+    const switched = await m.changeSessionAccount(chat.id, 'codex');
+    assert.equal(switched.profile, 'codex');
+    assert.equal(switched.id, chat.id);
     assert.equal(sessionAccountLocked(m.newSession('p')), false);
   }));
 
@@ -113,3 +115,149 @@ test('legacy chats with history or remote threads stay locked and old settings g
     );
     assert.equal(actionSchema.safeParse({ type: 'newSession', projectId: 'p' }).success, true);
   }));
+
+test('switching a working chat preserves history, attachments and workspace, stops its runtime and pauses the queue', () =>
+  fixture(async (m, root) => {
+    const chat = m.newSession('p');
+    chat.messages = [
+      {
+        id: 'u',
+        role: 'user',
+        text: 'Conserva el diseño',
+        attachments: [{ id: 'file', name: 'plan.pdf' }],
+        checkpoint: 'old-checkpoint',
+      },
+      { id: 'a', role: 'assistant', text: 'Usaremos colores neutros.' },
+    ];
+    chat.attempted = true;
+    chat.status = 'working';
+    chat.mcpConnectionIds = ['connection'];
+    chat.parentId = 'parent';
+    chat.worktree = {
+      path: root,
+      cwd: root,
+      root,
+      branch: 'feature',
+      base: 'main',
+      baseCommit: 'abc',
+      createdAt: 1,
+    };
+    chat.pendingInputs = [{ id: 'q', text: 'Siguiente paso', attachments: [], status: 'pending' }];
+    let stopped = false;
+    m.runtimes.set(chat.id, {
+      buffer: '',
+      sequence: 0,
+      provider: {
+        stop: async () => {
+          stopped = true;
+        },
+      } as any,
+    });
+    const next = await m.changeSessionAccount(chat.id, 'codex');
+    assert.equal(stopped, true);
+    assert.equal(m.runtimes.has(chat.id), false);
+    assert.equal(next.id, chat.id);
+    assert.equal(next.messages.length, 2);
+    assert.equal(next.messages[0].attachments?.[0].name, 'plan.pdf');
+    assert.equal(next.messages[0].checkpoint, undefined);
+    assert.equal(next.worktree?.branch, 'feature');
+    assert.deepEqual(next.mcpConnectionIds, ['connection']);
+    assert.equal(next.parentId, 'parent');
+    assert.equal(next.reference, undefined);
+    assert.equal(next.attempted, undefined);
+    assert.equal(next.info, undefined);
+    assert.equal(next.notice, undefined);
+    assert.equal(next.pendingInputs?.[0].status, 'failed');
+    assert.match(continuationContext(next), /Conserva el diseño/);
+    assert.match(continuationContext(next), /colores neutros/);
+    const restored = new Store(root).state.sessions[0];
+    assert.equal(restored.historyBoundary, 2);
+    assert.match(continuationContext(restored), /plan.pdf/);
+    const back = await m.changeSessionAccount(next.id, 'claude-1');
+    assert.equal(back.messages.length, 2);
+    assert.notEqual(back.reference, chat.reference);
+    assert.equal(back.attempted, undefined);
+  }));
+
+test('failed runtime shutdown does not switch accounts or discard the original conversation', () =>
+  fixture(async (m) => {
+    const chat = m.newSession('p');
+    chat.messages = [{ id: 'u', role: 'user', text: 'Historial protegido' }];
+    m.runtimes.set(chat.id, {
+      buffer: '',
+      sequence: 0,
+      provider: {
+        stop: async () => {
+          throw Error('No se pudo detener');
+        },
+      } as any,
+    });
+    await assert.rejects(m.changeSessionAccount(chat.id, 'codex'), /No se pudo detener/);
+    assert.equal(m.session(chat.id), chat);
+    assert.equal(chat.profile, 'claude-1');
+    assert.equal(chat.messages[0].text, 'Historial protegido');
+    m.runtimes.delete(chat.id);
+  }));
+
+test('Codex resumes only its new thread while retaining the previous account history', () =>
+  fixture(async (m) => {
+    const chat = m.newSession('p');
+    chat.messages = [
+      { id: 'u', role: 'user', text: 'Diseño anterior' },
+      { id: 'a', role: 'assistant', text: 'Decisión previa' },
+    ];
+    const next = await m.changeSessionAccount(chat.id, 'codex');
+    const calls: any[] = [];
+    (m.coordinator as any).config = async () => ({ command: 'fixture', args: [] });
+    const runtime = {
+      loaded: false,
+      buffer: '',
+      sequence: 0,
+      rpc: {
+        call: async (method: string, params: any) => {
+          calls.push({ method, params });
+          return {
+            thread: {
+              id: 'new-thread',
+              turns:
+                method === 'thread/resume'
+                  ? [
+                      {
+                        items: [
+                          { type: 'agentMessage', id: 'new-answer', text: 'Respuesta nueva' },
+                        ],
+                      },
+                    ]
+                  : [],
+            },
+          };
+        },
+      } as any,
+    };
+    m.runtimes.set(next.id, runtime);
+    await m.loadThread(next);
+    assert.equal(calls[0].method, 'thread/start');
+    assert.match(calls[0].params.developerInstructions, /Decisión previa/);
+    runtime.loaded = false;
+    await m.loadThread(next);
+    assert.equal(calls[1].method, 'thread/resume');
+    assert.equal(calls[1].params.threadId, 'new-thread');
+    assert.deepEqual(
+      next.messages.map((m) => m.id),
+      ['u', 'a', 'new-answer'],
+    );
+    m.runtimes.delete(next.id);
+  }));
+
+test('continuation is bounded, excludes tool output and leaves full local history intact', () => {
+  const messages = [
+    { id: 'u', role: 'user' as const, text: 'x'.repeat(80000) },
+    { id: 'a', role: 'assistant' as const, text: 'Última decisión' },
+    { id: 't', role: 'tool' as const, text: 'sensitive tool output' },
+  ];
+  const context = continuationContext({ messages, historyBoundary: 3 });
+  assert.ok(context.length < 61000);
+  assert.match(context, /Última decisión/);
+  assert.doesNotMatch(context, /sensitive tool output/);
+  assert.equal(messages[0].text.length, 80000);
+});

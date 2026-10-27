@@ -29,7 +29,7 @@ import {
   ChevronRight,
   Check,
   Copy,
-  CornerDownLeft,
+  ArrowUp,
   ShieldCheck,
   ShieldAlert,
   Sparkles,
@@ -46,7 +46,6 @@ import {
   Wrench,
   CircleHelp,
   Map,
-  Gauge,
   Bug,
   FlaskConical,
   Leaf,
@@ -648,7 +647,7 @@ function UserMessage({ m }: { m: Message }) {
               title="Reutilizar en el cuadro de mensaje"
               onClick={() => reuse(m.text)}
             >
-              <CornerDownLeft size={13} />
+              <ArrowUp size={17} />
             </button>
           )}
           {rewind.button}
@@ -1734,7 +1733,6 @@ export function Composer({
   setImages,
   onLocalCommand,
   footerControl,
-  footerStartRef,
   usageDetail,
 }: {
   session: Session;
@@ -1750,8 +1748,6 @@ export function Composer({
   onSend: (text: string, images: Attachment[]) => Promise<boolean>;
   onLocalCommand: (name: string, arg: string) => boolean;
   footerControl?: React.ReactNode;
-  /** Stable host for the repository control, whose state survives chat changes. */
-  footerStartRef?: React.Ref<HTMLDivElement>;
   /** Consumption window shown in the context hover card. */
   usageDetail?: React.ReactNode;
 }) {
@@ -1762,6 +1758,7 @@ export function Composer({
   const [imageError, setImageError] = useState('');
   const [flash, setFlash] = useState<{ ok: boolean; text: string }>();
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [effortMenu, setEffortMenu] = useState<{ value: string; name: string; levels: string[] }>();
   const insightId = useId();
   const menuId = useId();
   const flashReset = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -1787,6 +1784,13 @@ export function Composer({
       profile: session.profile,
       optimization: { ...optimization, ...patch },
     });
+  const refreshCatalog = () => {
+    if (
+      !session.modelsLoading &&
+      (isCodex(session.profile) || Date.now() - (session.modelsFetchedAt ?? 0) > 60_000)
+    )
+      void run({ type: 'refreshModels', sessionId: session.id });
+  };
   const chooseModel = async (model: string) => {
     const changed = await run({
       type: connected ? 'configureProvider' : claude ? 'configure' : 'configureCodex',
@@ -1794,6 +1798,67 @@ export function Composer({
       config: { model },
     });
     if (changed && !connected) await optimize({ autoModel: false });
+    return changed;
+  };
+  const openModelOptions = () => {
+    setEffortMenu(undefined);
+    refreshCatalog();
+  };
+  const chooseModelWithEffort = (
+    value: string,
+    name: string,
+    levels: string[],
+    close: () => void,
+  ) => {
+    if (levels.length) setEffortMenu({ value, name, levels });
+    else
+      void chooseModel(value).then((changed) => {
+        if (changed) close();
+      });
+  };
+  const effortOptions = (close: () => void) => {
+    if (!effortMenu) return null;
+    const currentModel = claude ? config?.model : session.codexConfig?.model;
+    const currentEffort = claude ? config?.effort : session.codexConfig?.effort;
+    const apply = async (effort?: string) => {
+      const result = await run({
+        type: claude ? 'configure' : 'configureCodex',
+        sessionId: session.id,
+        config: { model: effortMenu.value, effort },
+      } as Action);
+      if (result) {
+        await optimize({ autoModel: false });
+        setEffortMenu(undefined);
+        close();
+      }
+    };
+    return (
+      <>
+        <div className="popover-heading">
+          Intensidad <span>{effortMenu.name}</span>
+        </div>
+        <button
+          autoFocus
+          className={currentModel === effortMenu.value && !currentEffort ? 'on' : ''}
+          onClick={() => void apply()}
+        >
+          <strong>Por defecto</strong>
+        </button>
+        {effortMenu.levels.map((level) => (
+          <button
+            key={level}
+            className={currentModel === effortMenu.value && level === currentEffort ? 'on' : ''}
+            onClick={() => void apply(level)}
+          >
+            <strong>
+              {claude
+                ? (efforts.find((item) => item.id === level)?.name ?? level)
+                : level.charAt(0).toLocaleUpperCase() + level.slice(1)}
+            </strong>
+          </button>
+        ))}
+      </>
+    );
   };
   const autoOption = (close: () => void) => (
     <button
@@ -2039,11 +2104,17 @@ export function Composer({
   const modelName =
     session.info?.models.find((m) => m.value === config?.model)?.displayName ??
     (config?.model && config.model !== 'default' ? config.model : 'Por defecto');
-  const effortName = efforts.find((e) => e.id === config?.effort)?.name;
+  const selectedModel = connected ? session.providerConfig?.model : session.codexConfig?.model;
+  const currentModel = session.info?.models.find((m) =>
+    !selectedModel || selectedModel === 'default' ? m.isDefault : m.value === selectedModel,
+  );
+  const modelLabel =
+    currentModel?.displayName ??
+    (selectedModel && selectedModel !== 'default' ? selectedModel : 'Modelo');
   const context = session.stats?.contextPercent;
   return (
     <div className="composer-area">
-      {!claude && session.notice && (
+      {session.notice && (
         <p className="codex-permission-timing" role="status">
           {session.notice}
         </p>
@@ -2225,15 +2296,6 @@ export function Composer({
           }}
         />
         <div className="composer-bar">
-          <button
-            className="chip-btn attach-image"
-            aria-label="Adjuntar archivos"
-            title="Adjuntar archivos · PDF, CSV, Office, texto, código e imágenes"
-            disabled={!enabled || sending || picking}
-            onClick={() => void attach()}
-          >
-            <Paperclip size={15} />
-          </button>
           <div
             ref={tools}
             className={`composer-tools ${toolsOpen ? 'open' : ''}`}
@@ -2247,13 +2309,25 @@ export function Composer({
             <button
               className="chip-btn tools-toggle"
               aria-label={toolsOpen ? 'Ocultar herramientas' : 'Herramientas del chat'}
-              title="Modelo, esfuerzo, conexiones y permisos"
+              title="Adjuntar y herramientas del chat"
               aria-expanded={toolsOpen}
               onClick={() => setToolsOpen((v) => !v)}
             >
               <Plus size={15} />
             </button>
-            <div className="composer-chips" inert={!toolsOpen}>
+            <div className="composer-extras" hidden={!toolsOpen}>
+              <button
+                className="chip-btn attach-image"
+                aria-label="Adjuntar archivos"
+                title="Adjuntar archivos · PDF, CSV, Office, texto, código e imágenes"
+                disabled={!enabled || sending || picking}
+                onClick={() => {
+                  setToolsOpen(false);
+                  void attach();
+                }}
+              >
+                <Paperclip size={15} />
+              </button>
               <button
                 className="chip-btn"
                 aria-label="Conexiones del chat"
@@ -2268,10 +2342,6 @@ export function Composer({
                 }}
               >
                 <Plug size={15} />
-                <span>
-                  Conexiones
-                  {session.mcpAppliedIds?.length ? ` · ${session.mcpAppliedIds.length}` : ''}
-                </span>
               </button>
               {!connected && (
                 <Popover
@@ -2301,35 +2371,79 @@ export function Composer({
                 </Popover>
               )}
               <FastModeControl session={session} run={run} disabled={working} />
-              {connected ? (
-                <Popover
-                  label={
-                    session.info?.models.find((m) => m.value === session.providerConfig?.model)
-                      ?.displayName ??
-                    session.providerConfig?.model ??
-                    'Modelo'
-                  }
-                  icon={Sparkles}
-                  title="Modelo"
-                >
-                  {(close) => (
-                    <>
+              {footerControl}
+            </div>
+          </div>
+          <div className="composer-chips">
+            {accountControl && <div className="composer-account">{accountControl}</div>}
+            {connected ? (
+              <Popover label={modelLabel} title="Modelo" showLabel onOpen={refreshCatalog}>
+                {(close) => (
+                  <>
+                    <button
+                      disabled={working}
+                      onClick={() => {
+                        void chooseModel('default');
+                        close();
+                      }}
+                    >
+                      Predeterminado
+                    </button>
+                    {(session.info?.models ?? []).map((m) => (
                       <button
+                        key={m.value}
                         disabled={working}
                         onClick={() => {
-                          void chooseModel('default');
+                          void chooseModel(m.value);
                           close();
                         }}
                       >
-                        Predeterminado
+                        <strong>{m.displayName}</strong>
                       </button>
-                      {(session.info?.models ?? []).map((m) => (
+                    ))}
+                    <CodexCatalogStatus session={session} run={run} compact />
+                  </>
+                )}
+              </Popover>
+            ) : claude ? (
+              <>
+                <Popover
+                  label={
+                    optimization.autoModel
+                      ? `Auto · ${session.optimization?.model ?? modelName}`
+                      : `${modelName}${config?.effort ? ` · ${efforts.find((item) => item.id === config.effort)?.name ?? config.effort}` : ''}`
+                  }
+                  active={optimization.autoModel}
+                  title="Modelo"
+                  showLabel
+                  onOpen={openModelOptions}
+                  sidePanel={effortMenu ? effortOptions : undefined}
+                  sideLabel={effortMenu ? `Intensidad · ${effortMenu.name}` : undefined}
+                  onSideClose={() => setEffortMenu(undefined)}
+                >
+                  {(close) => (
+                    <>
+                      {autoOption(close)}
+                      {(session.info?.models.length
+                        ? session.info.models
+                        : [{ value: 'default', displayName: 'Por defecto', description: '' }]
+                      ).map((m) => (
                         <button
                           key={m.value}
-                          disabled={working}
+                          aria-label={m.displayName}
+                          data-pending-model={effortMenu?.value === m.value || undefined}
+                          aria-haspopup="dialog"
+                          aria-expanded={effortMenu?.value === m.value}
+                          className={
+                            !optimization.autoModel && m.value === config?.model ? 'on' : ''
+                          }
                           onClick={() => {
-                            void chooseModel(m.value);
-                            close();
+                            void chooseModelWithEffort(
+                              m.value,
+                              m.displayName,
+                              efforts.map((item) => item.id),
+                              close,
+                            );
                           }}
                         >
                           <strong>{m.displayName}</strong>
@@ -2339,302 +2453,160 @@ export function Composer({
                     </>
                   )}
                 </Popover>
-              ) : claude ? (
-                <>
-                  <Popover
-                    label={
-                      optimization.autoModel
-                        ? `Auto · ${session.optimization?.model ?? modelName}`
-                        : modelName
-                    }
-                    icon={Sparkles}
-                    active={optimization.autoModel}
-                    title="Modelo"
-                  >
-                    {(close) => (
-                      <>
-                        {autoOption(close)}
-                        {(session.info?.models.length
-                          ? session.info.models
-                          : [{ value: 'default', displayName: 'Por defecto', description: '' }]
-                        ).map((m) => (
-                          <button
-                            key={m.value}
-                            className={
-                              !optimization.autoModel && m.value === config?.model ? 'on' : ''
-                            }
-                            onClick={() => {
-                              void chooseModel(m.value);
-                              close();
-                            }}
-                          >
-                            <strong>{m.displayName}</strong>
-                          </button>
-                        ))}
-                        <CodexCatalogStatus session={session} run={run} compact />
-                      </>
-                    )}
-                  </Popover>
-                  <Popover
-                    label={mode?.name ?? 'Permisos'}
-                    icon={mode && NOTABLE_MODES.has(mode.id) ? ShieldAlert : ShieldCheck}
-                    text={mode && NOTABLE_MODES.has(mode.id) ? mode.name : undefined}
-                    title="Modo de permisos (⇧⇥ para alternar)"
-                  >
-                    {(close) => (
-                      <>
-                        {permissionModes.map((m) => (
-                          <button
-                            key={m.id}
-                            className={m.id === mode?.id ? 'on' : ''}
-                            onClick={() => {
-                              void run({
-                                type: 'configure',
-                                sessionId: session.id,
-                                config: {
-                                  permissionMode: m.id,
-                                  ...(m.id === 'bypassPermissions' ? { allowBypass: true } : {}),
-                                },
-                              });
-                              close();
-                            }}
-                          >
-                            <strong>{m.name}</strong>
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </Popover>
-                  <Popover
-                    label={effortName ?? 'Esfuerzo'}
-                    icon={Gauge}
-                    text={effortName}
-                    title="Esfuerzo de razonamiento"
-                  >
-                    {(close) => (
-                      <>
+                <Popover
+                  label={mode?.name ?? 'Permisos'}
+                  icon={mode && NOTABLE_MODES.has(mode.id) ? ShieldAlert : ShieldCheck}
+                  text={mode && NOTABLE_MODES.has(mode.id) ? mode.name : undefined}
+                  title="Modo de permisos (⇧⇥ para alternar)"
+                >
+                  {(close) => (
+                    <>
+                      {permissionModes.map((m) => (
                         <button
-                          className={!config?.effort ? 'on' : ''}
+                          key={m.id}
+                          className={m.id === mode?.id ? 'on' : ''}
                           onClick={() => {
                             void run({
                               type: 'configure',
                               sessionId: session.id,
-                              config: { effort: undefined },
+                              config: {
+                                permissionMode: m.id,
+                                ...(m.id === 'bypassPermissions' ? { allowBypass: true } : {}),
+                              },
                             });
                             close();
                           }}
                         >
-                          <strong>Por defecto</strong>
+                          <strong>{m.name}</strong>
                         </button>
-                        {efforts.map((e) => (
-                          <button
-                            key={e.id}
-                            className={e.id === config?.effort ? 'on' : ''}
-                            onClick={() => {
-                              void run({
-                                type: 'configure',
-                                sessionId: session.id,
-                                config: { effort: e.id },
-                              });
-                              close();
-                            }}
-                          >
-                            <strong>{e.name}</strong>
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </Popover>
-                </>
-              ) : (
-                <>
-                  <Popover
-                    label={
-                      optimization.autoModel
-                        ? `Auto · ${session.optimization?.model ?? 'Por defecto'}`
-                        : (session.info?.models.find((m) => m.value === session.codexConfig?.model)
-                            ?.displayName ??
-                          session.codexConfig?.model ??
-                          'Por defecto')
-                    }
-                    active={optimization.autoModel}
-                    icon={Sparkles}
-                    title="Modelo de Codex"
-                  >
-                    {(close) => (
-                      <>
-                        {autoOption(close)}
+                      ))}
+                    </>
+                  )}
+                </Popover>
+              </>
+            ) : (
+              <>
+                <Popover
+                  label={
+                    optimization.autoModel
+                      ? `Auto · ${session.optimization?.model ?? 'Por defecto'}`
+                      : `${modelLabel}${session.codexConfig?.effort ? ` · ${session.codexConfig.effort.charAt(0).toLocaleUpperCase() + session.codexConfig.effort.slice(1)}` : ''}`
+                  }
+                  active={optimization.autoModel}
+                  title="Modelo de Codex"
+                  showLabel
+                  onOpen={openModelOptions}
+                  sidePanel={effortMenu ? effortOptions : undefined}
+                  sideLabel={effortMenu ? `Intensidad · ${effortMenu.name}` : undefined}
+                  onSideClose={() => setEffortMenu(undefined)}
+                >
+                  {(close) => (
+                    <>
+                      {autoOption(close)}
+                      <button
+                        aria-label="Por defecto"
+                        data-pending-model={effortMenu?.value === 'default' || undefined}
+                        aria-haspopup="dialog"
+                        aria-expanded={effortMenu?.value === 'default'}
+                        className={
+                          !optimization.autoModel &&
+                          (!session.codexConfig?.model || session.codexConfig.model === 'default')
+                            ? 'on'
+                            : ''
+                        }
+                        onClick={() => {
+                          const model = session.info?.models.find((item) => item.isDefault);
+                          void chooseModelWithEffort(
+                            'default',
+                            model?.displayName ?? 'Por defecto',
+                            model?.supportedEffortLevels ?? [],
+                            close,
+                          );
+                        }}
+                      >
+                        <strong>Por defecto</strong>
+                      </button>
+                      {(session.info?.models ?? []).map((m) => (
                         <button
+                          key={m.value}
+                          aria-label={m.displayName}
+                          data-pending-model={effortMenu?.value === m.value || undefined}
+                          aria-haspopup="dialog"
+                          aria-expanded={effortMenu?.value === m.value}
                           className={
-                            !optimization.autoModel &&
-                            (!session.codexConfig?.model || session.codexConfig.model === 'default')
+                            !optimization.autoModel && m.value === session.codexConfig?.model
                               ? 'on'
                               : ''
                           }
                           onClick={() => {
-                            void chooseModel('default');
-                            close();
+                            void chooseModelWithEffort(
+                              m.value,
+                              m.displayName,
+                              m.supportedEffortLevels ?? [],
+                              close,
+                            );
                           }}
                         >
-                          <strong>Por defecto</strong>
+                          <strong>{m.displayName}</strong>
                         </button>
-                        {(session.info?.models ?? []).map((m) => (
-                          <button
-                            key={m.value}
-                            className={
-                              !optimization.autoModel && m.value === session.codexConfig?.model
-                                ? 'on'
-                                : ''
-                            }
-                            onClick={() => {
-                              void chooseModel(m.value);
-                              close();
-                            }}
-                          >
-                            <strong>{m.displayName}</strong>
-                          </button>
-                        ))}
-                        <CodexCatalogStatus session={session} run={run} compact />
-                      </>
-                    )}
-                  </Popover>
-                  {(() => {
-                    const label = codexPermissionLabel(session.codexConfig);
-                    const full = label === 'Acceso total';
-                    return (
-                      <Popover
-                        label={label}
-                        icon={full ? ShieldAlert : ShieldCheck}
-                        text={label}
-                        title="Permisos de Codex"
-                      >
-                        {(close) => (
-                          <>
-                            {codexPermissionModes.map((m) => (
-                              <button
-                                key={m.name}
-                                className={
-                                  m.sandbox === session.codexConfig?.sandbox &&
-                                  m.approvalPolicy === session.codexConfig?.approvalPolicy
-                                    ? 'on'
-                                    : ''
-                                }
-                                aria-pressed={
-                                  m.sandbox === session.codexConfig?.sandbox &&
-                                  m.approvalPolicy === session.codexConfig?.approvalPolicy
-                                }
-                                onClick={async () => {
-                                  const result = await run({
-                                    type: 'configureCodex',
-                                    sessionId: session.id,
-                                    config: {
-                                      sandbox: m.sandbox,
-                                      approvalPolicy: m.approvalPolicy,
-                                    },
-                                  });
-                                  if (result) close();
-                                }}
-                              >
-                                <strong>{m.name}</strong>
-                                <small>{m.hint}</small>
-                              </button>
-                            ))}
-                            <small className="codex-permission-timing">
-                              Se aplica al siguiente mensaje. Una acción pendiente se autoriza en su
-                              propia solicitud.
-                            </small>
-                          </>
-                        )}
-                      </Popover>
-                    );
-                  })()}
-                  {(() => {
-                    const levels =
-                      session.info?.models.find((m) =>
-                        !session.codexConfig?.model || session.codexConfig.model === 'default'
-                          ? m.isDefault
-                          : m.value === session.codexConfig.model,
-                      )?.supportedEffortLevels ?? [];
-                    return levels.length ? (
-                      <Popover
-                        label={session.codexConfig?.effort ?? 'Esfuerzo'}
-                        icon={Gauge}
-                        text={session.codexConfig?.effort}
-                        title="Esfuerzo de razonamiento"
-                      >
-                        {(close) => (
-                          <>
+                      ))}
+                      <CodexCatalogStatus session={session} run={run} compact />
+                    </>
+                  )}
+                </Popover>
+                {(() => {
+                  const label = codexPermissionLabel(session.codexConfig);
+                  const full = label === 'Acceso total';
+                  return (
+                    <Popover
+                      label={label}
+                      icon={full ? ShieldAlert : ShieldCheck}
+                      text={label}
+                      title="Permisos de Codex"
+                    >
+                      {(close) => (
+                        <>
+                          {codexPermissionModes.map((m) => (
                             <button
-                              className={!session.codexConfig?.effort ? 'on' : ''}
-                              onClick={() => {
-                                void run({
+                              key={m.name}
+                              className={
+                                m.sandbox === session.codexConfig?.sandbox &&
+                                m.approvalPolicy === session.codexConfig?.approvalPolicy
+                                  ? 'on'
+                                  : ''
+                              }
+                              aria-pressed={
+                                m.sandbox === session.codexConfig?.sandbox &&
+                                m.approvalPolicy === session.codexConfig?.approvalPolicy
+                              }
+                              onClick={async () => {
+                                const result = await run({
                                   type: 'configureCodex',
                                   sessionId: session.id,
-                                  config: { effort: undefined },
+                                  config: {
+                                    sandbox: m.sandbox,
+                                    approvalPolicy: m.approvalPolicy,
+                                  },
                                 });
-                                close();
+                                if (result) close();
                               }}
                             >
-                              <strong>Por defecto</strong>
+                              <strong>{m.name}</strong>
+                              <small>{m.hint}</small>
                             </button>
-                            {levels.map((e) => (
-                              <button
-                                key={e}
-                                className={e === session.codexConfig?.effort ? 'on' : ''}
-                                onClick={() => {
-                                  void run({
-                                    type: 'configureCodex',
-                                    sessionId: session.id,
-                                    config: { effort: e },
-                                  });
-                                  close();
-                                }}
-                              >
-                                <strong>{e}</strong>
-                              </button>
-                            ))}
-                          </>
-                        )}
-                      </Popover>
-                    ) : null;
-                  })()}
-                </>
-              )}
-            </div>
+                          ))}
+                          <small className="codex-permission-timing">
+                            Se aplica al siguiente mensaje. Una acción pendiente se autoriza en su
+                            propia solicitud.
+                          </small>
+                        </>
+                      )}
+                    </Popover>
+                  );
+                })()}
+              </>
+            )}
           </div>
-          {working && !draft.trim() && !images.length ? (
-            <button
-              className="send stop"
-              title="Interrumpir (Esc)"
-              aria-label="Interrumpir"
-              onClick={() => run({ type: 'interrupt', sessionId: session.id })}
-            >
-              <Square size={9} fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              className="send"
-              title="Enviar (↵)"
-              aria-label="Enviar"
-              disabled={!enabled || sending || picking || (!draft.trim() && !images.length)}
-              onClick={send}
-            >
-              <CornerDownLeft size={13} />
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="composer-footer">
-        {footerStartRef && <div className="composer-footer-start" ref={footerStartRef} />}
-        <div className="task-signature" aria-label="Cuenta, modelo y contexto">
-          {accountControl ?? (
-            <span className="task-signature-account" title={`Cuenta: ${accountName}`}>
-              {accountName}
-            </span>
-          )}
-          <span className="composer-model" title={`Modelo: ${signature}`}>
-            {prettyModel(signature)}
-          </span>
           {/* Detailed consumption stays behind the context ring. */}
           <span className="footer-insight" tabIndex={0} aria-describedby={insightId}>
             <ContextGauge
@@ -2667,8 +2639,27 @@ export function Composer({
               {usageDetail}
             </span>
           </span>
+          {working && !draft.trim() && !images.length ? (
+            <button
+              className="send stop"
+              title="Interrumpir (Esc)"
+              aria-label="Interrumpir"
+              onClick={() => run({ type: 'interrupt', sessionId: session.id })}
+            >
+              <Square size={9} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              className="send"
+              title="Enviar (↵)"
+              aria-label="Enviar"
+              disabled={!enabled || sending || picking || (!draft.trim() && !images.length)}
+              onClick={send}
+            >
+              <ArrowUp size={17} />
+            </button>
+          )}
         </div>
-        {footerControl}
       </div>
     </div>
   );

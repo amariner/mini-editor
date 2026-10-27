@@ -34,7 +34,7 @@ import {
   defaultOptimization,
   type TokenOptimization,
 } from '../src/shared';
-import { sessionAccountLocked } from '../src/session-tabs';
+import { continuationContext } from './session-continuation';
 import { savingInstructions, turnOptimization } from './token-optimization';
 import { fetchCodexModels, selectCodexConfig, resolveCodexModel } from './codex-models';
 import fs from 'node:fs';
@@ -386,16 +386,15 @@ export class Manager {
   async changeSessionAccount(id: string, profile: Profile) {
     return this.exclusive(id, async () => {
       const session = this.session(id);
-      if (sessionAccountLocked(session))
-        throw new Error('Este chat ya ha comenzado. Abre otra pestaña para cambiar de cuenta.');
-      if (!this.state.profiles?.some((p) => p.id === profile) || this.accounts.removing(profile))
+      if (!this.state.profiles?.some((p) => p.id === profile) || this.accounts.changing(profile))
         throw new Error('Esta cuenta no está disponible.');
       if (session.profile === profile) return session;
       this.modelJobs.get(id)?.controller.abort();
       await this.modelJobs.get(id)?.work;
+      this.pendingInputs.pause(session);
       await this.stopRuntime(id);
-      if (sessionAccountLocked(session))
-        throw new Error('Este chat ya ha comenzado. Abre otra pestaña para cambiar de cuenta.');
+      if (!this.state.profiles?.some((p) => p.id === profile) || this.accounts.removing(profile))
+        throw new Error('Esta cuenta ya no está disponible.');
       const previous = [...this.state.sessions]
         .reverse()
         .find((s) => s.projectId === session.projectId && s.profile === profile);
@@ -407,21 +406,49 @@ export class Manager {
         profile,
         accountLocked: false,
         status: 'stopped',
-        messages: [],
+        messages: session.messages.map((message) => ({ ...message, checkpoint: undefined })),
+        historyBoundary: session.messages.length,
+        continuationPending: session.messages.some((m) => m.role === 'user'),
+        mcpConnectionIds: session.mcpConnectionIds,
+        isolation: session.isolation,
+        worktree: session.worktree,
+        parentId: session.parentId,
+        forkOf: session.forkOf,
+        pendingInputs: session.pendingInputs?.map((input) => ({
+          ...input,
+          status: 'failed',
+          error: 'Cuenta cambiada. Recupera el mensaje para enviarlo con la nueva cuenta.',
+        })),
+        teamMessages: session.teamMessages?.map((message) => ({
+          ...message,
+          ...(message.status === 'queued' || message.status === 'sending'
+            ? {
+                status: 'failed' as const,
+                error: 'Cuenta cambiada. Revisa el mensaje antes de reenviarlo.',
+              }
+            : {}),
+        })),
         approvals: [],
-        providerConfig: isConnectedProvider(profile)
-          ? ((sameProvider ? session : previous)?.providerConfig ?? { model: 'default' })
-          : undefined,
+        providerConfig: isConnectedProvider(profile) ? { model: 'default' } : undefined,
         reference: isCodex(profile) || isConnectedProvider(profile) ? undefined : randomUUID(),
         mode: isCodex(profile) ? undefined : 'chat',
         config:
           isCodex(profile) || isConnectedProvider(profile)
             ? undefined
-            : mergeConfig((sameProvider ? session : previous)?.config),
+            : mergeConfig({
+                ...(sameProvider ? session : previous)?.config,
+                model: 'default',
+                effort: undefined,
+              }),
         codexConfig: isCodex(profile)
-          ? mergeCodexConfig((sameProvider ? session : previous)?.codexConfig)
+          ? mergeCodexConfig({
+              ...(sameProvider ? session : previous)?.codexConfig,
+              model: 'default',
+              effort: undefined,
+            })
           : undefined,
       };
+      this.buffers.delete(id);
       this.state.sessions[this.state.sessions.indexOf(session)] = next;
       this.store.flush();
       this.changed();
@@ -865,6 +892,7 @@ export class Manager {
     if (isConnectedProvider(s.profile)) {
       if ((await fs.promises.realpath(project.path)) !== project.path)
         throw new Error('La carpeta ha cambiado de ubicación.');
+      const workspacePath = s.worktree?.cwd ?? project.path;
       const rt: Runtime = { buffer: '', sequence: 0 };
       this.runtimes.set(id, rt);
       s.status = 'starting';
@@ -884,7 +912,7 @@ export class Manager {
           if (providerKind(s.profile) === 'opencode') {
             const runtime = new OpenCodeRuntime(
               s,
-              project.path,
+              workspacePath,
               this.profilesRoot,
               this.accounts.opencode,
               () => this.changed(s),
@@ -896,7 +924,7 @@ export class Manager {
           } else {
             rt.provider = new OpenRouterRuntime(
               s,
-              project.path,
+              workspacePath,
               this.accounts.api(s.profile),
               () => this.changed(s),
               () => this.selectedModels(s.profile),
@@ -911,13 +939,13 @@ export class Manager {
             if ((await linkedAntigravity(this.profilesRoot)) !== s.profile)
               throw new Error('Vincula tu cuenta de Antigravity en Ajustes.');
             if (s.mode === 'terminal') {
-              await this.startAntigravityTerminal(s, rt, binary, project.path, continueTask);
+              await this.startAntigravityTerminal(s, rt, binary, workspacePath, continueTask);
               return;
             }
             const runtime = new AntigravityRuntime(
               s,
               binary,
-              project.path,
+              workspacePath,
               this.networkEnvironment(),
               () => this.changed(s),
             );
@@ -932,10 +960,10 @@ export class Manager {
             binary,
             dir,
             this.networkEnvironment(),
-            project.path,
+            workspacePath,
             this.state.profiles?.find((p) => p.id === s.profile)?.googleCloudProject,
           );
-          const gemini = new GeminiRuntime(s, rpc, project.path, () => this.changed(s));
+          const gemini = new GeminiRuntime(s, rpc, workspacePath, () => this.changed(s));
           rt.provider = gemini;
           await gemini.start();
         }
@@ -963,7 +991,7 @@ export class Manager {
     const dir = profileDirectory(this.profilesRoot, s.profile);
     await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
     this.project(s.projectId); // Removal may have begun while the startup paths were checked.
-    let cwd = project.path;
+    let cwd = s.worktree?.cwd ?? project.path;
     if (!isCodex(s.profile) && !loginOnly) {
       s.status = 'starting';
       this.changed();
@@ -989,7 +1017,8 @@ export class Manager {
     };
     this.runtimes.set(id, rt);
     try {
-      if (isCodex(s.profile)) await this.startCodex(s, rt, binary, dir, project.path);
+      if (isCodex(s.profile))
+        await this.startCodex(s, rt, binary, dir, s.worktree?.cwd ?? project.path);
       else if ((s.mode ?? 'chat') === 'chat' && !loginOnly)
         await this.startClaude(s, rt, binary, dir, cwd, project.path);
       else await this.startTerminal(s, rt, binary, dir, cwd, loginOnly);
@@ -1100,6 +1129,7 @@ export class Manager {
       preset: 'claude_code',
       append: [
         s.config?.appendSystemPrompt,
+        continuationContext(s),
         'For multi-step work, create a short task list at the beginning with TodoWrite or TaskCreate and update it as work progresses. Skip task lists for simple answers. Keep the parent task list separate from subagent tasks.',
         isolated
           ? isolatedInstructions(s.worktree!.branch, s.worktree!.base)
@@ -1416,7 +1446,7 @@ export class Manager {
     const managed = await this.resolveMcp(s);
     const params = codexParams(
       resolveCodexModel(mergeCodexConfig(s.codexConfig), s.info?.models ?? []),
-      this.project(s.projectId).path,
+      s.worktree?.cwd ?? this.project(s.projectId).path,
     ).thread;
     params.config = {
       ...params.config,
@@ -1425,6 +1455,7 @@ export class Manager {
     } as any;
     params.developerInstructions = [
       params.developerInstructions,
+      continuationContext(s),
       coordinationInstructions,
       'For multi-step work, publish a short plan with update_plan before starting and keep step statuses current. Skip plans for simple answers.',
       savingInstructions(level),
@@ -1466,7 +1497,8 @@ export class Manager {
             restored.push(m);
           }
         }
-      if (restored.length) s.messages = restored;
+      if (restored.length)
+        s.messages = [...s.messages.slice(0, s.historyBoundary ?? 0), ...restored];
     }
     this.changed();
   }
@@ -1665,6 +1697,8 @@ export class Manager {
         return true;
       case 'clear':
         s.messages = [];
+        s.historyBoundary = undefined;
+        s.continuationPending = false;
         s.todos = undefined;
         runtime.send('/clear');
         return true;
@@ -1897,7 +1931,7 @@ export class Manager {
           input: codexAttachmentContent(text, images),
           ...codexParams(
             { ...mergeCodexConfig(s.codexConfig), model: decision.model, effort: decision.effort },
-            this.project(s.projectId).path,
+            s.worktree?.cwd ?? this.project(s.projectId).path,
           ).turn,
         });
         s.notice = undefined;
@@ -2002,7 +2036,7 @@ export class Manager {
     const s = this.session(id);
     this.project(s.projectId);
     if (this.modelJobs.has(id)) return this.modelJobs.get(id)!.work;
-    if (this.runtimes.get(id)?.rpc) return this.codexModels(s);
+    // A fresh process reloads the official catalogue; a long-lived RPC can retain an old cache.
     const controller = new AbortController();
     s.modelsLoading = true;
     s.modelsError = undefined;
@@ -2022,6 +2056,9 @@ export class Manager {
           outputStyles: [],
         };
         s.info.models = models;
+        s.modelsFetchedAt = Date.now();
+        if (isCodex(s.profile))
+          s.codexConfig = selectCodexConfig(mergeCodexConfig(s.codexConfig), {}, models);
         if (!models.length)
           s.modelsError = 'No hay modelos disponibles. Comprueba la cuenta y actualiza la lista.';
       } catch (e) {
@@ -2057,6 +2094,7 @@ export class Manager {
         outputStyles: [],
       });
       info.models = models;
+      s.modelsFetchedAt = Date.now();
       s.codexConfig = selectCodexConfig(mergeCodexConfig(s.codexConfig), {}, models);
       if (!models.length)
         s.modelsError =
@@ -2421,6 +2459,8 @@ export class Manager {
       mcpConnectionIds:
         source.mcpConnectionIds === undefined ? undefined : [...source.mcpConnectionIds],
       forkFrom: origin,
+      historyBoundary: source.historyBoundary,
+      continuationPending: source.continuationPending,
       forkOf: source.id,
       accountLocked: true,
       isolation: worktree ? 'worktree' : 'shared',

@@ -3,24 +3,42 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'reac
 export function Popover({
   label,
   icon: Icon,
+  suffixIcon: SuffixIcon,
   children,
   title,
   active = false,
   text,
+  onOpen,
+  showLabel = false,
+  disabled = false,
+  sidePanel,
+  sideLabel,
+  onSideClose,
 }: {
+  onOpen?: () => void;
+  showLabel?: boolean;
   active?: boolean;
   label: string;
-  icon: any;
+  icon?: any;
+  suffixIcon?: any;
+  disabled?: boolean;
+  sidePanel?: (close: () => void) => React.ReactNode;
+  sideLabel?: string;
+  onSideClose?: () => void;
   title?: string;
   /** Visible label, only for non-default states worth noticing. */
   text?: string;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open) onOpen?.();
+  }, [open]);
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const side = useRef<HTMLDivElement>(null);
   const initialFocus = useRef<'selected' | 'first' | 'last'>('selected');
   const typeahead = useRef({ text: '', at: 0 });
   const buttons = () =>
@@ -86,6 +104,35 @@ export function Popover({
           : (selected ?? options[0]),
     );
     typeahead.current = { text: '', at: 0 };
+  }, [open]);
+  useLayoutEffect(() => {
+    if (!open || !sidePanel || !panel.current || !side.current) return;
+    const placeSide = () => {
+      const main = panel.current?.getBoundingClientRect();
+      const popup = side.current;
+      if (!main || !popup) return;
+      const margin = 8;
+      const width = Math.min(200, window.innerWidth - margin * 2);
+      const right = window.innerWidth - margin - main.right;
+      const left = main.left - margin;
+      const x =
+        right >= width + 6 ? main.right + 6 : left >= width + 6 ? main.left - width - 6 : main.left;
+      popup.style.width = `${width}px`;
+      popup.style.left = `${Math.max(margin, Math.min(x, window.innerWidth - margin - width))}px`;
+      popup.style.maxHeight = `${Math.max(0, window.innerHeight - margin * 2)}px`;
+      const height = popup.getBoundingClientRect().height;
+      popup.style.top = `${Math.max(margin, Math.min(main.top, window.innerHeight - margin - height))}px`;
+    };
+    placeSide();
+    window.addEventListener('resize', placeSide);
+    window.addEventListener('scroll', placeSide, true);
+    return () => {
+      window.removeEventListener('resize', placeSide);
+      window.removeEventListener('scroll', placeSide, true);
+    };
+  }, [open, !!sidePanel]);
+  useEffect(() => {
+    if (!open) return;
     const h = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -93,6 +140,11 @@ export function Popover({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        if (sidePanel && onSideClose) {
+          onSideClose();
+          panel.current?.querySelector<HTMLButtonElement>('[data-pending-model="true"]')?.focus();
+          return;
+        }
         setOpen(false);
         trigger.current?.focus();
       }
@@ -103,7 +155,7 @@ export function Popover({
       window.removeEventListener('mousedown', h);
       window.removeEventListener('keydown', k, true);
     };
-  }, [open]);
+  }, [open, sidePanel, onSideClose]);
   return (
     <div
       className="popover-host"
@@ -114,7 +166,8 @@ export function Popover({
     >
       <button
         ref={trigger}
-        className={`chip-btn ${open || active ? 'on' : ''} ${text ? 'labeled' : ''}`}
+        disabled={disabled}
+        className={`chip-btn ${open || active ? 'on' : ''} ${text || showLabel ? 'labeled' : ''}`}
         title={`${title ?? label} · ${label}`}
         aria-label={title ?? label}
         aria-description={label !== title ? label : undefined}
@@ -133,8 +186,9 @@ export function Popover({
           else setOpen(true);
         }}
       >
-        <Icon size={13} />
-        {text && <span className="chip-text">{text}</span>}
+        {Icon && <Icon size={13} />}
+        {(text || showLabel) && <span className="chip-text">{text || label}</span>}
+        {SuffixIcon && <SuffixIcon size={11} aria-hidden="true" />}
       </button>
       {open && (
         <div
@@ -189,6 +243,32 @@ export function Popover({
             <span>{label !== title ? label : ''}</span>
           </div>
           {children(close)}
+        </div>
+      )}
+      {open && sidePanel && (
+        <div
+          className="popover popover-side"
+          role="dialog"
+          aria-label={sideLabel}
+          ref={side}
+          onKeyDown={(e) => {
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+            const options = Array.from(
+              side.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [],
+            );
+            if (!options.length) return;
+            e.preventDefault();
+            const index = options.indexOf(document.activeElement as HTMLButtonElement);
+            const next =
+              e.key === 'Home'
+                ? 0
+                : e.key === 'End'
+                  ? options.length - 1
+                  : (index + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+            options[next]?.focus();
+          }}
+        >
+          {sidePanel(close)}
         </div>
       )}
     </div>

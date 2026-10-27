@@ -53,15 +53,21 @@ try {
     .filter({ has: page.getByText(picked.displayName, { exact: true }) })
     .click();
   s = await current();
-  assert.equal(s.codexConfig.model, picked.value);
   if (picked.supportedEffortLevels?.length) {
-    await page.getByRole('button', { name: 'Esfuerzo de razonamiento', exact: true }).click();
+    assert.notEqual(s.codexConfig.model, picked.value);
     await page
       .locator('.popover button')
-      .filter({ has: page.getByText(picked.supportedEffortLevels[0], { exact: true }) })
+      .filter({
+        has: page.getByText(
+          picked.supportedEffortLevels[0].charAt(0).toLocaleUpperCase() +
+            picked.supportedEffortLevels[0].slice(1),
+          { exact: true },
+        ),
+      })
       .click();
     assert.equal((await current()).codexConfig.effort, picked.supportedEffortLevels[0]);
   }
+  assert.equal((await current()).codexConfig.model, picked.value);
   await page.getByRole('button', { name: 'Modelo de Codex', exact: true }).click();
   await page.getByRole('button', { name: 'Actualizar modelos', exact: true }).click();
   await page.getByRole('button', { name: 'Actualizar modelos', exact: true }).waitFor();

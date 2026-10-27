@@ -1,3 +1,4 @@
+import { continuationContext } from './session-continuation';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -50,13 +51,15 @@ export class OpenCodeRuntime implements ProviderRuntime {
     private network: () => Record<string, string> = () => ({}),
     private binary = openCodeBinary(),
   ) {
-    this.historyContext = !s.reference
-      ? s.messages
-          .filter((m) => ['user', 'assistant'].includes(m.role) && !m.kind)
-          .map((m) => `${m.role}: ${m.text}`)
-          .join('\n\n')
-          .slice(-100000)
-      : '';
+    this.historyContext = s.continuationPending
+      ? continuationContext(s)
+      : !s.reference
+        ? s.messages
+            .filter((m) => ['user', 'assistant'].includes(m.role) && !m.kind)
+            .map((m) => `${m.role}: ${m.text}`)
+            .join('\n\n')
+            .slice(-100000)
+        : '';
   }
   private async selected() {
     const models = await this.models();
@@ -251,6 +254,7 @@ export class OpenCodeRuntime implements ProviderRuntime {
     this.work = this.rpc!.call('session/prompt', { sessionId: s.reference, prompt }, 30 * 60 * 1000)
       .then((result) => {
         this.historyContext = '';
+        s.continuationPending = false;
         const usage = result.usage;
         if (usage && Number.isFinite(usage.inputTokens) && Number.isFinite(usage.outputTokens)) {
           const stats = this.stats();

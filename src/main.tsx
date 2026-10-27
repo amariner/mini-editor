@@ -1,3 +1,4 @@
+import { WorkspaceDock, type ToolView } from './workspace-dock';
 import { ChatDetails, ChatDetailsContent } from './chat-details';
 import { usePanelPresence } from './panel-presence';
 import type { WorkspaceView } from './workspace-panel';
@@ -28,7 +29,6 @@ import {
   SquarePen,
   Search,
   Settings2,
-  Globe,
   X,
   Terminal,
   MessageSquare,
@@ -36,12 +36,8 @@ import {
   ShieldCheck,
   ExternalLink,
   RefreshCw,
-  PanelRightOpen,
   PanelRight,
-  PanelBottomOpen,
   ArrowDown,
-  Maximize2,
-  Minimize2,
   Inbox,
 } from 'lucide-react';
 import type { Action, Session, Snapshot, Attachment, RewindResult } from './shared';
@@ -50,7 +46,6 @@ import { actionError, assertCompatibleAction, compatibleRuntime, RESTART_NOTICE 
 import { antigravityPermissionNeeded } from './antigravity-permissions';
 import { TerminalView } from './lazy-terminal';
 import { sessionIsLive as live } from './session-tabs';
-import { sessionAccountLocked } from './session-tabs';
 import {
   ClaudeApproval,
   ProviderApproval,
@@ -74,7 +69,7 @@ import { AttentionPanel } from './attention-panel';
 import { ChatActionsContext, type ChatActions } from './markdown';
 import { applyStyles, resetStyles, savedStyles } from './custom-styles';
 import { accountCardStyle, suggestedAccountColor } from './account-color';
-import { isLocalPage, workspaceAvailability } from './workspace-availability';
+import { workspaceAvailability } from './workspace-availability';
 import { SnapshotSync } from './snapshot-sync';
 import { reconcileSnapshot } from './state-sharing';
 import { searchWorkspace } from './workspace-search';
@@ -119,13 +114,6 @@ function App() {
   const [drafts, setDrafts] = useTextDrafts();
   const [imageDrafts, setImageDrafts] = useImageDrafts();
   const split = useWorkspaceSplit();
-  const terminalSplit = useWorkspaceSplit({
-    storageKey: 'agent-desk.terminal-chat-width',
-    cssVariable: '--terminal-chat-width',
-    label: 'Ancho del panel de terminal',
-    minChat: 260,
-    minTools: 320,
-  });
   const [state, setState] = useState<Snapshot>(),
     [error, setError] = useState(''),
     [multichat, setMultichat] = useState<'off' | 'grid' | 'focused'>('off'),
@@ -140,7 +128,6 @@ function App() {
       }
     }),
     [topbarSlot, setTopbarSlot] = useState<HTMLDivElement | null>(null),
-    [gitFooterSlot, setGitFooterSlot] = useState<HTMLDivElement | null>(null),
     [search, setSearch] = useState(false),
     [query, setQuery] = useState(''),
     [searchIndex, setSearchIndex] = useState(0),
@@ -170,23 +157,16 @@ function App() {
     [navigating, setNavigating] = useState(false),
     [closedSelection, setClosedSelection] = useState<string>(),
     [confirmClose, setConfirmClose] = useState<{ session: Session; remove: boolean }>(),
-    [panelOpen, setPanelOpen] = useState(false),
+    [panelOpen, setPanelOpenRaw] = useState(false),
     [panelView, setPanelView] = useState<WorkspaceView>('details'),
     [panelFile, setPanelFile] = useState<{ path: string; key: number }>(),
-    [showBrowser, setShowBrowser] = useState(false),
+    [showBrowser, setShowBrowserRaw] = useState(false),
     [browserTab, setBrowserTab] = useState<string>(),
-    [showTerminalPanel, setShowTerminalPanel] = useState(false),
+    [showTerminalPanel, setShowTerminalPanelRaw] = useState(false),
     [terminalTarget, setTerminalTarget] = useState<'default' | 'freebuff'>('default'),
-    [terminalExpanded, setTerminalExpanded] = useState(false),
-    [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>(() => {
-      try {
-        return localStorage.getItem('agent-desk.terminal-position') === 'right'
-          ? 'right'
-          : 'bottom';
-      } catch {
-        return 'bottom';
-      }
-    }),
+    [dockExpanded, setDockExpanded] = useState(false),
+    [toolTabs, setToolTabs] = useState<ToolView[]>(['details']),
+    [toolLauncher, setToolLauncher] = useState(false),
     [diff, setDiff] = useState<GitSnapshot>(),
     [diffError, setDiffError] = useState(''),
     [busy, setBusy] = useState<Record<string, boolean>>({}),
@@ -194,6 +174,38 @@ function App() {
     [editingName, setEditingName] = useState<{ kind: 'project' | 'session'; id: string }>(),
     [stick, setStick] = useState(true),
     [seen, setSeen] = useState<Record<string, number>>({});
+  const terminalPosition = 'right' as const;
+  const rememberTool = (view: ToolView) => {
+    setToolTabs((tabs) => (tabs.includes(view) ? tabs : [...tabs, view]));
+    setToolLauncher(false);
+  };
+  const setShowTerminalPanel = (value: React.SetStateAction<boolean>) => {
+    const open = typeof value === 'function' ? value(showTerminalPanel) : value;
+    setShowTerminalPanelRaw(open);
+    if (open) {
+      setPanelOpenRaw(false);
+      setShowBrowserRaw(false);
+      rememberTool('terminal');
+    }
+  };
+  const setShowBrowser = (value: React.SetStateAction<boolean>) => {
+    const open = typeof value === 'function' ? value(showBrowser) : value;
+    setShowBrowserRaw(open);
+    if (open) {
+      setPanelOpenRaw(false);
+      setShowTerminalPanelRaw(false);
+      rememberTool('browser');
+    }
+  };
+  const setPanelOpen = (value: React.SetStateAction<boolean>) => {
+    const open = typeof value === 'function' ? value(panelOpen) : value;
+    setPanelOpenRaw(open);
+    if (open) {
+      setShowBrowserRaw(false);
+      setShowTerminalPanelRaw(false);
+      setToolLauncher(false);
+    }
+  };
   const panelTrigger = useRef<HTMLButtonElement>(null);
   const panelElement = useRef<HTMLElement>(null);
   const showDiff = panelOpen && panelView === 'changes';
@@ -215,11 +227,6 @@ function App() {
       setShowTerminalPanel(false);
     }
   }, [state?.freebuffEnabled, terminalTarget]);
-  useEffect(() => {
-    try {
-      localStorage.setItem('agent-desk.terminal-position', terminalPosition);
-    } catch {}
-  }, [terminalPosition]);
   const list = useRef<HTMLDivElement>(null),
     diffRequest = useRef(0),
     diffReads = useRef(0),
@@ -318,16 +325,22 @@ function App() {
   const gridVisible = hasChats && multichat === 'grid';
   const browserVisible = canBrowse && showBrowser && !onboarding;
   const panelVisible = panelOpen && !!project && !gridVisible && !floatingSessionId;
-  const toolsPresence = usePanelPresence(panelVisible || browserVisible);
+  const toolsVisible = panelVisible || browserVisible || (!!project && showTerminalPanel);
+  const toolsPresence = usePanelPresence(toolsVisible);
   const openWorkspace = (view: WorkspaceView, path?: string) => {
     setPanelView(view);
+    rememberTool(view);
     setPanelOpen(true);
     setShowBrowser(false);
     setMultichat((mode) => (mode === 'grid' ? 'focused' : mode));
     if (path !== undefined) setPanelFile({ path, key: Date.now() });
   };
   const closeWorkspace = () => {
-    setPanelOpen(false);
+    setPanelOpenRaw(false);
+    setShowBrowserRaw(false);
+    setShowTerminalPanelRaw(false);
+    setToolLauncher(false);
+    setDockExpanded(false);
     panelTrigger.current?.focus({ preventScroll: true });
   };
   useEffect(() => {
@@ -649,7 +662,7 @@ function App() {
       session.mode === 'terminal' ||
       session.modelsLoading ||
       session.modelsError ||
-      session.info?.models.length
+      (!!session.info?.models.length && Date.now() - (session.modelsFetchedAt ?? 0) < 300_000)
     )
       return;
     if (!['stopped', 'error'].includes(session.status)) return;
@@ -950,8 +963,6 @@ function App() {
       void openFreebuff();
       return;
     }
-    if (!showTerminalPanel && !terminalMode)
-      void run({ type: 'openProjectTerminal', projectId: project.id });
     if (!showTerminalPanel && terminalMode && session && !live(session))
       void run({ type: 'start', sessionId: session.id });
   };
@@ -1042,6 +1053,39 @@ function App() {
       <Terminal size={17} />
     </button>
   );
+  const repositoryControl = project && (
+    <GitBar
+      key={`${project.id}:${session?.worktree?.path ?? 'shared'}`}
+      project={project}
+      session={session}
+      sessions={state.sessions}
+      run={run}
+      floating={!!floatingSessionId}
+      navigationDisabled={
+        navigating || !!(session && busy[session.id]) || !compatibleRuntime(state)
+      }
+      onSelectSession={(next) => {
+        setClosedSelection(undefined);
+        setMultichat('off');
+        return run({
+          type: 'select',
+          projectId: next.projectId,
+          sessionId: next.id,
+        });
+      }}
+      state={diff}
+      error={diffError}
+      expandedDiff={showDiff}
+      onDiff={() => (showDiff ? closeWorkspace() : openWorkspace('changes'))}
+      refresh={refreshDiff}
+      compatible={compatibleRuntime(state)}
+      locked={state.sessions.some((s) => s.projectId === project.id && live(s) && !s.worktree)}
+      sessionId={session?.worktree ? session.id : undefined}
+      agentBusy={['starting', 'working', 'waiting', 'stopping'].includes(
+        session?.status ?? 'stopped',
+      )}
+    />
+  );
   const toggleBrowser = async () => {
     if (!canBrowse) return;
     if (browserVisible && !gridVisible) {
@@ -1051,15 +1095,15 @@ function App() {
     // A manually selected tab can belong to another project. Hiding the panel
     // must not change that selection when its page is still available.
     const tab =
-      state.browsers?.find(
-        (t) => t.id === browserTab && t.url && (!isLocalPage(t.url) || t.hostStatus === 'online'),
-      ) ?? availability.browserTabs[0];
+      state.browsers?.find((t) => t.id === browserTab && t.projectId === project?.id) ??
+      availability.browserTabs[0] ??
+      state.browsers?.find((t) => t.projectId === project?.id);
     setMultichat('off');
     if (tab) {
       setBrowserTab(tab.id);
       setPanelOpen(false);
       setShowBrowser(true);
-      if (tab.suspended)
+      if (tab.suspended && tab.url)
         await run({
           type: 'browserTab',
           tabId: tab.id,
@@ -1067,24 +1111,19 @@ function App() {
         });
     } else {
       const server = availability.servers[0];
-      if (server) {
-        // Keep existing tabs reachable if creating a preview fails (for example
-        // at the saved-tab limit), so the user can close one and retry.
-        setBrowserTab(undefined);
-        setPanelOpen(false);
-        setShowBrowser(true);
+      setBrowserTab(undefined);
+      setPanelOpen(false);
+      setShowBrowser(true);
+      if (project)
         await run({
           type: 'browserNew',
-          projectId: server.projectId,
-          sessionId: state.sessions.some((s) => s.id === server.sessionId)
-            ? server.sessionId
-            : undefined,
-          url: server.url,
+          projectId: server?.projectId ?? project.id,
+          sessionId: session?.id,
+          ...(server ? { url: server.url } : {}),
         });
-      }
     }
   };
-  const browserPanel = browserVisible && (
+  const browserPanel = toolTabs.includes('browser') && (
     <React.Suspense
       fallback={
         <div className="tool-pane muted" role="status">
@@ -1100,8 +1139,10 @@ function App() {
         sessionId={session?.id}
         projects={state.projects}
         blocked={
+          !browserVisible ||
+          toolLauncher ||
+          !toolsVisible ||
           split.dragging ||
-          terminalSplit.dragging ||
           search ||
           settings ||
           attentionOpen ||
@@ -1131,6 +1172,106 @@ function App() {
   if (floatingTint)
     (floatingAccountStyle as Record<string, unknown>)['--floating-tint'] = floatingTint;
   const detached = !floatingSessionId && !!floatingPreferences;
+  const terminalPanel = project && (
+    <section
+      key="terminal-panel"
+      className="tool-pane terminal-pane dock-terminal"
+      aria-label={
+        freebuffPanel
+          ? 'Terminal oficial de Freebuff'
+          : antigravityChat && terminalMode
+            ? 'Permisos y ejecución de Gemini'
+            : 'Terminal del proyecto'
+      }
+    >
+      <header className="drawer-head terminal-panel-heading">
+        <strong>
+          {freebuffPanel
+            ? 'Freebuff · CLI oficial'
+            : antigravityChat && terminalMode
+              ? 'Gemini · permisos y ejecución'
+              : terminalMode
+                ? 'Terminal del agente'
+                : 'Consola del proyecto'}
+        </strong>
+        {antigravityChat && terminalMode && !freebuffPanel && (
+          <span>Responde a las solicitudes en este panel</span>
+        )}
+        <div>
+          {freebuffPanel ? (
+            <>
+              <button onClick={() => setTerminalTarget('default')}>
+                {terminalMode ? 'Terminal del agente' : 'Consola'}
+              </button>
+              <button
+                disabled={!!busy.openFreebuff || !!busy.stopFreebuff || !compatibleRuntime(state)}
+                onClick={() =>
+                  terminalSession && live(terminalSession)
+                    ? void run({ type: 'stopFreebuff', projectId: project.id })
+                    : void openFreebuff()
+                }
+              >
+                {terminalSession && live(terminalSession) ? 'Detener Freebuff' : 'Abrir Freebuff'}
+              </button>
+            </>
+          ) : state.freebuffEnabled ? (
+            <button
+              disabled={!compatibleRuntime(state) || !state.tools.freebuff || !!busy.openFreebuff}
+              onClick={() => void openFreebuff()}
+              title="Abrir Freebuff CLI con tu cuenta en este proyecto"
+            >
+              Freebuff
+            </button>
+          ) : null}
+          {antigravityChat && terminalMode && !freebuffPanel && (
+            <button
+              disabled={!!busy[session!.id]}
+              onClick={returnToChat}
+              title="Detener la terminal y volver al chat"
+            >
+              Detener y volver al chat
+            </button>
+          )}
+        </div>
+      </header>
+      {terminalSession ? (
+        <TerminalView
+          key={terminalSession.id}
+          session={terminalSession}
+          visible={showTerminalPanel && !toolLauncher && toolsVisible}
+          onError={setError}
+          scrollableScreen={!freebuffPanel && antigravityChat && terminalMode}
+          placement={terminalPosition}
+        />
+      ) : (
+        <div className="inline-notice" role="status">
+          Abriendo terminal…
+        </div>
+      )}
+    </section>
+  );
+  const activeTool: ToolView = showTerminalPanel
+    ? 'terminal'
+    : browserVisible
+      ? 'browser'
+      : panelView;
+  const selectTool = (view: ToolView) => {
+    rememberTool(view);
+    if (view === 'terminal') {
+      if (!showTerminalPanel) toggleTerminal();
+    } else if (view === 'browser') {
+      if (!browserVisible) void toggleBrowser();
+    } else openWorkspace(view);
+  };
+  const closeTool = (view: ToolView) => {
+    const remaining = toolTabs.filter((tab) => tab !== view);
+    setToolTabs(remaining);
+    if (activeTool === view) {
+      if (remaining.length) selectTool(remaining[remaining.length - 1]);
+      else closeWorkspace();
+    }
+  };
+
   return (
     <div
       className={`app ${onboarding ? 'onboarding' : ''} ${floatingSessionId ? 'floating-chat-app' : ''}`}
@@ -1458,12 +1599,12 @@ function App() {
             {project && !floatingSessionId && (
               <button
                 ref={panelTrigger}
-                className={`chat-details-toggle ${panelVisible ? 'on' : ''}`}
-                title="Panel de trabajo · Detalles, archivos y cambios"
+                className={`chat-details-toggle ${toolsVisible ? 'on' : ''}`}
+                title="Panel de trabajo · Terminal, navegador, archivos y cambios"
                 aria-label="Panel de trabajo"
-                aria-expanded={panelVisible}
+                aria-expanded={toolsVisible}
                 aria-controls={toolsPresence.present ? 'workspace-tools' : undefined}
-                onClick={() => (panelVisible ? closeWorkspace() : openWorkspace(panelView))}
+                onClick={() => (toolsVisible ? closeWorkspace() : openWorkspace(panelView))}
               >
                 <PanelRight size={17} />
               </button>
@@ -1477,18 +1618,6 @@ function App() {
                 onClick={() => setMultichat((v) => (v === 'grid' ? 'off' : 'grid'))}
               >
                 <LayoutGrid size={17} />
-              </button>
-            )}
-            {canBrowse && (
-              <button
-                className={browserVisible ? 'on' : ''}
-                aria-label="Navegador"
-                title="Navegador"
-                aria-pressed={browserVisible}
-                disabled={!compatibleRuntime(state)}
-                onClick={() => void toggleBrowser()}
-              >
-                <Globe size={17} />
               </button>
             )}
           </div>
@@ -1622,15 +1751,11 @@ function App() {
             )}
           </div>
         ) : (
-          <div
-            ref={terminalSplit.ref}
-            style={terminalSplit.style}
-            className={`work-area ${showTerminalPanel && terminalPosition === 'right' ? 'terminal-at-right' : ''} ${terminalSplit.dragging ? 'resizing' : ''}`}
-          >
+          <div className="work-area">
             <div
               ref={split.ref}
               style={split.style}
-              className={`workspace workspace-shell ${toolsPresence.present ? 'with-tools' : ''} ${browserVisible ? 'showing-browser' : ''} ${split.dragging ? 'resizing' : ''}`}
+              className={`workspace workspace-shell ${dockExpanded && toolsVisible ? 'dock-expanded' : ''} ${toolsPresence.present ? 'with-tools' : ''} ${browserVisible ? 'showing-browser' : ''} ${split.dragging ? 'resizing' : ''}`}
               data-tools-open={toolsPresence.visible}
             >
               <ChatActionsContext.Provider value={chatActions}>
@@ -1903,41 +2028,7 @@ function App() {
                             kind={kind}
                           />
                         )}
-                        <GitBar
-                          key={`${project.id}:${session.worktree?.path ?? 'shared'}`}
-                          compact
-                          mount={terminalMode ? undefined : gitFooterSlot}
-                          project={project}
-                          session={session}
-                          sessions={state.sessions}
-                          run={run}
-                          floating={!!floatingSessionId}
-                          navigationDisabled={
-                            navigating || !!busy[session.id] || !compatibleRuntime(state)
-                          }
-                          onSelectSession={(next) => {
-                            setClosedSelection(undefined);
-                            setMultichat('off');
-                            return run({
-                              type: 'select',
-                              projectId: next.projectId,
-                              sessionId: next.id,
-                            });
-                          }}
-                          state={diff}
-                          error={diffError}
-                          expandedDiff={showDiff}
-                          onDiff={() => (showDiff ? closeWorkspace() : openWorkspace('changes'))}
-                          refresh={refreshDiff}
-                          compatible={compatibleRuntime(state)}
-                          locked={state.sessions.some(
-                            (s) => s.projectId === project.id && live(s) && !s.worktree,
-                          )}
-                          sessionId={session.worktree ? session.id : undefined}
-                          agentBusy={['starting', 'working', 'waiting', 'stopping'].includes(
-                            session.status,
-                          )}
-                        />
+
                         {!terminalMode && (
                           <>
                             <PendingMessages
@@ -1966,7 +2057,6 @@ function App() {
                                 <UsageSwitcher
                                   profiles={accountProfiles}
                                   profile={session.profile}
-                                  locked={sessionAccountLocked(session)}
                                   disabled={
                                     navigating ||
                                     !!busy[session.id] ||
@@ -1983,7 +2073,6 @@ function App() {
                                 />
                               }
                               footerControl={terminalButton}
-                              footerStartRef={setGitFooterSlot}
                               usageDetail={
                                 <UsageWindowDetail
                                   profile={session.profile}
@@ -2035,7 +2124,7 @@ function App() {
                 </section>
               </ChatActionsContext.Provider>
               {toolsPresence.present && (
-                <div className="workspace-resize-slot" inert={!panelVisible && !browserVisible}>
+                <div className="workspace-resize-slot" inert={!toolsVisible}>
                   {split.separator}
                 </div>
               )}
@@ -2045,199 +2134,107 @@ function App() {
                   ref={panelElement}
                   tabIndex={-1}
                   aria-label={browserVisible ? 'Navegador del proyecto' : 'Panel lateral'}
-                  aria-hidden={!panelVisible && !browserVisible}
-                  inert={!panelVisible && !browserVisible}
+                  aria-hidden={!toolsVisible}
+                  inert={!toolsVisible}
                   data-open={toolsPresence.visible}
                   className={`drawer tools-drawer workspace-tools ${browserVisible ? 'with-browser' : ''}`}
                   onKeyDown={(event) => {
-                    if (event.key !== 'Escape' || event.defaultPrevented || browserVisible) return;
+                    if (event.key !== 'Escape' || event.defaultPrevented || showTerminalPanel)
+                      return;
                     event.preventDefault();
                     event.stopPropagation();
                     closeWorkspace();
                   }}
                 >
-                  {browserVisible && compatibleRuntime(state) ? (
-                    browserPanel
-                  ) : (
-                    <React.Suspense
-                      fallback={
-                        <p className="muted workspace-loading" role="status">
-                          Abriendo panel…
-                        </p>
-                      }
-                    >
-                      <WorkspacePanel
-                        key={`${project.id}:${session?.worktree?.cwd ?? project.path}`}
-                        project={project}
-                        session={session}
-                        git={diff}
-                        gitError={diffError}
-                        view={panelView}
-                        onViewChange={setPanelView}
-                        onClose={closeWorkspace}
-                        onRefresh={refreshDiff}
-                        openFile={panelFile}
-                        disabled={!compatibleRuntime(state)}
-                        invoke={async (action) => {
-                          assertCompatibleAction(stateRef.current, action);
-                          return window.desk.invoke(action);
-                        }}
-                        onOpenExternal={(path) =>
-                          void run({
-                            type: 'openPath',
-                            projectId: project.id,
-                            sessionId: session?.id,
-                            path,
-                            workspace: true,
-                          })
-                        }
-                        details={
-                          session ? (
-                            <ChatDetailsContent
-                              session={session}
-                              project={project.name}
-                              root={session.worktree?.cwd ?? project.path}
-                              git={diff}
-                              gitError={diffError}
-                              showChanges={() => setPanelView('changes')}
-                            />
-                          ) : (
-                            <p className="muted">
-                              Abre un chat para ver su actividad. Puedes explorar archivos y cambios
-                              de este proyecto.
+                  <WorkspaceDock
+                    active={activeTool}
+                    tabs={toolTabs}
+                    launcher={toolLauncher}
+                    expanded={dockExpanded}
+                    onSelect={selectTool}
+                    onCloseTab={closeTool}
+                    onLauncher={() => setToolLauncher((open) => !open)}
+                    onExpand={() => setDockExpanded((expanded) => !expanded)}
+                    onHide={closeWorkspace}
+                  >
+                    {toolTabs.includes('terminal') && (
+                      <div className="dock-view" hidden={!showTerminalPanel}>
+                        {terminalPanel}
+                      </div>
+                    )}
+                    {toolTabs.includes('browser') && compatibleRuntime(state) && (
+                      <div className="dock-view" hidden={!browserVisible}>
+                        {browserPanel}
+                      </div>
+                    )}
+                    {toolTabs.some((view) => ['details', 'files', 'changes'].includes(view)) && (
+                      <div className="dock-view" hidden={showTerminalPanel || browserVisible}>
+                        <React.Suspense
+                          fallback={
+                            <p className="muted workspace-loading" role="status">
+                              Abriendo panel…
                             </p>
-                          )
-                        }
-                      />
-                    </React.Suspense>
-                  )}
+                          }
+                        >
+                          <WorkspacePanel
+                            key={`${project.id}:${session?.worktree?.cwd ?? project.path}`}
+                            project={project}
+                            session={session}
+                            git={diff}
+                            gitError={diffError}
+                            view={panelView}
+                            onViewChange={(view) => {
+                              rememberTool(view);
+                              setPanelView(view);
+                            }}
+                            onClose={closeWorkspace}
+                            onRefresh={refreshDiff}
+                            openFile={panelFile}
+                            disabled={!compatibleRuntime(state)}
+                            invoke={async (action) => {
+                              assertCompatibleAction(stateRef.current, action);
+                              return window.desk.invoke(action);
+                            }}
+                            onOpenExternal={(path) =>
+                              void run({
+                                type: 'openPath',
+                                projectId: project.id,
+                                sessionId: session?.id,
+                                path,
+                                workspace: true,
+                              })
+                            }
+                            details={
+                              session ? (
+                                <>
+                                  {repositoryControl}
+                                  <ChatDetailsContent
+                                    session={session}
+                                    project={project.name}
+                                    root={session.worktree?.cwd ?? project.path}
+                                    git={diff}
+                                    gitError={diffError}
+                                    showChanges={() => selectTool('changes')}
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <div>{repositoryControl}</div>
+                                  <p className="muted">
+                                    Abre un chat para ver su actividad. Puedes explorar archivos y
+                                    cambios de este proyecto.
+                                  </p>
+                                </>
+                              )
+                            }
+                          />
+                        </React.Suspense>
+                      </div>
+                    )}
+                  </WorkspaceDock>
                 </aside>
               )}
             </div>
-            {showTerminalPanel && terminalPosition === 'right' && terminalSplit.separator}
-            {showTerminalPanel && (
-              <section
-                key="terminal-panel"
-                className={`tool-pane terminal-pane ${terminalPosition === 'right' ? 'right-terminal' : 'bottom-terminal'} ${freebuffPanel || (antigravityChat && terminalMode) ? 'gemini-terminal' : ''} ${terminalExpanded ? 'terminal-expanded' : ''}`}
-                aria-label={
-                  freebuffPanel
-                    ? 'Terminal oficial de Freebuff'
-                    : antigravityChat && terminalMode
-                      ? 'Permisos y ejecución de Gemini'
-                      : 'Terminal del proyecto'
-                }
-              >
-                <header className="drawer-head terminal-panel-heading">
-                  <strong>
-                    {freebuffPanel
-                      ? 'Freebuff · CLI oficial'
-                      : antigravityChat && terminalMode
-                        ? 'Gemini · permisos y ejecución'
-                        : terminalMode
-                          ? 'Terminal del agente'
-                          : 'Consola del proyecto'}
-                  </strong>
-                  {antigravityChat && terminalMode && !freebuffPanel && (
-                    <span>Responde a las solicitudes en este panel</span>
-                  )}
-                  <div>
-                    {freebuffPanel ? (
-                      <>
-                        <button onClick={() => setTerminalTarget('default')}>
-                          {terminalMode ? 'Terminal del agente' : 'Consola'}
-                        </button>
-                        <button
-                          disabled={
-                            !!busy.openFreebuff || !!busy.stopFreebuff || !compatibleRuntime(state)
-                          }
-                          onClick={() =>
-                            terminalSession && live(terminalSession)
-                              ? void run({ type: 'stopFreebuff', projectId: project.id })
-                              : void openFreebuff()
-                          }
-                        >
-                          {terminalSession && live(terminalSession)
-                            ? 'Detener Freebuff'
-                            : 'Abrir Freebuff'}
-                        </button>
-                      </>
-                    ) : state.freebuffEnabled ? (
-                      <button
-                        disabled={
-                          !compatibleRuntime(state) || !state.tools.freebuff || !!busy.openFreebuff
-                        }
-                        onClick={() => void openFreebuff()}
-                        title="Abrir Freebuff CLI con tu cuenta en este proyecto"
-                      >
-                        Freebuff
-                      </button>
-                    ) : null}
-                    <button
-                      aria-label={
-                        terminalPosition === 'right'
-                          ? 'Mover terminal abajo'
-                          : 'Mover terminal a la derecha'
-                      }
-                      title={
-                        terminalPosition === 'right'
-                          ? 'Mover terminal abajo'
-                          : 'Mover terminal a la derecha'
-                      }
-                      onClick={() => {
-                        setTerminalPosition((v) => (v === 'right' ? 'bottom' : 'right'));
-                        setTerminalExpanded(false);
-                      }}
-                    >
-                      {terminalPosition === 'right' ? (
-                        <PanelBottomOpen size={16} />
-                      ) : (
-                        <PanelRightOpen size={16} />
-                      )}
-                    </button>
-                    {terminalPosition === 'bottom' && (
-                      <button
-                        aria-label={terminalExpanded ? 'Reducir terminal' : 'Ampliar terminal'}
-                        title={terminalExpanded ? 'Reducir terminal' : 'Ampliar terminal'}
-                        aria-pressed={terminalExpanded}
-                        onClick={() => setTerminalExpanded((v) => !v)}
-                      >
-                        {terminalExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                      </button>
-                    )}
-                    {antigravityChat && terminalMode && !freebuffPanel && (
-                      <button
-                        disabled={!!busy[session!.id]}
-                        onClick={returnToChat}
-                        title="Detener la terminal y volver al chat"
-                      >
-                        Detener y volver al chat
-                      </button>
-                    )}
-                    <button
-                      aria-label="Ocultar panel de terminal"
-                      title="Ocultar panel sin detener la sesión"
-                      onClick={() => setShowTerminalPanel(false)}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </header>
-                {terminalSession ? (
-                  <TerminalView
-                    key={terminalSession.id}
-                    session={terminalSession}
-                    visible
-                    onError={setError}
-                    scrollableScreen={!freebuffPanel && antigravityChat && terminalMode}
-                    placement={terminalPosition}
-                  />
-                ) : (
-                  <div className="inline-notice" role="status">
-                    Abriendo terminal…
-                  </div>
-                )}
-              </section>
-            )}
           </div>
         )}
       </main>

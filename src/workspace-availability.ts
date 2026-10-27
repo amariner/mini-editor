@@ -10,7 +10,7 @@ export function isLocalPage(value: string) {
   }
 }
 
-/** Only offer a browser when there is a real page or a live server in this project. */
+/** Live previews and saved pages are suggestions; a project can also open a blank browser. */
 export function workspaceAvailability(state?: Snapshot) {
   const hasAccounts = !!(state?.profiles?.length || state?.freebuffEnabled);
   const hasProjects = !!state?.projects.length;
@@ -44,6 +44,6 @@ export function workspaceAvailability(state?: Snapshot) {
     hasChats: hasAccounts && hasProjects && !!state?.sessions.length,
     browserTabs,
     servers,
-    canBrowse: hasAccounts && (browserTabs.length > 0 || servers.length > 0),
+    canBrowse: hasAccounts && !!projectId && !!state?.projects.some((p) => p.id === projectId),
   };
 }

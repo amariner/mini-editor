@@ -1,4 +1,3 @@
-import { ChatDetails } from './chat-details';
 import { chatDetachHint, useChatDetachDrag } from './chat-detach-drag';
 import { TeamIndicator } from './team';
 import { ChatStateMark } from './chat-state-mark';
@@ -827,14 +826,6 @@ function Card({
               {index + 1}
             </kbd>
           )}
-          <ChatDetails
-            session={session}
-            project={project}
-            root={root}
-            git={git}
-            gitError={gitError}
-            showChanges={actions.showChanges}
-          />
           <CardMenu title={session.title} color={color} visible={visible}>
             <button role="menuitem" disabled={disabled} onClick={open}>
               <LayoutGrid size={14} />

@@ -8,6 +8,7 @@ const pageSchema = z.object({
       description: z.string().optional(),
       hidden: z.boolean().optional(),
       isDefault: z.boolean().optional(),
+      upgrade: z.string().nullable().optional(),
       defaultReasoningEffort: z.string().optional(),
       supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(),
     }),
@@ -31,6 +32,7 @@ export async function fetchCodexModels(
           displayName: m.displayName ?? m.model,
           description: m.description ?? '',
           isDefault: m.isDefault,
+          upgrade: m.upgrade ?? undefined,
           defaultEffort: m.defaultReasoningEffort,
           supportedEffortLevels: (m.supportedReasoningEfforts ?? []).map((e) => e.reasoningEffort),
         });
@@ -49,6 +51,15 @@ export function selectCodexConfig(
   models: ModelInfo[],
 ): CodexConfig {
   const next = { ...before, ...patch };
+  if (
+    patch.model === undefined &&
+    models.length &&
+    next.model !== 'default' &&
+    !models.some((m) => m.value === next.model)
+  ) {
+    next.model = 'default';
+    next.effort = undefined;
+  }
   const selected = models.find((m) =>
     next.model === 'default' ? m.isDefault : m.value === next.model,
   );

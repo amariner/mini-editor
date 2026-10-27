@@ -137,7 +137,7 @@ try {
   assert.equal((await snapshot()).sessions.length, 2, 'changing the account does not create a tab');
   assert.equal(codexSession, claudeSession);
   assert.equal(await page.locator('.topbar .usage-switcher').count(), 0);
-  assert.equal(await page.locator('.composer-footer .usage-switcher').count(), 1);
+  assert.equal(await page.locator('.composer .usage-switcher').count(), 1);
   await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
   await page.getByRole('button', { name: 'Opciones de ChatGPT', exact: true }).click();
   await page.getByRole('radio', { name: 'Usar ChatGPT como cuenta predeterminada' }).click();

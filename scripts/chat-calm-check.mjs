@@ -157,10 +157,12 @@ try {
       contrasts.every((value) => value >= 4.5),
       'primary and secondary text retain readable contrast',
     );
+    await page.getByRole('button', { name: 'Herramientas del chat', exact: true }).click();
     assert.equal(
       await page.getByRole('button', { name: 'Adjuntar archivos', exact: true }).isVisible(),
       true,
     );
+    await page.getByRole('button', { name: 'Ocultar herramientas', exact: true }).click();
     assert.equal(await chat.getByRole('button', { name: 'Copiar código', exact: true }).count(), 0);
     await page.screenshot({ path: `artifacts/chat-calm/chat-${colorScheme}.png` });
     const last = chat.locator('.response-group').last();

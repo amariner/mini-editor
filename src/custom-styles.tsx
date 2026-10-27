@@ -55,6 +55,8 @@ function savedThemes(): SavedTheme[] {
 const writeThemes = (themes: SavedTheme[]) =>
   localStorage.setItem(THEMES_KEY, JSON.stringify(themes));
 export function applyStyles(css: string) {
+  // Original is the unmodified base; user and shipped themes keep their own controls.
+  document.documentElement.toggleAttribute('data-original-style', !css.trim());
   if (!sheet) return;
   sheet.replaceSync(css);
   const others = document.adoptedStyleSheets.filter((s) => s !== sheet);

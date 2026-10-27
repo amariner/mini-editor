@@ -37,9 +37,10 @@ try {
   };
   installed = await _electron.launch({
     executablePath: executable,
+    // Use a disposable credential backend only for this empty, temporary test profile.
+    args: ['--use-mock-keychain', `--user-data-dir=${env.AGENT_DESK_DATA_DIR}`],
     cwd: temporary,
     env,
-    // macOS Keychain can delay the debugging connection during a signed app's startup.
     timeout: 60000,
   });
   const page = await installed.firstWindow();
@@ -60,7 +61,7 @@ try {
   // Open the same compiled code with the development Electron runtime simultaneously.
   development = await _electron.launch({
     executablePath: electron,
-    args: [payload],
+    args: [payload, '--use-mock-keychain', `--user-data-dir=${path.join(temporary, 'development')}`],
     cwd: temporary,
     env: {
       ...isolatedEnv,
@@ -76,7 +77,7 @@ try {
   await page.evaluate(() => window.desk.invoke({ type: 'snapshot' }));
 
   // A second installed instance must exit, while development keeps its independent lock.
-  const second = spawn(executable, [], { cwd: temporary, env, stdio: 'ignore' });
+  const second = spawn(executable, ['--use-mock-keychain', `--user-data-dir=${env.AGENT_DESK_DATA_DIR}`], { cwd: temporary, env, stdio: 'ignore' });
   const timeout = setTimeout(() => second.kill(), 15000);
   try {
     assert.equal((await once(second, 'exit'))[0], 0);

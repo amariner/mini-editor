@@ -425,26 +425,10 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('[data-session-id="s0"] .multichat-git')?.textContent.includes('main'),
   );
-  const detailsToggle = activityCard.getByRole('button', {
-    name: 'Detalles del chat',
-    exact: true,
-  });
-  await detailsToggle.click();
-  const detailsPanel = activityCard.getByRole('complementary', { name: 'Detalles del chat' });
-  await detailsPanel.waitFor();
-  await activityCard.locator('.chat-details[data-open="true"]').waitFor();
-  await detailsPanel.evaluate(async (panel) => {
-    await Promise.all(panel.getAnimations().map((animation) => animation.finished.catch(() => {})));
-  });
-  assert.match(await detailsPanel.innerText(), /Entorno/);
-  const panelBox = await detailsPanel.boundingBox();
-  const cardBox = await activityCard.boundingBox();
-  assert.ok(
-    panelBox.x >= cardBox.x && panelBox.x + panelBox.width <= cardBox.x + cardBox.width + 1,
+  assert.equal(
+    await activityCard.getByRole('button', { name: 'Detalles del chat', exact: true }).count(),
+    0,
   );
-  await page.keyboard.press('Escape');
-  await detailsPanel.waitFor({ state: 'detached' });
-  assert.ok(await detailsToggle.evaluate((el) => el === document.activeElement));
   const info = await activityCard.locator('.multichat-info-line').innerText();
   assert.match(info, /Personal[\s\S]*Proyecto 1[\s\S]*main[\s\S]*↑1/);
   // A clean, synced branch shows no zero counters.
@@ -1014,6 +998,9 @@ try {
   assert.match(await layoutButton.innerText(), /Auto\s*2 × 1/);
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'artifacts/multichat-rich-text.png' });
+  // Expand the deliberately collapsed long response before testing streaming at its end.
+  const expandRich = rich.getByRole('button', { name: 'Ver respuesta completa', exact: true });
+  if (await expandRich.count()) await expandRich.click();
   // A card that was following the latest response keeps it in view when made shorter.
   await page.setViewportSize({ width: 780, height: 620 });
   await page.waitForFunction(() => {
@@ -1034,7 +1021,14 @@ try {
       '\n\nNueva información al final.';
     window.fixture.publish();
   });
-  await rich.getByText('Nueva información al final.', { exact: true }).waitFor();
+  const updatedDisclosure = rich.locator('.response-expand');
+  await updatedDisclosure.waitFor({ state: 'attached' });
+  await updatedDisclosure.evaluate((button) => {
+    if (button.getAttribute('aria-expanded') === 'false') button.click();
+  });
+  await rich
+    .getByText('Nueva información al final.', { exact: true })
+    .waitFor({ state: 'attached' });
   assert.equal(
     await rich.locator('.multichat-preview').evaluate((element) => element.scrollTop),
     0,
