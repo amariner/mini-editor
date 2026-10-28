@@ -675,7 +675,7 @@ function Card({
         viewport.scrollTop = viewport.scrollHeight;
         setShowLatest(false);
       } else {
-        setShowLatest(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight >= 30);
+        setShowLatest(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight > 1);
       }
     });
     observer.observe(viewport);
@@ -936,9 +936,15 @@ function Card({
             ref={preview}
             tabIndex={0}
             aria-label={`Conversación de ${session.title}`}
+            onWheel={(e) => {
+              if (e.deltaY < 0) {
+                following.current = false;
+                setShowLatest(true);
+              }
+            }}
             onScroll={(e) => {
               const el = e.currentTarget;
-              following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+              following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
               setShowLatest(!following.current);
             }}
           >

@@ -175,8 +175,13 @@ function App() {
     [busy, setBusy] = useState<Record<string, boolean>>({}),
     [removeId, setRemoveId] = useState<string>(),
     [editingName, setEditingName] = useState<{ kind: 'project' | 'session'; id: string }>(),
-    [stick, setStick] = useState(true),
+    [stick, setStickState] = useState(true),
     [seen, setSeen] = useState<Record<string, number>>({});
+  const followingChat = useRef(true);
+  const setStick = (value: boolean) => {
+    followingChat.current = value;
+    setStickState(value);
+  };
   const terminalPosition = 'right' as const;
   const rememberTool = (view: ToolView) => {
     setToolTabs((tabs) => (tabs.includes(view) ? tabs : [...tabs, view]));
@@ -907,13 +912,13 @@ function App() {
     // Buffered sentences can arrive after the provider's last event.
     // Follow actual text changes only while the reader remains at the bottom.
     const observer = new MutationObserver(() => {
-      element.scrollTop = element.scrollHeight;
+      if (followingChat.current) element.scrollTop = element.scrollHeight;
     });
     observer.observe(element, { childList: true, characterData: true, subtree: true });
     return () => observer.disconnect();
   }, [session?.id, multichat, stick, hyperfocus]);
   useEffect(() => {
-    if (stick && list.current) list.current.scrollTop = list.current.scrollHeight;
+    if (followingChat.current && list.current) list.current.scrollTop = list.current.scrollHeight;
   }, [
     session?.id,
     session?.messages.length,
@@ -1983,9 +1988,13 @@ function App() {
                         role="region"
                         aria-label={session.title}
                         ref={list}
+                        onWheel={(e) => {
+                          // Stop before streaming updates can undo the first upward gesture.
+                          if (e.deltaY < 0) setStick(false);
+                        }}
                         onScroll={(e) => {
                           const el = e.currentTarget;
-                          setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+                          setStick(el.scrollHeight - el.scrollTop - el.clientHeight <= 1);
                         }}
                       >
                         {!session.messages.length && !session.approvals.length && (
@@ -2105,7 +2114,6 @@ function App() {
                               setStick(true);
                               list.current?.scrollTo({
                                 top: list.current.scrollHeight,
-                                behavior: 'smooth',
                               });
                             }}
                           >
