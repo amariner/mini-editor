@@ -79,7 +79,8 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
-  padding: max(4px, calc(18dvh - var(--focus-top))) 12px 4px;
+  /* 19px: text lines up with the composer's (1px border + 18px padding). */
+  padding: max(4px, calc(18dvh - var(--focus-top))) 19px 4px;
   overflow-wrap: anywhere;
 }
 .hyperfocus-messages[hidden] {
@@ -148,6 +149,16 @@
 }
 .hyperfocus-answer::-webkit-scrollbar {
   display: none;
+}
+/* The reading fade masks anything outside the box: draw the keyboard ring inside it. */
+.app.hyperfocus .hyperfocus-answer {
+  margin-inline: -8px;
+  padding-inline: 8px;
+}
+.app.hyperfocus .hyperfocus-answer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--rs);
 }
 .hyperfocus-loading {
   position: absolute;

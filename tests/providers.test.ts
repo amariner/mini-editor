@@ -512,6 +512,15 @@ test('approved commands return output; cancellation stops the process group', as
       await providerCommand('printf prueba', root, new AbortController().signal),
       'prueba',
     );
+    assert.equal(
+      await providerCommand(
+        'printf "%s|%s" "$HTTPS_PROXY" "$NODE_EXTRA_CA_CERTS"',
+        root,
+        new AbortController().signal,
+        { HTTPS_PROXY: 'http://127.0.0.1:8099', NODE_EXTRA_CA_CERTS: '/tmp/fixture-ca.pem' },
+      ),
+      'http://127.0.0.1:8099|/tmp/fixture-ca.pem',
+    );
     const controller = new AbortController();
     const work = providerCommand('sleep 30 & wait', root, controller.signal);
     setTimeout(() => controller.abort(), 100);

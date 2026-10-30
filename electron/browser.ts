@@ -1,9 +1,17 @@
 import { BrowserWindow, WebContentsView, nativeImage, session as electronSession } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { z } from 'zod';
 import { localEndpoint, localURLs, sharedHostProbe, DevServerRegistry } from './browser-hosts';
 import { randomUUID } from 'node:crypto';
+import { browserDOM } from './browser-dom';
+import { pickBrowserElement, cancelBrowserPick } from './browser-picker';
+import { BrowserDownloads } from './browser-downloads';
+import { BrowserPermissions } from './browser-permissions';
+import { BrowserDialogs } from './browser-dialogs';
+import { uploadBrowserFiles } from './browser-upload';
+import { dragBrowserPointer } from './browser-drag';
 import {
   browserInput,
   browserURL,
@@ -19,6 +27,9 @@ type Entry = {
   used: number;
   sequence: number;
   openerId?: string;
+  pointer?: { x: number; y: number };
+  releaseInput?: () => Promise<void>;
+  dialogs?: BrowserDialogs;
 };
 export class DeskBrowser {
   private probeHost = sharedHostProbe();
@@ -37,13 +48,28 @@ export class DeskBrowser {
   private observed = new Set<string>();
   private output = new Map<string, string>();
   private removedProjects = new Set<string>();
+  private downloads: BrowserDownloads;
+  private permissions: BrowserPermissions;
   constructor(
     private host: () => BrowserWindow | undefined,
     private changed: () => void,
     private opened: (id: string, sessionId: string) => void,
     private root?: string,
     private prepareNetwork: (session: Electron.Session) => Promise<void> = async () => {},
+    private capabilities: {
+      downloadsRoot?: string;
+      preload?: string;
+      projectRoot?: (projectId: string, sessionId?: string) => Promise<string>;
+    } = {},
   ) {
+    this.downloads = new BrowserDownloads(
+      capabilities.downloadsRoot ?? path.join(root ?? os.tmpdir(), 'browser-downloads'),
+      changed,
+    );
+    this.permissions = new BrowserPermissions(
+      (wc) => [...this.pages.values()].some((page) => page.view?.webContents === wc),
+      changed,
+    );
     if (root) {
       try {
         const saved = z
@@ -97,7 +123,7 @@ export class DeskBrowser {
   private save() {
     if (!this.root || this.closed) return;
     const saved = this.snapshot()
-      .filter((p) => p.url !== 'about:blank')
+      .filter((p) => p.url !== 'about:blank' && !p.url.startsWith('blob:'))
       .map(({ id, sessionId, projectId, url, title, zoom, externalUrl }) => ({
         id,
         sessionId,
@@ -238,13 +264,21 @@ export class DeskBrowser {
     this.defaults.set(sessionId, id!);
     if (args.action === 'new')
       return args.url
-        ? this.action(id!, { action: 'navigate', url: args.url })
+        ? this.action(id!, { action: 'navigate', url: args.url }, sessionId)
         : this.pages.get(id!)!.state;
     if (activate && args.action === 'navigate') this.opened(id!, sessionId);
-    return this.action(id!, args);
+    return this.action(id!, args, sessionId);
   }
   snapshot() {
-    return [...this.pages.values()].map((p) => p.state);
+    return [...this.pages.values()].map((p) => ({
+      ...p.state,
+      downloads: this.downloads.list(p.state.id),
+      dialog: p.dialogs?.current,
+      permissions: this.permissions.list(p.view?.webContents),
+    }));
+  }
+  downloadSnapshot() {
+    return this.downloads.list();
   }
   private ensure(id: string, inherited?: Electron.WebContentsViewConstructorOptions): Entry {
     const existing = this.pages.get(id);
@@ -261,7 +295,7 @@ export class DeskBrowser {
         ...inherited?.webPreferences,
         partition: browserPartition(existing?.state.projectId),
         session: electronSession.fromPartition(browserPartition(existing?.state.projectId)),
-        preload: undefined,
+        preload: this.capabilities.preload,
         nodeIntegrationInWorker: false,
         nodeIntegrationInSubFrames: false,
         webviewTag: false,
@@ -293,6 +327,8 @@ export class DeskBrowser {
     wc.setBackgroundThrottling(true);
     wc.setZoomFactor(entry.state.zoom);
     this.pages.set(id, entry);
+    entry.dialogs = new BrowserDialogs(wc, () => this.changed());
+    entry.dialogs.attach();
     view.setVisible(false);
     view.setBorderRadius(8);
     const host = this.host();
@@ -311,21 +347,40 @@ export class DeskBrowser {
     });
     if (!this.securedSessions.has(wc.session)) {
       this.securedSessions.add(wc.session);
-      wc.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-      wc.session.setPermissionCheckHandler(() => false);
-      wc.session.on('will-download', (event) => event.preventDefault());
+      this.permissions.install(wc.session);
+      wc.session.on('will-download', (event, item, source) => {
+        const owner = [...this.pages.values()].find((page) => page.view?.webContents === source);
+        if (!owner) {
+          event.preventDefault();
+          return;
+        }
+        this.downloads.handle(event, item, source, owner.state);
+      });
       wc.session.webRequest.onBeforeRequest((details, callback) => {
         const top = details.resourceType === 'mainFrame';
         const scheme = new URL(details.url).protocol;
+        const source = [...this.pages.values()].find(
+          (page) => page.view?.webContents.id === details.webContentsId,
+        );
+        const localBlob =
+          scheme === 'blob:' &&
+          !!source?.state.url &&
+          new URL(details.url).origin === new URL(source.state.url).origin;
         callback({
           cancel: top
-            ? !['http:', 'https:', 'about:'].includes(scheme)
+            ? !['http:', 'https:', 'about:'].includes(scheme) && !localBlob
             : ['file:', 'devtools:'].includes(scheme),
         });
       });
     }
     const guard = (event: { preventDefault: () => void }, url: string) => {
       try {
+        if (
+          url.startsWith('blob:') &&
+          entry.state.url &&
+          new URL(url).origin === new URL(entry.state.url).origin
+        )
+          return;
         if (url !== 'about:blank') browserURL(url);
       } catch {
         event.preventDefault();
@@ -337,7 +392,14 @@ export class DeskBrowser {
     wc.on('will-redirect', guard);
     wc.setWindowOpenHandler(({ url }) => {
       try {
-        const safe = !url || url === 'about:blank' ? 'about:blank' : browserURL(url);
+        const safe =
+          !url || url === 'about:blank'
+            ? 'about:blank'
+            : url.startsWith('blob:') &&
+                entry.state.url &&
+                new URL(url).origin === new URL(entry.state.url).origin
+              ? url
+              : browserURL(url);
         if (this.pages.size >= 60 || [...this.pages.values()].filter((p) => p.view).length >= 6)
           throw new Error('Cierra o suspende una pestaña antes de abrir otra ventana.');
         return {
@@ -351,7 +413,7 @@ export class DeskBrowser {
             child.openerId = id;
             child.state.url = safe;
             child.state.externalUrl =
-              safe === 'about:blank'
+              safe === 'about:blank' || safe.startsWith('blob:')
                 ? entry.state.externalUrl
                 : externalBrowserURL(safe, entry.state.externalUrl || entry.state.url);
             this.save();
@@ -380,14 +442,14 @@ export class DeskBrowser {
     wc.on('did-stop-loading', update);
     wc.on('did-navigate', () => {
       update();
-      if (entry.state.url !== 'about:blank')
+      if (entry.state.url !== 'about:blank' && !entry.state.url.startsWith('blob:'))
         entry.state.externalUrl = externalBrowserURL(entry.state.url, entry.state.externalUrl);
       this.save();
       void this.checkHosts();
     });
     wc.on('did-navigate-in-page', () => {
       update();
-      if (entry.state.url !== 'about:blank')
+      if (entry.state.url !== 'about:blank' && !entry.state.url.startsWith('blob:'))
         entry.state.externalUrl = externalBrowserURL(entry.state.url, entry.state.externalUrl);
       this.save();
     });
@@ -446,6 +508,11 @@ export class DeskBrowser {
     const width = Math.max(0, Math.min(Math.round(bounds.width), size.width - x));
     const height = Math.max(0, Math.min(Math.round(bounds.height), size.height - y));
     if (host.contentView.children.at(-1) !== entry.view) host.contentView.addChildView(entry.view);
+    if (width < 1 || height < 1) {
+      entry.view.setVisible(false);
+      this.visible = undefined;
+      return;
+    }
     entry.view.setBounds({ x, y, width, height });
     entry.view.setVisible(width > 0 && height > 0);
     this.visible = id;
@@ -522,6 +589,8 @@ export class DeskBrowser {
   async closeAll() {
     this.save();
     this.closed = true;
+    this.downloads.close();
+    this.permissions.close();
     clearInterval(this.monitor);
     for (const id of this.pages.keys()) this.suspend(id);
     this.pages.clear();
@@ -538,25 +607,171 @@ export class DeskBrowser {
   externalURL(id: string) {
     const state = this.pages.get(id)?.state;
     if (!state?.url) throw new Error('Abre primero una página.');
-    return state.url === 'about:blank' && state.externalUrl
+    return (state.url === 'about:blank' || state.url.startsWith('blob:')) && state.externalUrl
       ? browserURL(state.externalUrl)
       : externalBrowserURL(state.url, state.externalUrl);
   }
-  action(id: string, input: unknown): Promise<any> {
+  private async loadPage(wc: Electron.WebContents, url: string) {
+    // Third-party analytics and long-lived resources must not block the tool queue forever.
+    // DOM readiness is enough for inspect; subsequent actions still validate fresh targets.
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timer);
+        wc.removeListener('dom-ready', ready);
+        wc.removeListener('destroyed', destroyed);
+      };
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (error) reject(error);
+        else resolve();
+      };
+      const ready = () => finish();
+      const destroyed = () => finish(new Error('La pestaña se ha cerrado durante la navegación.'));
+      const expired = () => {
+        const pendingDialog = [...this.pages.values()].find((page) => page.view?.webContents === wc)
+          ?.dialogs?.current;
+        if (pendingDialog) {
+          timer = setTimeout(expired, 20000);
+          return;
+        }
+        finish(
+          new Error(
+            'La página no respondió en 20 segundos. Comprueba la dirección o vuelve a cargarla.',
+          ),
+        );
+        if (!wc.isDestroyed()) wc.stop();
+      };
+      let timer = setTimeout(expired, 20000);
+      wc.once('dom-ready', ready);
+      wc.once('destroyed', destroyed);
+      void wc.loadURL(url).then(ready, (error) => finish(error));
+    });
+  }
+  async pick(id: string) {
+    if (!this.pages.has(id)) throw new Error('La pestaña ya no existe.');
+    const dormant = this.pages.get(id)!.state.suspended;
+    const p = this.ensure(id);
+    const wc = p.view!.webContents;
+    await this.prepareNetwork(wc.session);
+    if (dormant && p.state.url) await this.loadPage(wc, p.state.url);
+    return pickBrowserElement(wc);
+  }
+  async cancelPick(id: string) {
+    const wc = this.pages.get(id)?.view?.webContents;
+    if (wc && !wc.isDestroyed()) await cancelBrowserPick(wc);
+  }
+  async revealDownload(tabId: string, downloadId: string) {
+    return this.downloads.revealPath(downloadId, tabId);
+  }
+  controlDownload(tabId: string, downloadId: string, operation: 'pause' | 'resume' | 'cancel') {
+    this.downloads[operation](downloadId, tabId);
+  }
+  respondPermission(tabId: string, permissionId: string, allow: boolean) {
+    const wc = this.pages.get(tabId)?.view?.webContents;
+    if (!wc || wc.isDestroyed()) throw new Error('La pestaña ya no está cargada.');
+    this.permissions.respond(wc, permissionId, allow);
+  }
+  action(id: string, input: unknown, sessionId?: string): Promise<any> {
     const args = browserInput.parse(input);
+    // Answer a modal outside the action queue: the action opening it may still be returning.
+    if (args.action === 'dialog') {
+      const dialogs = this.pages.get(id)?.dialogs;
+      if (!dialogs)
+        return Promise.reject(new Error('No hay un diálogo pendiente en esta pestaña.'));
+      return dialogs.respond(args.dialogId, args.accept, args.promptText);
+    }
+    const current = this.pages.get(id);
+    if (current?.dialogs?.current && !['close', 'suspend'].includes(args.action)) {
+      if (args.action === 'list') return Promise.resolve({ tabs: this.snapshot() });
+      if (args.action === 'downloads')
+        return Promise.resolve({ ok: true, downloads: this.downloads.list(id) });
+      return Promise.resolve({
+        ok: args.action === 'inspect',
+        url: current.state.url,
+        title: current.state.title,
+        text: 'Diálogo pendiente de respuesta.',
+        elements: [],
+        dialog: current.dialogs.current,
+      });
+    }
+    if (current?.dialogs?.current && ['close', 'suspend'].includes(args.action)) {
+      if (args.action === 'close') this.close(id);
+      else this.suspend(id);
+      return Promise.resolve({ ok: true });
+    }
+    let expose!: (result: unknown) => void;
+    let exposeError!: (error: unknown) => void;
+    const response = new Promise((resolve, reject) => {
+      expose = resolve;
+      exposeError = reject;
+    });
     const previous = this.queues.get(id) ?? Promise.resolve();
-    const next = previous.catch(() => {}).then(() => this.perform(id, args));
+    const next = previous
+      .catch(() => {})
+      .then(async () => {
+        const page = this.pages.get(id);
+        const tracked = !['list', 'close', 'suspend', 'zoom'].includes(args.action);
+        if (tracked && page) {
+          page.state.activity = {
+            action: args.action,
+            phase: 'running',
+            at: Date.now(),
+            sessionId,
+          };
+          this.changed();
+        }
+        try {
+          const operation = this.perform(id, args, sessionId);
+          const dialogs = this.pages.get(id)?.dialogs;
+          void (dialogs ? dialogs.race(operation) : operation).then(expose, exposeError);
+          // Keep the actual operation in the queue even when the caller receives a dialog.
+          // Its remaining mouse/key events finish before a subsequent action is dispatched.
+          const result = await operation;
+          if (tracked && page?.state.activity) {
+            page.state.activity = { ...page.state.activity, phase: 'done', at: Date.now() };
+            this.changed();
+          }
+          return result;
+        } catch (error) {
+          if (tracked && page?.state.activity) {
+            page.state.activity = {
+              ...page.state.activity,
+              phase: 'error',
+              at: Date.now(),
+              error: (error as Error).message,
+            };
+            this.changed();
+          }
+          throw error;
+        } finally {
+          const activePage = this.pages.get(id) ?? page;
+          await activePage?.releaseInput?.();
+          if (activePage) activePage.releaseInput = undefined;
+        }
+      });
     this.queues.set(id, next);
     void next
       .finally(() => {
         if (this.queues.get(id) === next) this.queues.delete(id);
       })
-      .catch(() => {});
-    return next;
+      .catch(exposeError);
+    return response;
   }
-  private async perform(id: string, args: ReturnType<typeof browserInput.parse>) {
+  private async perform(
+    id: string,
+    args: ReturnType<typeof browserInput.parse>,
+    sessionId?: string,
+  ) {
     if (!this.pages.has(id)) throw new Error('La pestaña ya no existe.');
     if (args.action === 'list') return { tabs: this.snapshot() };
+    if (args.action === 'downloads') return { ok: true, downloads: this.downloads.list(id) };
+    if (args.action === 'downloadControl') {
+      this.downloads[args.operation](args.downloadId, id);
+      return { ok: true, downloads: this.downloads.list(id) };
+    }
     if (args.action === 'new') {
       const owner = this.pages.get(id)?.state;
       const tab = this.create(owner?.projectId, owner?.sessionId, args.url);
@@ -576,7 +791,41 @@ export class DeskBrowser {
     const p = this.ensure(id);
     const wc = p.view!.webContents;
     await this.prepareNetwork(wc.session);
-    if (dormant && args.action !== 'navigate' && p.state.url) await wc.loadURL(p.state.url);
+    if (dormant && args.action !== 'navigate' && p.state.url) await this.loadPage(wc, p.state.url);
+    if (p.dialogs?.current)
+      return {
+        ok: args.action === 'inspect',
+        url: p.state.url,
+        title: p.state.title,
+        text: 'La página tiene un diálogo pendiente.',
+        elements: [],
+        dialog: p.dialogs.current,
+        error: args.action === 'inspect' ? undefined : 'Responde al diálogo antes de continuar.',
+      };
+    if (args.action === 'download') {
+      const url = new URL(args.url);
+      if (url.protocol === 'blob:') {
+        if (url.origin !== new URL(wc.getURL()).origin)
+          throw new Error('El archivo Blob debe pertenecer a esta página.');
+      } else browserURL(args.url);
+      wc.downloadURL(url.href);
+      return {
+        ok: true,
+        message: 'Descarga solicitada. Consulta downloads para comprobar el resultado.',
+        downloads: this.downloads.list(id),
+      };
+    }
+    if (args.action === 'upload') {
+      if (!p.state.projectId || !this.capabilities.projectRoot)
+        throw new Error(
+          'Para subir archivos con el agente, abre esta página dentro de un proyecto. También puedes usar el selector de archivos de la web.',
+        );
+      const projectRoot = await this.capabilities.projectRoot(
+        p.state.projectId,
+        sessionId || p.state.sessionId || undefined,
+      );
+      return uploadBrowserFiles(wc, args.ref, args.paths, projectRoot);
+    }
     if (args.action === 'zoom') {
       wc.setZoomFactor(args.factor);
       p.state.zoom = args.factor;
@@ -585,6 +834,49 @@ export class DeskBrowser {
       return { ok: true, ...p.state };
     }
     const evaluate = (code: string) => wc.executeJavaScriptInIsolatedWorld(1001, [{ code }], true);
+    if (args.action !== 'navigate' && wc.getURL()) {
+      const viewport = await evaluate('({width:innerWidth,height:innerHeight})');
+      if (!viewport.width || !viewport.height) {
+        const attached = wc.debugger.isAttached();
+        if (!attached) wc.debugger.attach('1.3');
+        p.releaseInput = async () => {
+          if (!wc.isDestroyed() && wc.debugger.isAttached()) {
+            await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => {});
+            if (!attached) wc.debugger.detach();
+          }
+        };
+        const bounds = p.view!.getBounds();
+        await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+          width: Math.max(320, Math.round((bounds.width || 1000) / p.state.zoom)),
+          height: Math.max(240, Math.round((bounds.height || 720) / p.state.zoom)),
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+      }
+    }
+    const dom = async (input: Parameters<typeof browserDOM>[0]) => {
+      // Electron otherwise replaces isolated-world exceptions with an opaque 'Script failed'
+      // message, preventing agents from recovering from stale or obstructed targets.
+      const result = await evaluate(
+        `(()=>{try{return {success:true,value:(${browserDOM.toString()})(${JSON.stringify(input)})};}catch(error){return {success:false,error:String(error?.message||error)};}})()`,
+      );
+      if (!result.success) throw new Error(result.error);
+      return result.value;
+    };
+    // The public Electron sendInputEvent API requires the host window to be focused.
+    // CDP dispatches trusted input to this tab even when a different chat is foreground.
+    // No remote debugging port, page-supplied commands or arbitrary JavaScript are exposed.
+    const nativeInput = async (
+      run: (send: (method: string, params: object) => Promise<any>) => Promise<void>,
+    ) => {
+      const attached = wc.debugger.isAttached();
+      try {
+        if (!attached) wc.debugger.attach('1.3');
+        await run((method, params) => wc.debugger.sendCommand(method, params));
+      } finally {
+        if (!attached && !wc.isDestroyed() && wc.debugger.isAttached()) wc.debugger.detach();
+      }
+    };
     if (args.action === 'navigate') {
       p.state.error = undefined;
       p.state.url = browserURL(args.url);
@@ -592,7 +884,7 @@ export class DeskBrowser {
       this.save();
       this.updateMonitor();
       void this.checkHosts();
-      await wc.loadURL(p.state.url);
+      await this.loadPage(wc, p.state.url);
       wc.setZoomFactor(p.state.zoom);
       void this.checkHosts();
     } else if (args.action === 'back' && wc.navigationHistory.canGoBack())
@@ -610,7 +902,7 @@ export class DeskBrowser {
         const attached = wc.debugger.isAttached();
         try {
           if (!attached) wc.debugger.attach('1.3');
-          const { width, height } = p.view!.getBounds();
+          const { width, height } = await dom({ action: 'viewport' });
           await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
             width,
             height,
@@ -625,7 +917,8 @@ export class DeskBrowser {
           capture = nativeImage.createFromBuffer(Buffer.from(result.data, 'base64'));
         } finally {
           if (!wc.isDestroyed() && wc.debugger.isAttached()) {
-            await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => {});
+            if (!p.releaseInput)
+              await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => {});
             if (!attached) wc.debugger.detach();
           }
         }
@@ -634,8 +927,13 @@ export class DeskBrowser {
         throw new Error(
           'La página aún no ha generado una imagen. Abre su panel de navegador y vuelve a intentarlo.',
         );
+      const viewport = await dom({ action: 'viewport' });
+      const imageWidth = Math.min(p.view!.getBounds().width, 1440);
+      const imageSize = capture.resize({ width: imageWidth }).getSize();
       return {
         ok: true,
+        viewport,
+        imageSize,
         image: capture
           .resize({ width: Math.min(p.view!.getBounds().width, 1440) })
           .toPNG()
@@ -643,21 +941,158 @@ export class DeskBrowser {
         mimeType: 'image/png',
       };
     } else if (args.action === 'inspect')
-      return {
-        ok: true,
-        ...(await evaluate(`(()=>{
-      window.__deskElements=new Map();let n=${++p.sequence * 1000};
-      const elements=[...document.querySelectorAll('a,button,input,textarea,select,[role="button"],[contenteditable="true"]')].filter(e=>e.getClientRects().length).slice(0,150).map(e=>{const ref='e'+(++n);window.__deskElements.set(ref,e);return {ref,tag:e.tagName.toLowerCase(),label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.getAttribute('name')||'').slice(0,180),type:e.getAttribute('type'),disabled:!!e.disabled};});
-      return {url:location.href,title:document.title,text:(document.body?.innerText||'').slice(0,18000),elements};})()`)),
-      };
-    else if (args.action === 'click' || args.action === 'fill') {
-      await evaluate(
-        `(()=>{const e=window.__deskElements?.get(${JSON.stringify(args.ref)});if(!e||!e.isConnected)throw new Error('Referencia caducada. Vuelve a inspeccionar.');e.scrollIntoView({block:'center'});e.focus();${args.action === 'click' ? 'e.click();' : `if(e instanceof HTMLInputElement&&['file','password'].includes(e.type))throw new Error('Este campo requiere intervención del usuario.');const value=${JSON.stringify(args.text)};const proto=e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:e instanceof HTMLSelectElement?HTMLSelectElement.prototype:HTMLInputElement.prototype;if(e.isContentEditable)e.textContent=value;else {const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(!setter)throw new Error('El elemento no es editable.');setter.call(e,value);}e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));`}return true;})()`,
-      );
+      return { ok: true, ...(await dom({ action: 'inspect', sequence: ++p.sequence })) };
+    else if (args.action === 'drag') {
+      await dom({ action: 'point', ref: args.ref, x: args.x, y: args.y });
+      await dom({ action: 'point', ref: args.toRef, x: args.toX, y: args.toY });
+      // Validate both endpoints in one viewport; never drop at stale coordinates after a scroll.
+      const source = await dom({
+        action: 'point',
+        ref: args.ref,
+        x: args.x,
+        y: args.y,
+        scrollIntoView: false,
+      });
+      const to = await dom({
+        action: 'point',
+        ref: args.toRef,
+        x: args.toX,
+        y: args.toY,
+        scrollIntoView: false,
+      });
+      await dragBrowserPointer(wc, source, to);
+    } else if (args.action === 'check') {
+      const target = await dom(args);
+      if (target.needsClick) {
+        await nativeInput(async (send) => {
+          await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y });
+          await send('Input.dispatchMouseEvent', {
+            type: 'mousePressed',
+            x: target.x,
+            y: target.y,
+            button: 'left',
+            clickCount: 1,
+          });
+          await send('Input.dispatchMouseEvent', {
+            type: 'mouseReleased',
+            x: target.x,
+            y: target.y,
+            button: 'left',
+            clickCount: 1,
+          });
+        });
+        const result = await dom(args);
+        if (result.needsClick)
+          throw new Error('La casilla no cambió al estado solicitado. Inspecciona el formulario.');
+      }
+      return { ok: true, checked: args.checked };
+    } else if (['click', 'hover', 'move'].includes(args.action)) {
+      if (args.action !== 'click' && args.action !== 'hover' && args.action !== 'move') return;
+      const target = await dom({
+        action: 'point',
+        ...('ref' in args ? { ref: args.ref } : {}),
+        x: args.x,
+        y: args.y,
+      });
+      if (p.state.activity) p.state.activity.label = target.label;
+      this.changed();
+      await nativeInput(async (send) => {
+        const start = p.pointer ?? { x: target.x, y: target.y };
+        for (let step = 1; step <= 6; step++) {
+          await send('Input.dispatchMouseEvent', {
+            type: 'mouseMoved',
+            x: start.x + ((target.x - start.x) * step) / 6,
+            y: start.y + ((target.y - start.y) * step) / 6,
+          });
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        p.pointer = { x: target.x, y: target.y };
+        if (args.action === 'click') {
+          const button = args.button ?? 'left';
+          for (let click = 1; click <= (args.clickCount ?? 1); click++) {
+            await send('Input.dispatchMouseEvent', {
+              type: 'mousePressed',
+              x: target.x,
+              y: target.y,
+              button,
+              clickCount: click,
+            });
+            await send('Input.dispatchMouseEvent', {
+              type: 'mouseReleased',
+              x: target.x,
+              y: target.y,
+              button,
+              clickCount: click,
+            });
+          }
+        }
+      });
+    } else if (args.action === 'fill' || args.action === 'select') {
+      const result = await dom(args);
+      if (p.state.activity) p.state.activity.label = result.label;
+      if (result.insertText !== undefined)
+        await nativeInput((send) => send('Input.insertText', { text: result.insertText }));
     } else if (args.action === 'press') {
-      wc.sendInputEvent({ type: 'keyDown', keyCode: args.key });
-      wc.sendInputEvent({ type: 'keyUp', keyCode: args.key });
-    } else if (args.action === 'scroll') await evaluate(`window.scrollBy(0,${args.deltaY})`);
+      const keyCodes: Record<string, number> = {
+        Enter: 13,
+        Tab: 9,
+        Escape: 27,
+        ArrowDown: 40,
+        ArrowUp: 38,
+        ArrowLeft: 37,
+        ArrowRight: 39,
+        Backspace: 8,
+        Delete: 46,
+        Home: 36,
+        End: 35,
+        PageUp: 33,
+        PageDown: 34,
+        Space: 32,
+      };
+      const key = args.key === 'Space' ? ' ' : args.key;
+      const modifiers = (args.modifiers ?? []).reduce(
+        (bits, modifier) => bits | { alt: 1, control: 2, meta: 4, shift: 8 }[modifier],
+        0,
+      );
+      const text =
+        modifiers & 7
+          ? undefined
+          : args.key === 'Enter'
+            ? '\r'
+            : key.length === 1
+              ? key
+              : undefined;
+      const event = {
+        key,
+        code: key.length === 1 && /[a-z]/i.test(key) ? `Key${key.toUpperCase()}` : args.key,
+        windowsVirtualKeyCode: keyCodes[args.key] ?? key.toUpperCase().charCodeAt(0),
+        modifiers,
+      };
+      const editing = (args.modifiers ?? []).includes(
+        process.platform === 'darwin' ? 'meta' : 'control',
+      );
+      const command = editing
+        ? (
+            {
+              a: 'selectAll',
+              c: 'copy',
+              v: 'paste',
+              x: 'cut',
+              z: modifiers & 8 ? 'redo' : 'undo',
+            } as Record<string, string>
+          )[args.key]
+        : undefined;
+      await nativeInput(async (send) => {
+        await send('Input.dispatchKeyEvent', {
+          type: 'keyDown',
+          ...event,
+          text,
+          unmodifiedText: text,
+          ...(command ? { commands: [command] } : {}),
+        });
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
+      });
+    } else if (args.action === 'scroll') return { ok: true, ...p.state, ...(await dom(args)) };
     return { ok: true, ...p.state };
   }
 }

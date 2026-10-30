@@ -33,11 +33,13 @@ export function useWorkspaceSplit({
     }
   }, []);
   useEffect(() => () => observer.current?.disconnect(), []);
+  // Persist once the drag ends, not on every pointer move.
   useEffect(() => {
+    if (dragging) return;
     try {
       localStorage.setItem(storageKey, String(ratio));
     } catch {}
-  }, [ratio, storageKey]);
+  }, [ratio, storageKey, dragging]);
   const setWidth = (value: number) =>
     setRatio(Math.min(max, Math.max(minChat, value)) / Math.max(1, available));
   const separator = (

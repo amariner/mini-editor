@@ -258,7 +258,7 @@ export function InterfaceSettings({
           if (theme !== 'system') setTheme?.('system');
         }}
       >
-        Restablecer
+        Restablecer interfaz
       </button>
       <details className="settings-disclosure interface-advanced">
         <summary>Temas y CSS</summary>

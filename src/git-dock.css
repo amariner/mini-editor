@@ -112,3 +112,7 @@
   background: transparent;
   font-size: 10px;
 }
+.git-file-list .git-path {
+  min-width: 0;
+  text-align: left;
+}

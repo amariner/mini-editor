@@ -6,6 +6,7 @@ export class Rpc extends EventEmitter {
   process: ChildProcessWithoutNullStreams;
   private sequence = 0;
   private stopping?: Promise<void>;
+  private transportFailure?: Error;
   private pending = new Map<
     number,
     { resolve: (r: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
@@ -36,9 +37,25 @@ export class Rpc extends EventEmitter {
     this.process.stderr.on('data', (d) => {
       this.stderr = (this.stderr + d.toString()).slice(-4000);
     });
-    this.process.stdin.on('error', () => {});
+    this.process.stdin.on('error', () => this.failTransport('Se cerró la entrada del CLI.'));
+    this.process.stdout.on('error', () =>
+      this.failTransport('No se pudo leer la respuesta del CLI.'),
+    );
+    this.process.stdout.on('end', () => this.failTransport('El CLI cerró su conexión.'));
     this.process.on('error', (e) => this.finish(e.message));
     this.process.on('close', (code) => this.finish(`app-server terminó (${code ?? 'señal'}).`));
+  }
+  private failTransport(reason: string) {
+    if (this.closed || this.transportFailure || this.stopping) return;
+    this.transportFailure = new Error(`${reason} Detén y reabre la sesión para reconectar.`);
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(this.transportFailure);
+    }
+    this.pending.clear();
+    // A closed pipe is not evidence that the process (or its children) exited.
+    // Keep stop() available and retain project ownership until the close event.
+    this.emit('protocolError', this.transportFailure.message);
   }
   private finish(reason: string) {
     if (this.closed) return;
@@ -65,6 +82,7 @@ export class Rpc extends EventEmitter {
   send(msg: unknown) {
     if (this.stopping) throw new Error('El servidor se está cerrando.');
     if (this.closed) throw new Error('El servidor está detenido.');
+    if (this.transportFailure) throw this.transportFailure;
     this.process.stdin.write(
       JSON.stringify(this.jsonRpc ? { jsonrpc: '2.0', ...(msg as object) } : msg) + '\n',
     );

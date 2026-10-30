@@ -83,16 +83,17 @@
 .attention-list .attention-item:is(:hover, :focus-visible) {
   background: var(--tile);
 }
-.attention-item-icon {
+/* `svg.` outranks the global `.app svg.lucide` colour, so each kind keeps its meaning. */
+.attention-item svg.attention-item-icon {
   flex: 0 0 17px;
   margin-top: 3px;
   color: var(--text-2);
 }
-.attention-error .attention-item-icon,
-.attention-delivery .attention-item-icon {
+.attention-error svg.attention-item-icon,
+.attention-delivery svg.attention-item-icon {
   color: var(--danger);
 }
-.attention-completed .attention-item-icon {
+.attention-completed svg.attention-item-icon {
   color: var(--ok);
 }
 .attention-item-body {
@@ -149,7 +150,7 @@
 .attention-item-changes .removed {
   color: var(--del-text);
 }
-.attention-open {
+.attention-item svg.attention-open {
   flex-shrink: 0;
   align-self: center;
   opacity: 0;
@@ -167,7 +168,7 @@
   padding: 42px 24px;
   text-align: center;
 }
-.attention-empty > svg {
+.attention-empty > svg.lucide {
   color: var(--muted);
 }
 .attention-empty strong {
@@ -250,7 +251,7 @@
   .attention-panel {
     animation: none;
   }
-  .attention-open {
+  .attention-item svg.attention-open {
     transition: none;
   }
 }

@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { FloatingChats } from './floating-chats';
-import { openInChrome } from './external-browser';
+import { openInChrome, openChromeSetup } from './external-browser';
+import { ChromeBrowser } from './chrome-browser';
+import { UserApplications } from './applications';
+import { routeBrowserForSession } from './browser-router';
 import { COMMON_EXTENSIONS, IMAGE_EXTENSIONS } from '../src/attachment-policy';
 import { ProxySettings } from './proxy';
 import { providerFetch } from './provider-fetch';
@@ -53,6 +56,8 @@ const attachments = new Attachments(path.join(app.getPath('userData'), 'attachme
 });
 let floatingChats: FloatingChats | undefined;
 let browser: DeskBrowser,
+  chrome: ChromeBrowser,
+  applications: UserApplications,
   manager: Manager,
   win: BrowserWindow | undefined,
   quitting = false;
@@ -104,7 +109,13 @@ const snapshot = () =>
     proxy: network?.snapshot(),
     ...manager.state,
     mcpConnections: manager.mcp.snapshot(),
-    browsers: browser?.snapshot() ?? [],
+    browsers: [...(browser?.snapshot() ?? []), ...(chrome?.snapshot() ?? [])],
+    browserDownloads: [
+      ...(browser?.downloadSnapshot() ?? []),
+      ...(chrome?.downloadSnapshot() ?? []),
+    ].sort((a, b) => b.startedAt - a.startedAt),
+    chromeConnections: chrome?.connections() ?? [],
+    applications: applications?.snapshot(),
     floatingChats: floatingChats?.snapshot() ?? [],
     devServers: browser?.serverSnapshot() ?? [],
     accounts: manager.accounts.state,
@@ -134,6 +145,17 @@ function trusted(url: string) {
   return dev
     ? url === dev + '/'
     : url === pathToFileURL(path.join(__dirname, '../dist/index.html')).href;
+}
+// Since Electron 43 dialogs open in Downloads; start next to the user's code instead.
+function projectsParent() {
+  const { projects, selectedProject } = manager.state;
+  const project = projects.find((p) => p.id === selectedProject) ?? projects.at(-1);
+  return project ? path.dirname(project.path) : app.getPath('home');
+}
+function sessionFolder(sessionId: string) {
+  const s = manager.state.sessions.find((s) => s.id === sessionId);
+  const project = s && manager.state.projects.find((p) => p.id === s.projectId);
+  return s?.worktree?.cwd ?? project?.path ?? app.getPath('home');
 }
 async function createWindow() {
   win = new BrowserWindow({
@@ -306,10 +328,26 @@ app.whenReady().then(async () => {
       },
       app.getPath('userData'),
       prepareNetwork,
+      {
+        downloadsRoot: process.env.AGENT_DESK_DATA_DIR
+          ? path.join(app.getPath('userData'), 'downloads')
+          : path.join(app.getPath('downloads'), 'Agent Desk'),
+        projectRoot: (projectId, sessionId) => manager.workspaceRoot(projectId, sessionId),
+        preload: path.join(__dirname, 'browser-preload.cjs'),
+      },
     );
+    chrome = new ChromeBrowser({
+      root: app.getPath('userData'),
+      downloadsRoot: process.env.AGENT_DESK_DATA_DIR
+        ? path.join(app.getPath('userData'), 'downloads')
+        : path.join(app.getPath('downloads'), 'Agent Desk'),
+      changed: () => manager.changed(),
+      projectRoot: (projectId, sessionId) => manager.workspaceRoot(projectId, sessionId),
+    });
+    applications = new UserApplications({ changed: () => manager.changed() });
     manager.coordinator.browserHandler = (session, input) => {
       if (quitting) return Promise.reject(new Error('Agent Desk se está cerrando.'));
-      return browser.forSession(session.id, session.projectId, input, false);
+      return routeBrowserForSession(browser, chrome, session.id, session.projectId, input);
     };
     await manager.discover();
   } catch (e) {
@@ -567,6 +605,7 @@ app.whenReady().then(async () => {
             shell.trashItem(directory),
           );
           await browser.removeSessions(sessions.map((session) => session.id));
+          await chrome.removeSessions(sessions.map((session) => session.id));
           for (const key of observedBrowserOutputs)
             if (sessions.some((session) => key.startsWith(session.id + ':')))
               observedBrowserOutputs.delete(key);
@@ -686,8 +725,49 @@ app.whenReady().then(async () => {
           return;
         case 'browser': {
           const session = manager.session(a.sessionId);
-          return browser.forSession(session.id, session.projectId, a.input);
+          return routeBrowserForSession(
+            browser,
+            chrome,
+            session.id,
+            session.projectId,
+            a.input,
+            true,
+          );
         }
+        case 'applicationRefresh':
+          return applications.refresh();
+        case 'applicationOpen':
+          return applications.open(a.id);
+        case 'applicationReveal':
+          return applications.reveal(a.id);
+        case 'applicationInstall': {
+          const selection = await dialog.showOpenDialog(senderWindow, {
+            title: 'Instalar una aplicación para tu usuario',
+            buttonLabel: 'Instalar en mis aplicaciones',
+            properties: ['openFile'],
+            filters: [{ name: 'Aplicaciones de macOS', extensions: ['app'] }],
+          });
+          if (selection.canceled || !selection.filePaths[0]) return;
+          return applications.install(selection.filePaths[0]);
+        }
+        case 'chromeSetup':
+          return openChromeSetup();
+        case 'chromeConnect': {
+          if (a.projectId) manager.project(a.projectId);
+          if (a.sessionId && manager.session(a.sessionId).projectId !== a.projectId)
+            throw new Error('El chat no pertenece a este proyecto.');
+          await chrome.connect(a.mode, a.projectId, a.sessionId);
+          return { tabs: chrome.snapshot(), connections: chrome.connections() };
+        }
+        case 'chromeReconnect':
+          await chrome.reconnect(a.connectionId);
+          return { tabs: chrome.snapshot(), connections: chrome.connections() };
+        case 'chromeDisconnect':
+          return chrome.disconnect(a.connectionId);
+        case 'chromeFocus':
+          return chrome.focus(a.tabId);
+        case 'chromeNewTab':
+          return chrome.newTab(a.connectionId, a.url);
         case 'browserNew': {
           if (a.projectId) manager.project(a.projectId);
           if (a.sessionId) manager.session(a.sessionId);
@@ -696,8 +776,34 @@ app.whenReady().then(async () => {
           return tab;
         }
         case 'browserOpenExternal':
+          if (chrome.owns(a.tabId)) return chrome.focus(a.tabId);
           return openInChrome(browser.externalURL(a.tabId));
+        case 'browserPick':
+          if (chrome.owns(a.tabId))
+            throw new Error('Usa la captura de página para añadir el contexto de Chrome al chat.');
+          return browser.pick(a.tabId);
+        case 'browserCancelPick':
+          return browser.cancelPick(a.tabId);
+        case 'browserDownloadReveal':
+          if (
+            chrome
+              .downloadSnapshot()
+              .some((item) => item.id === a.downloadId && item.tabId === a.tabId)
+          )
+            return shell.showItemInFolder(await chrome.revealDownload(a.tabId, a.downloadId));
+          return shell.showItemInFolder(await browser.revealDownload(a.tabId, a.downloadId));
+        case 'browserDownloadControl':
+          if (
+            chrome
+              .downloadSnapshot()
+              .some((item) => item.id === a.downloadId && item.tabId === a.tabId)
+          )
+            return chrome.controlDownload(a.tabId, a.downloadId, a.operation);
+          return browser.controlDownload(a.tabId, a.downloadId, a.operation);
+        case 'browserPermission':
+          return browser.respondPermission(a.tabId, a.permissionId, a.allow);
         case 'browserTab':
+          if (chrome.owns(a.tabId)) return chrome.action(a.tabId, a.input);
           if (!browser.snapshot().some((tab) => tab.id === a.tabId))
             throw new Error('La pestaña ya no existe.');
           return browser.action(a.tabId, a.input);
@@ -724,6 +830,7 @@ app.whenReady().then(async () => {
         case 'addProject': {
           const r = await dialog.showOpenDialog(senderWindow, {
             title: 'Añadir proyecto local',
+            defaultPath: projectsParent(),
             properties: ['openDirectory'],
           });
           if (!r.canceled) return manager.addProject(r.filePaths[0]);
@@ -732,6 +839,7 @@ app.whenReady().then(async () => {
         case 'deleteSession':
           return manager.deleteSession(a.sessionId, async (sessions) => {
             await browser.removeSessions(sessions.map((session) => session.id));
+            await chrome.removeSessions(sessions.map((session) => session.id));
             await attachments.removeSessions(sessions);
             for (const key of observedBrowserOutputs)
               if (sessions.some((session) => key.startsWith(session.id + ':')))
@@ -741,6 +849,10 @@ app.whenReady().then(async () => {
           const projectPath = manager.project(a.projectId).path;
           await manager.removeProject(a.projectId, async (sessions) => {
             await browser.removeProject(
+              a.projectId,
+              sessions.map((s) => s.id),
+            );
+            await chrome.removeProject(
               a.projectId,
               sessions.map((s) => s.id),
             );
@@ -787,6 +899,7 @@ app.whenReady().then(async () => {
         case 'chooseDirectory': {
           const r = await dialog.showOpenDialog(senderWindow, {
             title: 'Añadir directorio adicional',
+            defaultPath: sessionFolder(a.sessionId),
             properties: ['openDirectory'],
           });
           if (r.canceled) return;
@@ -807,6 +920,7 @@ app.whenReady().then(async () => {
           manager.session(a.sessionId);
           const r = await dialog.showOpenDialog(senderWindow, {
             title: 'Adjuntar archivos',
+            defaultPath: sessionFolder(a.sessionId),
             properties: ['openFile', 'multiSelections'],
             filters: [
               { name: 'Documentos, datos, código e imágenes', extensions: COMMON_EXTENSIONS },
@@ -922,6 +1036,7 @@ app.on('before-quit', (event) => {
       return;
     }
     await browser?.closeAll();
+    await chrome?.closeAll();
     await attachments.cleanup().catch(() => {});
     app.quit();
   })();

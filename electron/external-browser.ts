@@ -19,3 +19,16 @@ export async function openInChrome(url: string, requireChrome = false) {
     throw new Error('La apertura directa en Chrome solo está disponible en macOS.');
   await shell.openExternal(safe);
 }
+
+/** Fixed Chrome settings page, never an arbitrary privileged URL from a tool. */
+export async function openChromeSetup() {
+  if (process.platform !== 'darwin')
+    throw new Error(
+      'Abre chrome://inspect/#remote-debugging en Chrome para habilitar la conexión.',
+    );
+  await promisify(execFile)('/usr/bin/open', [
+    '-a',
+    'Google Chrome',
+    'chrome://inspect/#remote-debugging',
+  ]);
+}

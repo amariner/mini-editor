@@ -240,6 +240,15 @@
 .app .sidebar .sidebar-bottom {
   justify-content: flex-start;
 }
+/* A list longer than the window fades at its lower edge, so hidden projects read as
+   "scroll for more"; the extra padding lets the last one scroll clear of the fade. */
+.app .sidebar .projects[data-overflow] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
+.app .sidebar .projects[data-overflow] > .project-list {
+  padding-bottom: 20px;
+}
 @media (hover: none) {
   .app .sidebar .section-label .add-project,
   .app .sidebar .project-new-chat {

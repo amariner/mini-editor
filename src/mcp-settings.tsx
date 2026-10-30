@@ -281,6 +281,12 @@ function ConnectionForm({
       onSubmit={save}
       aria-label={connection ? 'Editar conexión' : 'Nueva conexión'}
       aria-busy={busy}
+      onKeyDown={(event) => {
+        // Escape closes this form, not all of Settings.
+        if (event.key !== 'Escape' || busy) return;
+        event.stopPropagation();
+        close();
+      }}
     >
       <div className="mcp-section-title">
         <h4>{connection ? 'Editar conexión' : 'Nueva conexión'}</h4>
@@ -619,6 +625,7 @@ function ConnectionCard({
         <button
           className="mcp-icon-button"
           aria-label={`Editar ${connection.name}`}
+          data-mcp-edit={connection.id}
           title="Editar conexión"
           disabled={disabled}
           onClick={edit}
@@ -703,7 +710,11 @@ export function McpSettings({
     <div className="mcp-settings">
       <div className="mcp-section-title">
         <h3>Conexiones MCP</h3>
-        <button disabled={!compatible || Boolean(editing)} onClick={() => setEditing('new')}>
+        <button
+          data-mcp-add
+          disabled={!compatible || Boolean(editing)}
+          onClick={() => setEditing('new')}
+        >
           <Plus size={14} />
           Añadir conexión
         </button>
@@ -731,7 +742,18 @@ export function McpSettings({
           connection={editing === 'new' ? undefined : editing}
           compatible={compatible}
           run={run}
-          close={() => setEditing(undefined)}
+          close={() => {
+            const id = editing === 'new' ? undefined : editing.id;
+            setEditing(undefined);
+            // The form held focus; return it to the control that opened it.
+            requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLElement>(
+                  id ? `[data-mcp-edit="${CSS.escape(id)}"]` : '[data-mcp-add]',
+                )
+                ?.focus(),
+            );
+          }}
         />
       )}
       {!connections.length && !editing && (

@@ -9,6 +9,8 @@
   --text-2: #57554f;
   --muted: #706c65;
   --code-block: #faf8f3;
+  /* Destructive buttons and labels keep AA contrast (white text, warm background). */
+  --danger: #c93a3f;
   --motion-press: 100ms;
   --motion-fast: 140ms;
   --motion-enter: 180ms;
@@ -25,6 +27,9 @@
     --text-2: #c8c3b9;
     --muted: #aaa398;
     --code-block: #252320;
+    /* The light coral needs dark ink: white on it is only 2.8:1. */
+    --danger: #ff6b6b;
+    --on-danger: #201f1d;
   }
 }
 .app input::placeholder,
@@ -74,45 +79,23 @@
   padding: 0 12px 12px 4px;
 }
 .app .sidebar.compact:not(.collapsed) {
-  width: 232px;
-  min-width: 232px;
   padding-inline: 10px;
 }
 .app .sidebar .projects {
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
 }
-.app .sidebar .project-block {
-  margin-bottom: 10px;
-}
-.app .sidebar .project-row {
-  min-height: 36px;
-}
+/* Row geometry (widths, heights, paddings) lives in project-navigation.css. */
 .app .sidebar .project-name {
-  min-height: 32px;
   gap: 9px;
-}
-.app .sidebar .project-chats {
-  padding: 3px 2px 5px 24px;
-}
-.app .sidebar .project-chat,
-.app .sidebar .project-chat-row {
-  min-height: 30px;
-  height: auto;
 }
 .app .sidebar .project-chat {
   flex: 1;
-  padding: 5px 8px;
-  border-radius: 7px;
   font-size: 11.5px;
 }
 .app .sidebar .project-chat small {
   font-size: 10px;
   color: var(--muted);
-}
-.app .sidebar .project-chat.selected {
-  color: var(--text);
-  background: var(--tile);
 }
 .app .sidebar .project-chat-delete {
   display: grid;
@@ -163,19 +146,9 @@
   justify-content: space-between;
   padding-inline: 4px;
 }
-.app .sidebar.compact.collapsed .sidebar-bottom button {
-  width: 100%;
-}
 .app .topbar {
   height: 48px;
   padding-right: 0;
-}
-/* Native macOS window controls extend beyond the narrow project rail. */
-.app:has(.sidebar.collapsed) > main > .topbar {
-  padding-left: max(8px, calc(98px - var(--project-icon-size, 20px)));
-}
-.app .topbar .top-actions {
-  gap: 4px;
 }
 .app .topbar .top-actions button {
   width: var(--control-size);
@@ -351,6 +324,7 @@
   margin: 0;
   font-size: 17px;
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 .app :is(.palette-results, .drawer-body, .modal, .popover, .slash-menu),
 .multichat-card-menu {
@@ -399,15 +373,8 @@
   border-radius: 5px;
 }
 @media (max-width: 900px) {
-  .app .sidebar.compact:not(.collapsed) {
-    width: 192px;
-    min-width: 192px;
-  }
   .app > main {
     padding-right: 8px;
-  }
-  .app .sidebar .project-chats {
-    padding-left: 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

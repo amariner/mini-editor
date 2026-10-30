@@ -25,7 +25,7 @@ export function IsolationBar({
     !!(session.forkFrom ?? (session.attempted && session.reference)) &&
     !['starting', 'working', 'waiting', 'stopping'].includes(session.status);
   return (
-    <div className="isolation-bar" aria-label="Carpeta de trabajo del chat">
+    <div className="isolation-bar" role="group" aria-label="Carpeta de trabajo del chat">
       {worktree ? (
         <span
           className="isolation-branch"

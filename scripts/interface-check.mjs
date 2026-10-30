@@ -199,6 +199,8 @@ try {
   // Reset brings the original styles back.
   await openInterface();
   await page.getByRole('button', { name: 'Restablecer', exact: true }).last().click();
+  // Unnamed saved CSS exists nowhere else, so discarding it asks first.
+  await page.getByRole('button', { name: 'Descartar estilos', exact: true }).click();
   assert.equal(await brand(), original);
   assert.equal(await page.evaluate(() => localStorage.getItem('agent-desk.styles.v1')), null);
   assert.ok((await editor.inputValue()).includes('--brand: #9eaaf3;'));
@@ -328,6 +330,7 @@ try {
   );
   // Deleting the active theme brings the original styles back.
   await page.getByRole('button', { name: 'Eliminar', exact: true }).click();
+  await page.getByRole('button', { name: 'Eliminar tema', exact: true }).click();
   await state('Estilos originales');
   assert.equal(await brand(), original);
   assert.equal(await picker.locator('optgroup[label="Tus temas"]').count(), 0);

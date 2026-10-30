@@ -1,5 +1,85 @@
 # Revisión de calidad · 22 de octubre de 2026
 
+## Distribución 0.1.8 · 30 de octubre de 2026
+
+Se integran en `main` las mejoras de interfaz, conexiones CLI/API, navegador, Chrome y aplicaciones de usuario. La rama remota `codex/app-quality-review` ya era ancestro de `main`; no quedaban commits de esa rama pendientes de fusionar. La versión de `package.json` y del lockfile pasa a **0.1.8**.
+
+La batería de publicación vuelve a pasar: **417 pruebas, 416 correctas, una omitida y cero fallidas**. El empaquetado comprueba dependencias, TypeScript, compilación, firma local y apertura real de la app desde una carpeta ajena al repositorio con datos temporales. Se verifican interfaz, terminal, Node incluido, Claude Code, Gemini CLI, OpenCode, SDK y carga de `playwright-core` con sus capacidades de conexión y perfil persistente. No se usan cuentas reales ni se descarga otro navegador.
+
+El instalador se genera para **macOS Apple Silicon (arm64)** con firma ad hoc, sin Developer ID ni notarización. Las instrucciones del DMG y del README incluyen instalación por usuario en `~/Applications`; el acceso Applications del disco conserva su destino estándar `/Applications`. Los artefactos de `release/` siguen excluidos de los commits. Continúa el aviso no bloqueante de Vite sobre el tamaño del chunk principal.
+
+## Aplicaciones de usuario y Chrome · 29 de octubre de 2026
+
+IPC 51 incorpora Chrome como segundo backend del navegador. El modo gestionado usa el ejecutable instalado, una tubería privada y un perfil persistente por proyecto. El personal descubre `DevToolsActivePort` según el flujo oficial de Chrome 144+, conserva las preferencias nativas mediante `noDefaults` y requiere que el usuario habilite y autorice la conexión en Chrome. Las conexiones guardadas se restauran desconectadas. El enrutado comparte herramientas con los proveedores, exige el `tabId` para Chrome y rechaza pestañas de otros proyectos o desconectadas.
+
+Incluye cursor visible, clics nativos, formularios, archivos del proyecto, capturas con dimensiones reales, diálogos y descargas. El cierre respeta `beforeunload`; una respuesta manual en Chrome limpia el diálogo pendiente del editor. Las descargas tienen eventos de progreso y cancelación; Chrome personal conserva destino y opción de preguntar. Solo se ofrece Finder cuando se ha verificado la ruta suministrada por Chrome. Los archivos gestionados reciben nombres seguros y carpetas únicas. Desconectar una sesión personal mantiene sus pestañas y proceso; apagar espera los lanzamientos pendientes y cierra las instancias propias.
+
+La revisión detectó que `Emulation.setPageScaleFactor` simula zoom táctil y podía desplazar los clics. Se retiró ese control para Chrome, se verifica la geometría en DPR 1 y 2 y se rechaza la interacción por coordenadas con zoom táctil activo. Zoom y pausa/reanudación de descargas externas permanecen en los controles nativos de Chrome. El selector manual de elementos continúa en el navegador integrado.
+
+**Ajustes → Aplicaciones** muestra inventario de aplicaciones y CLI, búsqueda, capacidades, apertura y Finder. El instalador recibe exclusivamente una `.app` elegida mediante diálogo nativo y la publica en `~/Applications`, sin reemplazar otra aplicación. Verifica estructura y enlaces, prepara una copia temporal y conserva atributos, cuarentena y permisos con `ditto`. No ejecuta automáticamente el resultado ni instala `.pkg`. Las pruebas de instalación usan una carpeta de usuario temporal.
+
+Validación final: compilación completa correcta; **417 pruebas, 416 correctas, una omitida y cero fallidas**. Pasan `browser-chrome-check.mjs`, `chrome-geometry-check.mjs`, `chrome-ui-check.mjs`, `applications-ui-check.mjs` y `applications-chrome-check.mjs`, además de las regresiones `browser-workflows-check.mjs` y `browser-ux-check.mjs`. El acceso a Chrome quedó dentro de la barra existente para conservar el límite original de 110 px de cabecera compacta. Se comprobó además que `playwright-core` se carga desde una copia independiente del paquete de distribución; no se descarga otro navegador. Capturas de las interfaces revisadas en `artifacts/chrome-main-panel.png` y `artifacts/applications-settings.png`, además de las variantes compactas. Continúa el aviso previo de Vite por el tamaño del chunk principal.
+
+El flujo personal se verificó contra otra instancia temporal de Chrome, incluida la conservación del navegador al desconectar. No se conectó el perfil habitual del usuario ni se aceptó su aviso real de autorización. Para activar estas capacidades es necesario reiniciar la app y reabrir los agentes anteriores.
+
+## Formularios, descargas y diálogos · 29 de octubre de 2026
+
+Ampliación posterior centrada en navegación cotidiana (IPC 50): casillas de condiciones idempotentes, arrastre HTML5/puntero, selección de archivos del proyecto y envío real de formularios, descargas autenticadas y exportaciones Blob. La app muestra progreso, pausa, reanudación, cancelación y acceso a Finder; los registros de esta sesión siguen disponibles al cerrar pestañas. Las descargas usan rutas únicas en la carpeta del usuario y no se ejecutan automáticamente. Los permisos de las webs dejan de denegarse todos: los rutinarios funcionan y los sensibles se presentan con su origen y una decisión explícita en la interfaz.
+
+Los diálogos `alert` y `confirm` se contestan en la app mediante un adaptador por WebContents del manejador de Electron 45.1.0. Un preload aislado restaura únicamente `prompt(message, default)` mediante un canal fijo validado por WebContents/frame; conserva la respuesta síncrona de texto o null. No expone Node, IPC general ni comandos. El adaptador nativo conserva el comportamiento original si no reconoce la implementación de una versión futura; el puente de prompt sigue funcionando. La cola retiene la operación real mientras el llamante puede recibir el diálogo pendiente, evitando solapar entradas de ratón después de responder. La protección nativa `beforeunload` no se acepta automáticamente ni se repiten formularios POST para simular su aceptación.
+
+Validación final:
+
+- `npm run build` correcto; continúa el aviso de tamaño de chunk de Vite.
+- Batería completa: **405 pruebas, 404 correctas, una omitida y cero fallidas**.
+- `browser-workflows-check.mjs`: app completa, checkbox de condiciones, cookies de sesión, descarga guardada, exportación Blob, bloqueo de permiso de notificaciones, confirmación, prompt/alert desde la interfaz, subida de archivo y multipart recibido por el servidor, descargas visibles tras cerrar la pestaña.
+- `browser-download-check.mjs`: cookies, nombres repetidos sin sobrescritura, Blob, progreso y pausa/reanudación/cancelación.
+- `browser-interactions-check.mjs`: casillas/interruptores, archivo oculto, shadow DOM y marcos, limpieza de selección, multipart, arrastre HTML5 y deslizador con entrada de confianza.
+- `browser-dialogs-check.mjs`: botones reales de la ventana principal, aceptar/cancelar, texto por defecto/vacío, avisos y ausencia de diálogos bloqueantes del sistema.
+- `browser-ux-check.mjs` y `browser-control-check.mjs`: regresiones anteriores del selector, geometría, cursor, teclado, zoom y control en segundo plano correctas.
+
+Las pruebas usan perfiles, archivos y servidores locales temporales; no se han usado cuentas ni plataformas de producción. Se inspeccionó `artifacts/browser-downloads-panel.png`. Para acceder a estas capacidades hay que reiniciar la app y reabrir los agentes anteriores. El límite de seis páginas activas y la selección manual para archivos externos/credenciales permanecen; no se descartan páginas con formularios sin guardar automáticamente.
+
+## Control del navegador y conexiones · 29 de octubre de 2026
+
+Esta revisión posterior corrige fallos de transporte CLI/API y amplía el control del navegador. El puente MCP reconoce como válidas las respuestas de listar/crear pestañas; OpenRouter y los modelos locales con herramientas reciben el navegador. El transporte API incorpora plazo de inactividad, control de flujo y errores de red útiles; los comandos reciben el proxy/CA configurado y la detección de CLI cubre instalaciones de usuario. Las tuberías RPC rotas dejan de mantener peticiones pendientes hasta su timeout.
+
+El navegador utiliza entrada nativa de Chromium con cursor y resaltado visibles, también en pestañas ocultas. Incluye hover, coordenadas, opciones de select, modificadores de teclado y scroll de contenedores. La inspección recorre shadow DOM abierto y marcos del mismo origen; las referencias caducadas conservan errores útiles. La navegación espera al DOM con un plazo máximo. El selector manual prepara texto, selector orientativo y captura en el borrador sin activar el control web ni enviar el chat; funciona sobre marcos externos y diálogos modales.
+
+Validación de esta revisión:
+
+- `npm run build`: correcto. Continúa el aviso no bloqueante de tamaño del chunk principal.
+- `node --import tsx --test --test-timeout=60000 tests/*.test.ts tests/*.test.mjs`: 382 pruebas, 381 correctas, una omitida, cero fallidas.
+- `node scripts/browser-control-check.mjs`: entrada de confianza en pestañas ocultas, cursor, hover, marcos, shadow DOM, edición, selección nativa, scroll, atajos, referencias caducadas, protección de contraseñas y coordenadas con zoom.
+- `node scripts/browser-ux-check.mjs`: geometría nativa, selector real, cancelación con Escape, selección sin activar controles (incluidos marcos externos y modales), borradores sin envíos, navegación y vista compacta.
+- `node scripts/provider-proxy-check.mjs`: transporte Electron con proxy local, autenticación acotada, aislamiento de cookies y cancelación de streaming.
+
+Se inspeccionaron las capturas nativas `artifacts/browser-agent-cursor.png` y `artifacts/browser-element-picker-page.png`. Se usan servidores locales, datos temporales y proveedores simulados; no se han probado cuentas reales ni el acceso a todas las plataformas. Las limitaciones de la batería histórica de interfaz descritas abajo siguen vigentes. Requiere reiniciar Agent Desk y reabrir los agentes anteriores para cargar el IPC 49 y las herramientas nuevas. No requiere permisos de administrador ni Accesibilidad.
+
+## Cierre del 29 de octubre de 2026
+
+Esta sección actualiza los resultados históricos del resto del documento. Se recuperó la comparación que quedó pendiente al interrumpirse el chat, con base `7f41218`, y se revisaron los cambios sin descartar el trabajo existente.
+
+La pasada incluye contraste y foco de teclado, alineación de barras, rutas y pestañas largas, scroll de proyectos, navegación por menús, atajo de ventana flotante en macOS, separación del filtro de Archivos y Cambios, confirmación al perder CSS y eliminación de sondeos y renders innecesarios. Se conservan los cambios de actualización de dependencias enumerados en el README.
+
+Verificación repetida al cerrar:
+
+- `npm run build`: correcto, incluida la comprobación de TypeScript y el proceso principal. Vite avisa de un chunk principal de 510,82 kB; no es un error de compilación.
+- `npm test`: 364 pruebas, 363 correctas, 1 omitida y 0 fallidas.
+- `npm audit`: 0 vulnerabilidades conocidas en el árbol instalado.
+- Electron 45.1.0 ejecuta una PTY real con `node-pty`: salida `terminal-ok` y código de salida 0.
+- Los 15 recorridos siguientes pasan de nuevo. Se inspeccionó además la captura del espacio de trabajo oscuro con nombres largos y ventana reducida.
+
+```bash
+node scripts/ui-regression.mjs design-audit product-controls details-motion workspace-panel streaming-performance chat-interactions attention settings-polish floating-appearance browser-ux attachments team interface optimization remove-account
+```
+
+La batería completa conservada de la sesión anterior contiene **23 recorridos correctos y 25 fallidos**. La ejecución de comparación en HEAD anterior contiene **22 correctos y 26 fallidos**. No hay recorridos que pasaran en la base y fallen con estos cambios; `browser-ux` pasa con los cambios. Esta comparación no demuestra que los fallos heredados sean inocuos ni valida los pasos posteriores al punto donde se detiene cada prueba.
+
+Los recorridos que fallan en ambas versiones son: `onboarding`, `state-sync`, `ui-polish`, `multichat`, `floating-chat`, `compact-chat`, `chat-design`, `navigation`, `workspace`, `tabs`, `browser`, `browser-tabs`, `usage-images`, `response-actions`, `worktree-ui`, `git-images`, `prechat-project`, `accounts`, `account-navigation`, `profiles`, `providers`, `css-editor`, `theme`, `antigravity` y `freebuff`. Varios buscan botones retirados o textos antiguos (por ejemplo, «Navegador», «Ocultar herramientas» o «Mover terminal a la derecha»); otros fallan por expectativas de fixtures, colores o autenticación. Queda pendiente actualizar e investigar esos recorridos: no se han modificado sus expectativas para ocultar los fallos.
+
+Los resultados comparados y logs de cierre se conservan en `artifacts/review-2026-10-29/`; las capturas y logs de los recorridos repetidos, en `artifacts/design-audit/` y `artifacts/v20/`. Son archivos locales ignorados por Git. No se han repetido conversaciones de pago ni accesos con cuentas reales. La revisión queda cerrada con estas limitaciones explícitas; no se afirma que toda la batería esté verde.
+
 Base de trabajo: `fd8040d` en `main`. Rama: `codex/app-quality-review`.
 
 ## Integración con el otro ordenador

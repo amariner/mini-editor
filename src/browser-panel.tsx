@@ -13,10 +13,38 @@ import {
   MoreHorizontal,
   MessageSquarePlus,
   Check,
+  MousePointer2,
+  ScanLine,
+  Link2,
 } from 'lucide-react';
 import type { BrowserInput, BrowserState } from './browser-protocol';
+import type { BrowserElementSelection } from './browser-selection';
 import { isAuthenticationURL } from './browser-urls';
 import { navigateTabs } from './tab-keyboard';
+import { BrowserCapabilities } from './browser-capabilities';
+import type { BrowserDownload } from './browser-downloads';
+import type { ChromeConnection } from './chrome-types';
+import { ChromeControls } from './chrome-controls';
+
+const activityLabels: Record<string, string> = {
+  navigate: 'Abrir página',
+  inspect: 'Leer página',
+  screenshot: 'Capturar página',
+  click: 'Clic',
+  hover: 'Señalar elemento',
+  move: 'Mover cursor',
+  fill: 'Escribir',
+  select: 'Seleccionar opción',
+  press: 'Teclado',
+  scroll: 'Desplazar página',
+  back: 'Volver atrás',
+  forward: 'Avanzar',
+  reload: 'Recargar',
+  check: 'Marcar casilla',
+  drag: 'Arrastrar',
+  upload: 'Subir archivo',
+  download: 'Descargar archivo',
+};
 
 export function BrowserPanel({
   tabs,
@@ -29,6 +57,10 @@ export function BrowserPanel({
   close,
   onError,
   onCaptureContext,
+  onCaptureSelection,
+  agentLabel,
+  downloads = [],
+  chromeConnections = [],
 }: {
   tabs: BrowserState[];
   selected?: string;
@@ -40,12 +72,19 @@ export function BrowserPanel({
   close: () => void;
   onError: (message: string) => void;
   onCaptureContext?: (tab: BrowserState) => Promise<void>;
+  onCaptureSelection?: (tab: BrowserState, selection: BrowserElementSelection) => Promise<void>;
+  agentLabel?: string;
+  downloads?: BrowserDownload[];
+  chromeConnections?: ChromeConnection[];
 }) {
   const state =
     tabs.find((tab) => tab.id === selected) ?? tabs.find((tab) => tab.projectId === projectId);
+  const external = state?.backend === 'chrome';
   const host = useRef<HTMLDivElement>(null);
+  const tabStrip = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
   const optionsButton = useRef<HTMLButtonElement>(null);
+  const chromeButton = useRef<HTMLButtonElement>(null);
   const currentTabId = useRef(state?.id);
   currentTabId.current = state?.id;
   const selectedRef = useRef(selected);
@@ -53,18 +92,45 @@ export function BrowserPanel({
   const operationInFlight = useRef(false);
   const syncBounds = useRef<() => void>(() => {});
   const present = useRef({ visible: false, onError });
-  present.current = { visible: !blocked && !!state?.url && !state.suspended, onError };
+  present.current = { visible: !external && !blocked && !!state?.url && !state.suspended, onError };
   const optionsId = useId();
+  const chromeId = useId();
   const [address, setAddress] = useState(state?.url ?? '');
   const [busy, setBusy] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [chromeOpen, setChromeOpen] = useState(false);
   const [captured, setCaptured] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [preview, setPreview] = useState<string>();
+  const pickerRequest = useRef<string | undefined>(undefined);
   const editingAddress = useRef(false);
+  useEffect(() => {
+    if (chromeOpen) setOptionsOpen(false);
+  }, [chromeOpen]);
+
+  const cancelPick = () => {
+    const tabId = pickerRequest.current;
+    pickerRequest.current = undefined;
+    setPicking(false);
+    if (tabId) void window.desk.invoke({ type: 'browserCancelPick', tabId }).catch(() => {});
+  };
+  useEffect(() => {
+    if (blocked) cancelPick();
+  }, [blocked]);
+  useEffect(() => {
+    setPicking(false);
+    return () => {
+      const tabId = pickerRequest.current;
+      pickerRequest.current = undefined;
+      if (tabId) void window.desk.invoke({ type: 'browserCancelPick', tabId }).catch(() => {});
+    };
+  }, [state?.id]);
 
   useEffect(() => {
     setAddress(state?.url ?? '');
     editingAddress.current = false;
     setCaptured(false);
+    setPreview(undefined);
     setOptionsOpen(false);
     if (
       !state?.url &&
@@ -76,6 +142,7 @@ export function BrowserPanel({
   useEffect(() => {
     if (!editingAddress.current) setAddress(state?.url ?? '');
     setCaptured(false);
+    setPreview(undefined);
   }, [state?.url]);
 
   // A URL/loading update must not detach the native page. Only the tab's lifecycle
@@ -83,7 +150,7 @@ export function BrowserPanel({
   // immediately so the guest cannot cover a newly opened dialog.
   useEffect(() => {
     const tabId = state?.id;
-    if (!tabId) return;
+    if (!tabId || external) return;
     let last = '';
     let frame = 0;
     let active = true;
@@ -137,18 +204,44 @@ export function BrowserPanel({
         })
         .catch(() => {});
     };
-  }, [state?.id]);
+  }, [state?.id, external]);
   useLayoutEffect(() => syncBounds.current(), [state?.url, state?.suspended, blocked]);
+  // Many tabs scroll sideways; the selected one stays visible without moving the page.
+  useLayoutEffect(() => {
+    const strip = tabStrip.current;
+    if (!strip) return;
+    const reveal = () => {
+      const tab = strip.querySelector<HTMLElement>('.browser-tab.selected');
+      if (!tab) return;
+      if (tab.offsetLeft < strip.scrollLeft) strip.scrollLeft = tab.offsetLeft;
+      else if (tab.offsetLeft + tab.offsetWidth > strip.scrollLeft + strip.clientWidth)
+        strip.scrollLeft = tab.offsetLeft + tab.offsetWidth - strip.clientWidth;
+    };
+    reveal();
+    // Narrowing the panel with the splitter must not hide the selected tab either.
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [state?.id, tabs.length]);
   useEffect(() => {
     if (!captured) return;
     const timer = window.setTimeout(() => setCaptured(false), 4000);
     return () => window.clearTimeout(timer);
   }, [captured]);
 
-  const newTab = async (url?: string) => {
-    const tab = await window.desk.invoke({ type: 'browserNew', projectId, sessionId, url });
+  const newTab = async (url?: string, integrated = false) => {
+    const tab = await window.desk.invoke(
+      !integrated && state?.backend === 'chrome' && state.connectionId
+        ? { type: 'chromeNewTab', connectionId: state.connectionId, url }
+        : { type: 'browserNew', projectId, sessionId, url },
+    );
     select(tab.id);
     return tab as BrowserState;
+  };
+  const openIntegrated = async () => {
+    const existing = tabs.find((tab) => tab.backend !== 'chrome' && tab.projectId === projectId);
+    if (existing) select(existing.id);
+    else await newTab(undefined, true);
   };
   const act = async (input: BrowserInput, tabId = state?.id) => {
     if (operationInFlight.current) return;
@@ -187,9 +280,32 @@ export function BrowserPanel({
     operationInFlight.current = true;
     setBusy(true);
     try {
-      await window.desk.invoke({ type: 'browserOpenExternal', tabId: state.id });
+      await window.desk.invoke({
+        type: external ? 'chromeFocus' : 'browserOpenExternal',
+        tabId: state.id,
+      });
     } catch (error) {
       onError((error as Error).message);
+    } finally {
+      operationInFlight.current = false;
+      setBusy(false);
+    }
+  };
+  const capturePreview = async () => {
+    if (!state || operationInFlight.current) return;
+    const tabId = state.id;
+    operationInFlight.current = true;
+    setBusy(true);
+    try {
+      const shot = await window.desk.invoke({
+        type: 'browserTab',
+        tabId,
+        input: { action: 'screenshot' },
+      });
+      if (currentTabId.current === tabId && shot?.image && shot.mimeType === 'image/png')
+        setPreview(`data:image/png;base64,${shot.image}`);
+    } catch (cause) {
+      onError((cause as Error).message);
     } finally {
       operationInFlight.current = false;
       setBusy(false);
@@ -209,6 +325,32 @@ export function BrowserPanel({
       setBusy(false);
     }
   };
+  const pickElement = async () => {
+    if (picking) {
+      cancelPick();
+      return;
+    }
+    if (!state || !onCaptureSelection || operationInFlight.current) return;
+    const tab = state;
+    pickerRequest.current = tab.id;
+    operationInFlight.current = true;
+    setPicking(true);
+    try {
+      const selection = await window.desk.invoke({ type: 'browserPick', tabId: tab.id });
+      if (pickerRequest.current !== tab.id || !selection) return;
+      setPicking(false);
+      setBusy(true);
+      await onCaptureSelection(tab, selection);
+      if (currentTabId.current === tab.id) setCaptured(true);
+    } catch (error) {
+      if (pickerRequest.current === tab.id) onError((error as Error).message);
+    } finally {
+      if (pickerRequest.current === tab.id) pickerRequest.current = undefined;
+      operationInFlight.current = false;
+      setPicking(false);
+      setBusy(false);
+    }
+  };
   const title = (tab: BrowserState) => {
     if (!tab.url) return 'Nueva página';
     try {
@@ -220,8 +362,19 @@ export function BrowserPanel({
   return (
     <section
       className="tool-pane browser-pane"
-      aria-label="Navegador integrado"
+      aria-label="Navegador"
       onKeyDown={(event) => {
+        if (event.key === 'Escape' && picking) {
+          event.stopPropagation();
+          cancelPick();
+          return;
+        }
+        if (event.key === 'Escape' && chromeOpen) {
+          event.stopPropagation();
+          setChromeOpen(false);
+          chromeButton.current?.focus();
+          return;
+        }
         if (event.key !== 'Escape' || !optionsOpen) return;
         event.stopPropagation();
         setOptionsOpen(false);
@@ -299,6 +452,48 @@ export function BrowserPanel({
             <ArrowUpRight size={13} />
           </button>
         </div>
+        {onCaptureSelection && !external && (
+          <button
+            type="button"
+            className={`browser-picker-trigger ${picking ? 'on' : ''}`}
+            aria-label={picking ? 'Cancelar selección de elemento' : 'Seleccionar elemento'}
+            title={
+              picking
+                ? 'Cancelar selección (Esc)'
+                : 'Seleccionar un elemento de la página y añadirlo al borrador'
+            }
+            aria-pressed={picking}
+            disabled={
+              !state?.url ||
+              state.projectId !== projectId ||
+              state.suspended ||
+              state.loading ||
+              busy
+            }
+            onClick={() => void pickElement()}
+          >
+            <ScanLine size={15} />
+          </button>
+        )}
+        <button
+          ref={chromeButton}
+          type="button"
+          className={`browser-chrome-trigger ${chromeOpen || external ? 'on' : ''}`}
+          aria-label="Conexiones de Chrome"
+          title="Conectar y controlar Chrome"
+          aria-expanded={chromeOpen}
+          aria-controls={chromeId}
+          onClick={() => setChromeOpen((value) => !value)}
+        >
+          {chromeConnections.some(
+            (connection) =>
+              connection.projectId === projectId && connection.status === 'connecting',
+          ) ? (
+            <RefreshCw size={14} className="spinning" />
+          ) : (
+            <Link2 size={15} />
+          )}
+        </button>
         <button
           ref={optionsButton}
           type="button"
@@ -307,7 +502,10 @@ export function BrowserPanel({
           title="Opciones del navegador"
           aria-expanded={optionsOpen}
           aria-controls={optionsId}
-          onClick={() => setOptionsOpen((value) => !value)}
+          onClick={() => {
+            setChromeOpen(false);
+            setOptionsOpen((value) => !value);
+          }}
         >
           <MoreHorizontal size={16} />
         </button>
@@ -321,6 +519,18 @@ export function BrowserPanel({
           <X size={14} />
         </button>
       </form>
+      <ChromeControls
+        id={chromeId}
+        expanded={chromeOpen}
+        onExpandedChange={setChromeOpen}
+        connections={chromeConnections}
+        tabs={tabs}
+        tab={state}
+        projectId={projectId}
+        sessionId={sessionId}
+        select={select}
+        openIntegrated={openIntegrated}
+      />
       <div
         id={optionsId}
         className={`browser-options ${optionsOpen ? 'is-open' : ''}`}
@@ -333,44 +543,52 @@ export function BrowserPanel({
             role="group"
             aria-label="Herramientas del navegador"
           >
-            <label className="browser-zoom">
-              <span>Zoom</span>
-              <select
-                aria-label="Zoom del navegador"
-                title="Zoom"
-                value={state?.zoom ?? 1}
-                disabled={!state?.url || busy}
-                onChange={(e) => void act({ action: 'zoom', factor: Number(e.target.value) })}
-              >
-                {[0.25, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3].map(
-                  (zoom) => (
-                    <option key={zoom} value={zoom}>
-                      {Math.round(zoom * 100)}%
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
+            {!external && (
+              <label className="browser-zoom">
+                <span>Zoom</span>
+                <select
+                  aria-label="Zoom del navegador"
+                  title="Zoom"
+                  value={state?.zoom ?? 1}
+                  disabled={!state?.url || busy}
+                  onChange={(e) => void act({ action: 'zoom', factor: Number(e.target.value) })}
+                >
+                  {[0.25, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3].map(
+                    (zoom) => (
+                      <option key={zoom} value={zoom}>
+                        {Math.round(zoom * 100)}%
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+            )}
             <button
               type="button"
-              aria-label="Abrir en Chrome"
-              title="Abrir en Chrome (o en el navegador predeterminado si no está instalado)"
+              aria-label={external ? 'Mostrar pestaña en Chrome' : 'Abrir en Chrome'}
+              title={
+                external
+                  ? 'Mostrar esta pestaña en Chrome'
+                  : 'Abrir en Chrome (o en el navegador predeterminado si no está instalado)'
+              }
               disabled={!state?.url || busy}
               onClick={() => void openExternal()}
             >
               <ExternalLink size={13} />
-              <span>Abrir fuera</span>
+              <span>{external ? 'Mostrar Chrome' : 'Abrir fuera'}</span>
             </button>
-            <button
-              type="button"
-              title="Suspender pestaña y liberar memoria"
-              aria-label="Suspender pestaña"
-              disabled={!state?.url || state.suspended || busy}
-              onClick={() => void act({ action: 'suspend' })}
-            >
-              <Moon size={13} />
-              <span>Suspender</span>
-            </button>
+            {!external && (
+              <button
+                type="button"
+                title="Suspender pestaña y liberar memoria"
+                aria-label="Suspender pestaña"
+                disabled={!state?.url || state.suspended || busy}
+                onClick={() => void act({ action: 'suspend' })}
+              >
+                <Moon size={13} />
+                <span>Suspender</span>
+              </button>
+            )}
             {onCaptureContext && (
               <button
                 type="button"
@@ -395,7 +613,12 @@ export function BrowserPanel({
       </div>
       {tabs.length > 0 && (
         <div className="browser-tabs-bar">
-          <div className="browser-tabs" role="tablist" aria-label="Pestañas del navegador">
+          <div
+            ref={tabStrip}
+            className="browser-tabs"
+            role="tablist"
+            aria-label="Pestañas del navegador"
+          >
             {tabs.map((tab) => (
               <div
                 className={`browser-tab ${tab.id === state?.id ? 'selected' : ''} ${tab.suspended ? 'suspended' : ''}`}
@@ -407,14 +630,17 @@ export function BrowserPanel({
                   tabIndex={tab.id === state?.id ? 0 : -1}
                   onKeyDown={navigateTabs}
                   aria-label={title(tab)}
-                  title={`${projects.find((p) => p.id === tab.projectId)?.name ?? 'Navegador'} · ${tab.title}${tab.suspended ? ' · Suspendida' : ''}`}
+                  title={`${projects.find((p) => p.id === tab.projectId)?.name ?? 'Navegador'} · ${tab.backend === 'chrome' ? 'Chrome · ' : ''}${tab.title}${tab.suspended ? ' · Suspendida' : ''}`}
                   onClick={() => {
                     select(tab.id);
-                    if (tab.suspended && tab.url) void act({ action: 'reload' }, tab.id);
+                    if (tab.suspended && tab.url && tab.backend !== 'chrome')
+                      void act({ action: 'reload' }, tab.id);
                   }}
                 >
                   {tab.loading ? (
                     <RefreshCw size={10} className="spinning" />
+                  ) : tab.backend === 'chrome' ? (
+                    <ExternalLink size={10} />
                   ) : tab.hostStatus ? (
                     <i
                       className={`host-dot ${tab.hostStatus}`}
@@ -432,6 +658,7 @@ export function BrowserPanel({
                 <button
                   className="browser-tab-close"
                   aria-label={`Cerrar pestaña ${title(tab)}`}
+                  title="Cerrar pestaña"
                   disabled={busy}
                   onClick={() => void act({ action: 'close' }, tab.id)}
                 >
@@ -458,7 +685,25 @@ export function BrowserPanel({
       >
         <span />
       </div>
-      {state?.url && isAuthenticationURL(state.url) && (
+      {(picking || state?.activity?.sessionId) && (
+        <div
+          className={`browser-agent-status ${state?.activity?.phase === 'running' ? 'is-active' : ''}`}
+          role="status"
+        >
+          <MousePointer2 size={12} />
+          <span>
+            {picking
+              ? 'Selecciona un elemento de la página · Esc cancela'
+              : `${agentLabel || 'Agente'} · ${activityLabels[state?.activity?.action ?? ''] || 'Navegador'}${state?.activity?.label ? ` · ${state.activity.label}` : ''}${state?.activity?.phase === 'error' ? ' · Revisa el chat' : ''}`}
+          </span>
+          {picking && (
+            <button type="button" onClick={cancelPick}>
+              Cancelar
+            </button>
+          )}
+        </div>
+      )}
+      {!external && state?.url && isAuthenticationURL(state.url) && (
         <div className="browser-login-hint">
           <span>
             Si el acceso falla aquí, inicia sesión en Chrome. Las sesiones de ambos navegadores son
@@ -474,34 +719,75 @@ export function BrowserPanel({
           {state.error}
         </p>
       )}
+      <BrowserCapabilities
+        tab={state}
+        downloads={downloads.filter(
+          (download) => download.projectId === (state?.projectId ?? projectId),
+        )}
+        onError={onError}
+      />
       <div ref={host} className="browser-viewport">
-        {(!state?.url || state.suspended) && (
-          <div className="browser-empty">
+        {external && state ? (
+          <div className="chrome-page-card">
             <div className="browser-empty-symbol">
-              {state?.url ? <Moon size={23} /> : <Globe size={23} />}
+              <ExternalLink size={22} />
             </div>
-            <strong>{state?.url ? 'Pestaña en pausa' : 'Tu proyecto, en vivo'}</strong>
+            <strong>{state.title || 'Pestaña de Chrome'}</strong>
             <p>
-              {state?.url
-                ? 'Reanuda cuando quieras continuar.'
-                : 'Abre una URL o arranca tu servidor local.'}
+              Esta página está abierta en Chrome. El agente puede navegar y trabajar en ella desde
+              este chat.
             </p>
-            {state?.url ? (
+            <span className="chrome-page-address" title={state.url}>
+              {state.url}
+            </span>
+            <div className="chrome-page-actions">
+              <button type="button" disabled={busy} onClick={() => void openExternal()}>
+                <ExternalLink size={13} /> Mostrar Chrome
+              </button>
               <button
-                aria-label="Reanudar pestaña"
-                disabled={busy}
-                onClick={() => void act({ action: 'reload' })}
+                type="button"
+                disabled={busy || state.loading || state.suspended}
+                onClick={() => void capturePreview()}
               >
-                <Play size={13} />
-                <span>Reanudar</span>
+                <ScanLine size={13} /> {preview ? 'Actualizar captura' : 'Capturar vista'}
               </button>
-            ) : (
-              <button onClick={() => addressInput.current?.focus()}>
-                <ArrowUpRight size={13} />
-                Abrir dirección
-              </button>
+            </div>
+            {preview && (
+              <figure>
+                <img src={preview} alt={`Captura de ${state.title || 'la pestaña de Chrome'}`} />
+                <figcaption>Captura puntual · Actualiza para ver los cambios.</figcaption>
+              </figure>
             )}
           </div>
+        ) : (
+          (!state?.url || state.suspended) && (
+            <div className="browser-empty">
+              <div className="browser-empty-symbol">
+                {state?.url ? <Moon size={23} /> : <Globe size={23} />}
+              </div>
+              <strong>{state?.url ? 'Pestaña en pausa' : 'Tu proyecto, en vivo'}</strong>
+              <p>
+                {state?.url
+                  ? 'Reanuda cuando quieras continuar.'
+                  : 'Abre una URL o arranca tu servidor local.'}
+              </p>
+              {state?.url ? (
+                <button
+                  aria-label="Reanudar pestaña"
+                  disabled={busy}
+                  onClick={() => void act({ action: 'reload' })}
+                >
+                  <Play size={13} />
+                  <span>Reanudar</span>
+                </button>
+              ) : (
+                <button onClick={() => addressInput.current?.focus()}>
+                  <ArrowUpRight size={13} />
+                  Abrir dirección
+                </button>
+              )}
+            </div>
+          )
         )}
       </div>
     </section>

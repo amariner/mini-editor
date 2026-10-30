@@ -161,7 +161,7 @@ try {
   await strip.getByText('agent-desk/arreglar-login-s0').waitFor();
   assert.ok(await strip.getByRole('button', { name: 'Duplicar chat' }).isVisible());
   const panel = page.locator('.worktree-panel');
-  await panel.getByText('1 archivos sin commit · 1 commits por fusionar').waitFor();
+  await panel.getByText('1 archivo sin commit · 1 commit por fusionar').waitFor();
   await page.screenshot({ path: 'artifacts/worktree-panel.png' });
   await panel.getByRole('button', { name: 'Fusionar en main' }).click();
   await panel.getByText('La fusión en main tendría conflictos').waitFor();

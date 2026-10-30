@@ -772,30 +772,6 @@ main {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
-.row.tool-row details {
-  background: var(--tile);
-  border-radius: var(--rs);
-  padding: 8px 12px;
-}
-.row.tool-row summary {
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--ui-text-color, var(--text-2));
-}
-.row.tool-row pre {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  white-space: pre-wrap;
-  margin: 8px 0 0;
-}
-.thinking-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ui-text-color, var(--muted));
-  font-size: 12.5px;
-}
 .spinner {
   width: 12px;
   height: 12px;
@@ -859,9 +835,6 @@ main {
 .md-check.on {
   background: var(--ok);
 }
-.md-check.half {
-  background: var(--accent);
-}
 .md code,
 .approval-tool .tool-summary code {
   font-family: var(--mono);
@@ -870,7 +843,6 @@ main {
   border-radius: 5px;
   padding: 1px 5px;
 }
-.md pre.md-code,
 pre.code,
 pre.result {
   font-family: var(--mono);
@@ -885,11 +857,6 @@ pre.result {
   position: relative;
   white-space: pre-wrap;
   word-break: break-word;
-}
-.md pre.md-code code {
-  background: transparent;
-  padding: 0;
-  font-size: inherit;
 }
 .md-lang {
   position: absolute;
@@ -967,9 +934,6 @@ pre.result {
 .tool-state.error {
   color: var(--danger);
 }
-.tool-ok {
-  color: var(--ok);
-}
 .tool.failed .tool-name {
   color: var(--danger);
 }
@@ -999,10 +963,6 @@ pre.result.failed {
 }
 .children .tool {
   background: var(--card);
-}
-.child-text {
-  font-size: 12.5px;
-  color: var(--ui-text-color, var(--text-2));
 }
 pre.diff {
   font-family: var(--mono);
@@ -1428,7 +1388,7 @@ pre.diff .removed {
 .slash-hint {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--ui-text-color, var(--faint));
+  color: var(--ui-text-color, var(--muted));
 }
 .slash-desc {
   color: var(--ui-text-color, var(--muted));
@@ -1857,6 +1817,11 @@ pre.diff .removed {
   height: 100vh;
   display: grid;
   place-items: center;
+  /* An error and its retry button stay together at the centre. */
+  align-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
   color: var(--ui-text-color, var(--muted));
 }
 
@@ -3385,9 +3350,6 @@ svg.lucide {
 .activity-messages .tool {
   margin: 0;
 }
-.activity-messages .row.tool-row details {
-  padding: 5px 7px;
-}
 .activity-messages .thinking-block button {
   font-size: 10px;
   min-height: 22px;
@@ -4538,14 +4500,15 @@ a.md-link:focus-visible {
 .md-code.single pre {
   padding-right: 96px;
 }
+/* The bar reaches the card edge so long lines never show through beside its buttons. */
 .md-code-bar {
   position: absolute;
   top: 5px;
-  right: 6px;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding-left: 6px;
+  padding-inline: 6px;
   border-radius: 6px;
   background: var(--code-block);
   z-index: 1;
@@ -5119,7 +5082,7 @@ button.turn-file:hover {
 .approval-hint {
   margin-left: auto;
   font-size: 11px;
-  color: var(--ui-text-color, var(--faint));
+  color: var(--ui-text-color, var(--muted));
 }
 .approval-remember {
   margin-top: -4px;
@@ -5809,13 +5772,13 @@ button.msg-action.reading {
 .provider-model-list {
   max-height: 340px;
   overflow-y: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 .provider-model-row {
   padding: 10px;
   align-items: flex-start !important;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
 }
 .provider-model-row > span {
   min-width: 0;
@@ -5982,7 +5945,7 @@ button.msg-action.reading {
   top: calc(100% + 6px);
   right: 0;
   z-index: 40;
-  width: 184px;
+  width: 196px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -6160,9 +6123,6 @@ button.msg-action.reading {
   background: var(--tile-hover);
   color: var(--text);
 }
-.multichat-card-head .multichat-server {
-  color: var(--c-blue);
-}
 .multichat-key {
   display: none;
   flex-shrink: 0;
@@ -6175,19 +6135,6 @@ button.msg-action.reading {
 }
 .multichat.show-keys .multichat-key {
   display: inline-block;
-}
-/* Keep the close control discoverable even without hover. */
-.multichat-card .multichat-dismiss {
-  opacity: 1;
-}
-/* Refresh is a secondary action shown on pointer or keyboard focus. */
-.multichat-card .multichat-git-refresh {
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.multichat-card:hover .multichat-git-refresh,
-.multichat-card:focus-within .multichat-git-refresh {
-  opacity: 1;
 }
 
 /* Account nickname, folder and only the Git facts that need attention. */
@@ -6240,20 +6187,6 @@ button.msg-action.reading {
 .multichat-git .conflicts {
   color: var(--danger);
 }
-.multichat-info-line .multichat-git-refresh {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  min-height: 20px;
-  margin-left: auto;
-  padding: 0;
-  background: transparent;
-  color: var(--muted);
-}
-.multichat-info-line .multichat-git-refresh:hover:enabled {
-  background: var(--tile-hover);
-  color: var(--text);
-}
 
 /* Supervision first: plan progress, this turn's changes and subagents, then the log below. */
 .multichat-supervision {
@@ -6303,12 +6236,6 @@ button.msg-action.reading {
   background: var(--ok);
   transition: width 0.3s;
 }
-.multichat-plan-current {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .multichat-changes {
   flex-shrink: 0;
   min-height: 20px;
@@ -6328,22 +6255,6 @@ button.msg-action.reading {
 .multichat-changes:disabled {
   opacity: 1;
   cursor: default;
-}
-.multichat-agents {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  color: var(--muted);
-}
-.multichat-agents svg {
-  flex-shrink: 0;
-}
-.multichat-agents span {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .multichat-card .compact-activity {
@@ -6824,14 +6735,6 @@ button.msg-action.reading {
   margin-left: auto;
   padding: 0 8px;
   font-size: 11.5px;
-}
-.multichat-card-head .multichat-fork {
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.multichat-card:hover .multichat-fork:enabled,
-.multichat-card:focus-within .multichat-fork:enabled {
-  opacity: 1;
 }
 .multichat-worktree {
   color: var(--c-blue);

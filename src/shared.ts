@@ -413,6 +413,9 @@ export interface Snapshot {
   profiles?: ProfileDefinition[];
   removedProfiles?: Profile[];
   browsers?: BrowserState[];
+  chromeConnections?: import('./chrome-types').ChromeConnection[];
+  applications?: import('./applications-types').ApplicationSnapshot;
+  browserDownloads?: import('./browser-downloads').BrowserDownload[];
   devServers?: { projectId: string; sessionId: string; url: string; port: number }[];
   terminals?: { id: string; projectId: string; status: Status; kind?: 'shell' | 'freebuff' }[];
   coordination?: {
@@ -475,9 +478,29 @@ export type Action =
   | { type: 'selectProviderModels'; profile: Profile; selection: ModelSelection }
   | { type: 'configureProvider'; sessionId: string; config: ProviderConfig }
   | { type: 'browser'; sessionId: string; input: BrowserInput }
+  | import('./applications-types').ApplicationAction
+  | {
+      type: 'chromeConnect';
+      mode: import('./chrome-types').ChromeMode;
+      projectId?: string;
+      sessionId?: string;
+    }
+  | { type: 'chromeDisconnect' | 'chromeReconnect'; connectionId: string }
+  | { type: 'chromeFocus'; tabId: string }
+  | { type: 'chromeSetup' }
+  | { type: 'chromeNewTab'; connectionId: string; url?: string }
   | { type: 'browserNew'; projectId?: string; sessionId?: string; url?: string }
   | { type: 'browserOpenExternal'; tabId: string }
   | { type: 'browserTab'; tabId: string; input: BrowserInput }
+  | { type: 'browserPick' | 'browserCancelPick'; tabId: string }
+  | { type: 'browserDownloadReveal'; tabId: string; downloadId: string }
+  | {
+      type: 'browserDownloadControl';
+      tabId: string;
+      downloadId: string;
+      operation: 'pause' | 'resume' | 'cancel';
+    }
+  | { type: 'browserPermission'; tabId: string; permissionId: string; allow: boolean }
   | {
       type: 'browserPresent';
       sessionId?: string;

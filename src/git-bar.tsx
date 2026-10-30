@@ -21,6 +21,19 @@ import { IsolationBar } from './isolation-bar';
 import { wantsWorktree } from './isolation';
 import './git-dock.css';
 
+/** «1 archivo», «2 archivos»: counters read naturally in Spanish. */
+const count = (value: number, singular: string, plural = `${singular}s`) =>
+  `${value} ${value === 1 ? singular : plural}`;
+
+/** Ellipsis at the start: long paths keep their file name visible. */
+function GitPath({ path }: { path: string }) {
+  return (
+    <code className="git-path" dir="rtl" title={path}>
+      <bdi dir="ltr">{path}</bdi>
+    </code>
+  );
+}
+
 export function GitBar({
   project,
   state,
@@ -284,9 +297,9 @@ export function GitBar({
                 role={!dirty ? 'img' : undefined}
               >
                 {counts?.conflicts ? (
-                  `${counts.conflicts} conflictos`
+                  count(counts.conflicts, 'conflicto')
                 ) : dirty ? (
-                  `${state.files.length} archivos`
+                  count(state.files.length, 'archivo')
                 ) : (
                   <Check size={11} aria-hidden="true" />
                 )}
@@ -387,9 +400,9 @@ export function GitBar({
                   <span title={branchLabel}>{branchLabel}</span>
                   <span className={counts?.conflicts ? 'has-conflicts' : ''}>
                     {counts?.conflicts
-                      ? `${counts.conflicts} conflictos`
+                      ? count(counts.conflicts, 'conflicto')
                       : dirty
-                        ? `${state.files.length} archivos modificados`
+                        ? count(state.files.length, 'archivo modificado', 'archivos modificados')
                         : 'Sin cambios locales'}
                   </span>
                   {state.lines && (state.lines.added > 0 || state.lines.removed > 0) && (
@@ -482,9 +495,9 @@ export function GitBar({
               <section className="git-step">
                 <h4>2 · Cambios</h4>
                 <p className="git-counts">
-                  {counts?.staged ?? 0} preparados · {counts?.unstaged ?? 0} sin preparar ·{' '}
-                  {counts?.untracked ?? 0} nuevos
-                  {counts?.conflicts ? ` · ${counts.conflicts} conflictos` : ''}
+                  {count(counts?.staged ?? 0, 'preparado')} · {counts?.unstaged ?? 0} sin preparar ·{' '}
+                  {count(counts?.untracked ?? 0, 'nuevo')}
+                  {counts?.conflicts ? ` · ${count(counts.conflicts, 'conflicto')}` : ''}
                 </p>
                 <div className="git-step-controls">
                   <button disabled={disabled || !dirty} onClick={() => void run('stage')}>
@@ -507,7 +520,7 @@ export function GitBar({
                 <ul className="git-file-list">
                   {state.files.map((file) => (
                     <li key={file.path}>
-                      <code title={file.path}>{file.path}</code>
+                      <GitPath path={file.path} />
                       <span>
                         {file.conflict
                           ? 'Conflicto'
@@ -539,6 +552,13 @@ export function GitBar({
                   />
                   <button
                     disabled={disabled || !counts?.staged || !!counts?.conflicts || !message.trim()}
+                    title={
+                      !counts?.staged
+                        ? 'Prepara cambios para incluirlos en el commit'
+                        : counts.conflicts
+                          ? 'Resuelve los conflictos antes de crear el commit'
+                          : undefined
+                    }
                   >
                     <Check size={13} /> Crear commit
                   </button>
@@ -677,9 +697,9 @@ function WorktreePanel({
         trabaja aquí sin tocar la copia principal hasta que fusiones.
       </p>
       <p className="git-counts">
-        {worktree.dirty} archivos sin commit · {worktree.ahead} commits por fusionar ·{' '}
-        {worktree.behind} commits nuevos en {worktree.base}
-        {worktree.conflicts ? ` · ${worktree.conflicts} conflictos` : ''}
+        {count(worktree.dirty, 'archivo')} sin commit · {count(worktree.ahead, 'commit')} por
+        fusionar · {count(worktree.behind, 'commit nuevo', 'commits nuevos')} en {worktree.base}
+        {worktree.conflicts ? ` · ${count(worktree.conflicts, 'conflicto')}` : ''}
       </p>
       {!worktree.exists && (
         <p className="git-error">La carpeta del worktree ya no existe. Descártalo para limpiar.</p>
@@ -721,7 +741,7 @@ function WorktreePanel({
           <span>
             Se detendrá el agente y se borrarán la carpeta y la rama {worktree.branch}
             {pending
-              ? `, con ${worktree.dirty} archivos sin commit y ${worktree.ahead} commits sin fusionar`
+              ? `, con ${count(worktree.dirty, 'archivo')} sin commit y ${count(worktree.ahead, 'commit')} sin fusionar`
               : ''}
             . No se puede deshacer.
           </span>
@@ -739,7 +759,7 @@ function WorktreePanel({
           <ul className="git-file-list">
             {result.conflicts.map((file) => (
               <li key={file}>
-                <code title={file}>{file}</code>
+                <GitPath path={file} />
                 <span>Conflicto</span>
               </li>
             ))}
@@ -758,7 +778,7 @@ function WorktreePanel({
         <ul className="git-file-list">
           {state.files.map((file) => (
             <li key={file.path}>
-              <code title={file.path}>{file.path}</code>
+              <GitPath path={file.path} />
               <span>
                 {file.conflict ? 'Conflicto' : file.index === '?' ? 'Nuevo' : 'Modificado'}
               </span>

@@ -26,17 +26,18 @@
 .app.onboarding .welcome .primary {
   min-height: 40px;
 }
-.app.onboarding .sidebar.onboarding-sidebar {
+/* `.compact` outranks the sidebar widths in project-navigation.css; the settings button
+   keeps the same 26px centre line as the project rail. */
+.app.onboarding .sidebar.compact.onboarding-sidebar {
   position: absolute;
   inset: auto auto 0 0;
-  width: 56px;
-  min-width: 56px;
+  width: 52px;
+  min-width: 52px;
   padding: 0 10px 10px;
   z-index: 2;
 }
 .app.onboarding .sidebar.onboarding-sidebar .sidebar-controls {
   margin: 0;
-  padding-inline: 3px 0;
 }
 @media (max-width: 520px) {
   .app.onboarding .welcome {

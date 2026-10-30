@@ -647,7 +647,7 @@ function UserMessage({ m }: { m: Message }) {
               title="Reutilizar en el cuadro de mensaje"
               onClick={() => reuse(m.text)}
             >
-              <ArrowUp size={17} />
+              <ArrowUp size={13} />
             </button>
           )}
           {rewind.button}
@@ -1697,6 +1697,7 @@ function ContextGauge({ percent }: { percent?: number }) {
   return (
     <span
       className={`task-signature-context ${p >= 95 ? 'full' : p >= 80 ? 'high' : ''}`}
+      role="img"
       aria-label={
         percent === undefined ? 'Contexto sin datos' : `Contexto usado: ${Math.round(p)} %`
       }
@@ -2300,9 +2301,11 @@ export function Composer({
               setDismissed(menuKey);
               return;
             }
+            // Shift+Tab closes the menu and keeps its usual meaning (permission mode or focus back).
+            if (menu && e.key === 'Tab' && e.shiftKey) setDismissed(menuKey);
             if (
               menu &&
-              (e.key === 'Tab' ||
+              ((e.key === 'Tab' && !e.shiftKey) ||
                 (e.key === 'Enter' &&
                   !e.shiftKey &&
                   (menu.type === 'files' || draft !== '/' + menu.items[selected].name)))
@@ -2891,7 +2894,7 @@ export function PendingMessages({
           {message.status === 'failed' && (
             <button
               type="button"
-              title={message.error}
+              title={`Recuperar en el cuadro de mensaje${message.error ? ` · ${message.error}` : ''}`}
               aria-label="Recuperar mensaje"
               onClick={async () => {
                 if (
@@ -2911,6 +2914,7 @@ export function PendingMessages({
             type="button"
             disabled={message.status === 'sending'}
             aria-label="Cancelar mensaje pendiente"
+            title="Cancelar mensaje pendiente"
             onClick={() =>
               void run({ type: 'cancelPendingInput', sessionId: session.id, messageId: message.id })
             }

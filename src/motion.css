@@ -474,19 +474,12 @@
   font-size: 10.5px;
 }
 
-/* Breathing room: a little more air between rows, groups and controls. */
-.app .sidebar .project-block {
-  margin-bottom: 14px;
-}
+/* Breathing room: a little more air between rows, groups and controls.
+   Sidebar row sizes and paddings live in project-navigation.css. */
 .app .sidebar .project-chats {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-top: 4px;
-}
-.app .sidebar .project-chat {
-  min-height: 30px;
-  padding: 6px 10px;
 }
 .app .workspace .session-tabs-bar,
 .app .workspace .session-tabs {
@@ -508,23 +501,17 @@
   margin-bottom: 6px;
   padding-bottom: 0;
 }
-/* The rail is wide enough that its icons and the bottom buttons share one centre line
-   with the expanded sidebar (28px from the edge). */
-.app .sidebar.compact.collapsed {
-  width: calc(var(--project-icon-size, 20px) + 36px);
-  min-width: calc(var(--project-icon-size, 20px) + 36px);
-  padding-inline: 8px;
-}
 
 /* Keep settings above fold, even when saved CSS still contains the old row layout.
-   Both sidebar states anchor the controls 13px from the left edge. */
+   Both sidebar states centre the controls on the project marks, 26px from the left edge
+   (rail width and padding in project-navigation.css). */
 .app .sidebar.compact .sidebar-bottom.sidebar-controls,
 .app .sidebar.compact:not(.collapsed) .sidebar-bottom.sidebar-controls {
   flex-direction: column-reverse;
   align-items: flex-start;
   justify-content: flex-start;
   gap: 6px;
-  padding-inline: 3px 0;
+  padding-inline: 1px 0;
 }
 .app .sidebar.compact.collapsed .sidebar-bottom.sidebar-controls {
   padding-inline: 5px 0;
@@ -560,7 +547,7 @@
     outline-offset: -2px;
   }
 }
-/* Same clearance for the macOS window controls with the wider folded rail. */
+/* Native macOS window controls extend beyond the narrow project rail. */
 .app:has(.sidebar.collapsed) > main > .topbar {
   padding-left: max(8px, calc(82px - var(--project-icon-size, 20px)));
 }

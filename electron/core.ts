@@ -200,6 +200,32 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('snapshot') }),
   z.object({ type: z.literal('deleteSession'), sessionId: id }).strict(),
   z.object({ type: z.literal('browser'), sessionId: id, input: browserInput }),
+  z
+    .object({
+      type: z.literal('chromeConnect'),
+      mode: z.enum(['personal', 'managed']),
+      projectId: id.optional(),
+      sessionId: id.optional(),
+    })
+    .strict(),
+  ...(['chromeDisconnect', 'chromeReconnect'] as const).map((type) =>
+    z.object({ type: z.literal(type), connectionId: id }).strict(),
+  ),
+  z.object({ type: z.literal('chromeFocus'), tabId: id }).strict(),
+  z.object({ type: z.literal('chromeSetup') }).strict(),
+  z
+    .object({
+      type: z.literal('chromeNewTab'),
+      connectionId: id,
+      url: z.string().min(1).max(4096).optional(),
+    })
+    .strict(),
+  ...(['applicationRefresh', 'applicationInstall'] as const).map((type) =>
+    z.object({ type: z.literal(type) }).strict(),
+  ),
+  ...(['applicationOpen', 'applicationReveal'] as const).map((type) =>
+    z.object({ type: z.literal(type), id }).strict(),
+  ),
   z.object({
     type: z.literal('browserNew'),
     projectId: id.optional(),
@@ -208,6 +234,26 @@ export const actionSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('browserOpenExternal'), tabId: id }).strict(),
   z.object({ type: z.literal('browserTab'), tabId: id, input: browserInput }),
+  z.object({ type: z.literal('browserDownloadReveal'), tabId: id, downloadId: id }).strict(),
+  z
+    .object({
+      type: z.literal('browserDownloadControl'),
+      tabId: id,
+      downloadId: id,
+      operation: z.enum(['pause', 'resume', 'cancel']),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('browserPermission'),
+      tabId: id,
+      permissionId: id,
+      allow: z.boolean(),
+    })
+    .strict(),
+  ...(['browserPick', 'browserCancelPick'] as const).map((type) =>
+    z.object({ type: z.literal(type), tabId: id }).strict(),
+  ),
   z.object({
     type: z.literal('browserPresent'),
     sessionId: id.optional(),
@@ -413,14 +459,38 @@ export function cleanEnv(source: NodeJS.ProcessEnv = process.env): Record<string
     'SSH_AUTH_SOCK',
   ])
     if (source[key]) env[key] = source[key]!;
+  // Finder supplies a minimal PATH. Include user-level package managers without
+  // sourcing shell startup files, inheriting API secrets or requiring installation.
+  const home = source.HOME;
   env.PATH = [
-    source.PATH ?? '',
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    '/usr/bin',
-    '/bin',
-    path.join(source.HOME ?? '', '/.local/bin'),
-  ].join(':');
+    ...new Set([
+      ...(source.PATH ?? '').split(path.delimiter).filter((entry) => path.isAbsolute(entry)),
+      ...(home
+        ? [
+            '.local/bin',
+            '.npm-global/bin',
+            '.npm/bin',
+            '.volta/bin',
+            '.asdf/shims',
+            '.local/share/mise/shims',
+            '.bun/bin',
+            '.cargo/bin',
+            'Library/pnpm',
+          ].map((directory) => path.join(home, directory))
+        : []),
+      ...[
+        source.NVM_BIN,
+        source.PNPM_HOME,
+        source.VOLTA_HOME && path.join(source.VOLTA_HOME, 'bin'),
+      ].filter((entry): entry is string => !!entry && path.isAbsolute(entry)),
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+    ]),
+  ].join(path.delimiter);
   env.TERM = 'xterm-256color';
   env.COLORTERM = 'truecolor';
   return env;

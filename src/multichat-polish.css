@@ -39,13 +39,6 @@
   min-height: 28px;
   border-radius: 7px;
 }
-.multichat-card-head .multichat-expand {
-  opacity: 0.45;
-}
-.multichat-card:hover .multichat-expand,
-.multichat-card:focus-within .multichat-expand {
-  opacity: 1;
-}
 .multichat-card-head .multichat-menu-trigger[aria-expanded='true'] {
   background: var(--tile-hover);
   color: var(--text);
@@ -87,12 +80,16 @@
   gap: 3px;
 }
 .multichat-supervision {
+  /* An open plan yields height before the conversation does. */
+  flex-shrink: 1;
+  min-height: 0;
   margin: 0 12px;
   padding: 0;
   border: 0;
   border-radius: 0;
 }
 .multichat-supervision-row {
+  flex-shrink: 0;
   min-height: 26px;
   gap: 6px;
 }
@@ -136,6 +133,7 @@
   color: var(--muted);
 }
 .multichat-plan-details {
+  min-height: 0;
   max-height: 160px;
   overflow: auto;
   border: 1px solid var(--line);
@@ -183,7 +181,15 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 0;
+  /* A few lines of context stay readable beside an open plan or a pending request,
+     instead of a half-faded sliver. The smallest cards still yield it all to the decision. */
+  min-height: clamp(0px, 100% - 180px, 56px);
+}
+/* The edge fade masks the scroller's own outline, so the focus ring sits on its frame. */
+.multichat-history:has(> .multichat-preview:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--rs);
 }
 .multichat-preview.compact-conversation {
   padding: 10px 16px;
@@ -501,4 +507,17 @@
   color: inherit;
   stroke: currentColor;
   flex-shrink: 0;
+}
+
+/* High contrast drops painted backgrounds: keep the status dots and plan progress visible. */
+@media (forced-colors: active) {
+  .multichat-summary i,
+  .multichat-plan-bar i {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .multichat-plan-bar {
+    forced-color-adjust: none;
+    background: GrayText;
+  }
 }

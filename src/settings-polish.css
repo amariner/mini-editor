@@ -669,3 +669,158 @@
   outline: 2px solid var(--text-2);
   outline-offset: 2px;
 }
+
+/* Review: swatches show the hue over the surface they tint; otherwise all read as grey. */
+.account-settings .account-color-palette button {
+  background-image: radial-gradient(circle, var(--swatch) 0 5px, transparent 5.5px);
+}
+.account-settings .account-identity {
+  overflow-wrap: anywhere;
+}
+.account-settings .token-settings .token-saving span {
+  color: var(--muted);
+}
+.account-settings .account-confirm {
+  display: grid;
+  gap: 10px;
+}
+.account-settings .account-confirm p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.account-settings .account-confirm > div:not(.modal-actions) {
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: var(--tile);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.account-settings .account-confirm .modal-actions {
+  margin-top: 4px;
+}
+/* One heading voice across the four tabs. */
+.account-settings .mcp-settings h3,
+.account-settings .style-editor h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.account-settings .network-settings fieldset {
+  margin: 0;
+}
+.account-settings .network-settings .error {
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+/* Same switch as «Modelo auto» instead of a bare checkbox. */
+.account-settings .interface-setting input[role='switch'] {
+  appearance: none;
+  width: 28px;
+  height: 16px;
+  flex: 0 0 28px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.account-settings .interface-setting input[role='switch']::before {
+  content: '';
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform var(--motion-fast);
+}
+.account-settings .interface-setting input[role='switch']:checked {
+  background: var(--text);
+}
+.account-settings .interface-setting input[role='switch']:checked::before {
+  transform: translateX(12px);
+  background: var(--bg);
+}
+.account-settings .interface-setting input[role='switch']:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+/* Small status text needs more contrast than the light-theme tokens give on paper. */
+@media (prefers-color-scheme: light) {
+  .account-settings .account-error,
+  .account-settings .mcp-error,
+  .account-settings .network-settings .error {
+    color: color-mix(in srgb, var(--danger) 80%, var(--text));
+  }
+  .account-settings .mcp-status-connected {
+    color: color-mix(in srgb, var(--ok) 60%, var(--text));
+  }
+  .account-settings .mcp-status-error,
+  .account-settings .mcp-status-needs-auth {
+    color: color-mix(in srgb, var(--warn) 55%, var(--text));
+  }
+}
+.account-settings .provider-model-row:last-child {
+  border-bottom: 0;
+}
+.account-settings .local-folder-label {
+  font-weight: inherit;
+}
+.style-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--tile);
+}
+.style-confirm span {
+  flex: 1 1 200px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.style-confirm button {
+  min-height: 30px;
+  font-size: 12px;
+}
+.account-settings .account-card > button {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.account-settings .freebuff-card {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.account-settings .freebuff-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.account-settings .freebuff-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.account-settings .freebuff-card p.muted {
+  font-size: 11px;
+}
+.account-settings .freebuff-card > button {
+  margin-top: 0;
+}
+/* Commands inside a sentence stay inline instead of breaking it into three lines. */
+.account-settings .account-card p code {
+  display: inline;
+  padding: 1px 5px;
+  border-radius: 4px;
+}

@@ -304,6 +304,11 @@ export function StyleEditor() {
   const [draft, setDraft] = useState<string>();
   const [naming, setNaming] = useState<string>();
   const [notice, setNotice] = useState<{ ok: boolean; text: string }>();
+  // Losing CSS that exists nowhere else asks first; named themes stay one click away.
+  const [confirming, setConfirming] = useState<'remove' | 'reset'>();
+  const removeButton = useRef<HTMLButtonElement>(null);
+  const resetButton = useRef<HTMLButtonElement>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const documentVersion = useRef(0);
   useEffect(() => {
     let alive = true;
@@ -336,10 +341,12 @@ export function StyleEditor() {
       setActive(activeTheme());
       setThemes(savedThemes());
       setDraft(undefined);
+      setConfirming(undefined);
     };
     window.addEventListener(STYLES_EVENT, sync);
     return () => {
       alive = false;
+      clearTimeout(noticeTimer.current);
       window.removeEventListener(STYLES_EVENT, sync);
     };
   }, []);
@@ -353,7 +360,9 @@ export function StyleEditor() {
   const custom = !!value.trim() && value.trim() !== (base ?? '').trim();
   const say = (ok: boolean, text: string) => {
     setNotice({ ok, text });
-    setTimeout(() => setNotice(undefined), 2600);
+    // A newer notice keeps its full time instead of inheriting the previous timer.
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(undefined), 2600);
   };
   const valid = (css: string) => {
     if (!css.trim() || ruleCount(css)) return true;
@@ -423,10 +432,59 @@ export function StyleEditor() {
     say(true, existing ? `Tema «${name}» sustituido.` : `Tema «${name}» guardado.`);
   };
   const remove = () => {
+    setConfirming(undefined);
     if (!own || !keepThemes(themes.filter((t) => t.id !== own.id))) return;
     resetStyles();
     say(true, `Tema «${own.name}» eliminado. Vuelven los estilos originales.`);
   };
+  const reset = () => {
+    setConfirming(undefined);
+    resetStyles();
+    say(true, 'Estilos originales restaurados.');
+  };
+  // Keyboard users return to the button that asked, or to its row when it is now disabled.
+  const closeConfirm = (kind: 'remove' | 'reset') => {
+    setConfirming(undefined);
+    requestAnimationFrame(() => {
+      const opener = (kind === 'remove' ? removeButton : resetButton).current;
+      if (opener && !opener.disabled) opener.focus();
+      else
+        opener?.parentElement?.querySelector<HTMLElement>('button:not(:disabled), select')?.focus();
+    });
+  };
+  const confirmBar = (kind: 'remove' | 'reset') =>
+    confirming === kind && (
+      <div
+        className="style-confirm"
+        role="group"
+        aria-label={kind === 'remove' ? 'Confirmar eliminación del tema' : 'Confirmar restablecer'}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            closeConfirm(kind);
+          }
+        }}
+      >
+        <span>
+          {kind === 'remove'
+            ? `¿Eliminar «${own?.name}»? Su CSS no se puede recuperar.`
+            : 'Se perderá el CSS que no hayas guardado como tema.'}
+        </span>
+        <button type="button" className="quiet" autoFocus onClick={() => closeConfirm(kind)}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={() => {
+            (kind === 'remove' ? remove : reset)();
+            closeConfirm(kind);
+          }}
+        >
+          {kind === 'remove' ? 'Eliminar tema' : 'Descartar estilos'}
+        </button>
+      </div>
+    );
   const status = notice && (
     <span className={`style-notice ${notice.ok ? '' : 'error'}`} role="status">
       {notice.ok && <Check size={12} />} {notice.text}
@@ -475,14 +533,16 @@ export function StyleEditor() {
           )}
         </select>
         <button
+          ref={removeButton}
           className="quiet"
           disabled={!own}
           title={own ? `Eliminar «${own.name}»` : 'Solo se pueden eliminar tus temas'}
-          onClick={remove}
+          onClick={() => setConfirming('remove')}
         >
           <Trash2 size={13} /> Eliminar
         </button>
       </div>
+      {confirmBar('remove')}
       <p className="muted">
         Elige un tema o copia el CSS del editor, modifícalo y pégalo aquí. Al guardar se aplica por
         encima de los estilos originales: cambia los valores en el propio texto o añade reglas con
@@ -534,6 +594,8 @@ export function StyleEditor() {
             <Save size={13} /> Guardar tema
           </button>
         </form>
+      ) : confirming === 'reset' ? (
+        confirmBar('reset')
       ) : (
         <div className="style-actions">
           <button
@@ -550,11 +612,12 @@ export function StyleEditor() {
           </button>
           {status}
           <button
+            ref={resetButton}
             className="quiet"
             disabled={!saved && !dirty}
             onClick={() => {
-              resetStyles();
-              say(true, 'Estilos originales restaurados.');
+              if (dirty || (saved && !activeName)) setConfirming('reset');
+              else reset();
             }}
           >
             <RotateCcw size={13} /> Restablecer

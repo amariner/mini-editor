@@ -21,6 +21,7 @@ import {
   Globe,
   Star,
   Cable,
+  AppWindow,
 } from 'lucide-react';
 import {
   defaultOptimization,
@@ -38,8 +39,17 @@ import { InterfaceSettings, useInterfacePreferences } from './interface-settings
 const McpSettings = lazy(() =>
   import('./mcp-settings').then((module) => ({ default: module.McpSettings })),
 );
-type SettingsTab = 'accounts' | 'interface' | 'network' | 'connections';
-const settingsTabs: SettingsTab[] = ['accounts', 'connections', 'interface', 'network'];
+const ApplicationsPanel = lazy(() =>
+  import('./applications-panel').then((module) => ({ default: module.ApplicationsPanel })),
+);
+type SettingsTab = 'accounts' | 'interface' | 'network' | 'connections' | 'applications';
+const settingsTabs: SettingsTab[] = [
+  'accounts',
+  'connections',
+  'applications',
+  'interface',
+  'network',
+];
 
 export function AccountsSettings({
   state,
@@ -128,9 +138,14 @@ export function AccountsSettings({
         className="modal account-settings"
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
+            // Escape belongs to the official login terminal (Claude Code menus, readline).
+            if ((event.target as HTMLElement).closest?.('.xterm')) return;
             event.stopPropagation();
             if (confirmation) setConfirmation(undefined);
-            else close();
+            else if (adding && (event.target as HTMLElement).closest?.('.add-account-form')) {
+              setAdding(false);
+              document.querySelector<HTMLElement>('[data-add-account]')?.focus();
+            } else close();
           }
         }}
         role="dialog"
@@ -179,6 +194,8 @@ export function AccountsSettings({
                   <Cable size={15} aria-hidden="true" />
                 ) : id === 'interface' ? (
                   <Palette size={15} aria-hidden="true" />
+                ) : id === 'applications' ? (
+                  <AppWindow size={15} aria-hidden="true" />
                 ) : (
                   <Globe size={15} aria-hidden="true" />
                 )}
@@ -188,10 +205,34 @@ export function AccountsSettings({
                     ? 'Conexiones'
                     : id === 'interface'
                       ? 'Interfaz'
-                      : 'Red'}
+                      : id === 'applications'
+                        ? 'Aplicaciones'
+                        : 'Red'}
               </button>
             ))}
           </div>
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-applications"
+          aria-labelledby="settings-tab-applications"
+          hidden={tab !== 'applications'}
+        >
+          {tab === 'applications' && (
+            <Suspense
+              fallback={
+                <p className="muted" role="status">
+                  Buscando aplicaciones…
+                </p>
+              }
+            >
+              <ApplicationsPanel
+                snapshot={state.applications}
+                compatible={compatible}
+                run={runLocal}
+              />
+            </Suspense>
+          )}
         </div>
         <div
           role="tabpanel"
@@ -248,9 +289,11 @@ export function AccountsSettings({
           <div className="accounts-section-heading">
             <h3>Cuentas</h3>
             <button
+              data-add-account
               disabled={!compatible || creating}
               onClick={() => setAdding((v) => !v)}
               aria-label="Añadir cuenta"
+              aria-expanded={adding}
             >
               <Plus size={14} /> Añadir cuenta
             </button>
@@ -284,6 +327,7 @@ export function AccountsSettings({
               <label>
                 Proveedor
                 <select
+                  autoFocus
                   aria-label="Proveedor de la nueva cuenta"
                   value={newKind}
                   onChange={(e) => setNewKind(e.target.value as ProviderKind | 'freebuff')}
@@ -313,7 +357,13 @@ export function AccountsSettings({
                 <button type="submit" disabled={creating}>
                   {newKind === 'freebuff' ? 'Añadir Freebuff' : 'Crear perfil'}
                 </button>
-                <button type="button" onClick={() => setAdding(false)}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdding(false);
+                    document.querySelector<HTMLElement>('[data-add-account]')?.focus();
+                  }}
+                >
                   Cancelar
                 </button>
               </div>
@@ -384,8 +434,11 @@ export function AccountsSettings({
                           <Star
                             className="account-default-mark"
                             size={11}
+                            role="img"
                             aria-label="Cuenta predeterminada"
-                          />
+                          >
+                            <title>Predeterminada para chats nuevos</title>
+                          </Star>
                         )}
                       </strong>
                       <small>
@@ -397,7 +450,10 @@ export function AccountsSettings({
                       </small>
                     </div>
                     <div className="account-heading-actions">
-                      <span className={`account-status ${account?.status ?? ''}`} title={status}>
+                      <span
+                        className={`account-status ${busy ? 'busy' : (account?.status ?? '')}`}
+                        title={status}
+                      >
                         {status}
                       </span>
                       {p.kind !== 'openrouter' && p.kind !== 'local' && (
@@ -519,7 +575,12 @@ export function AccountsSettings({
                               (colorDrafts[p.id] ?? p.color ?? suggestedAccountColor(p.id)) ===
                               entry.color
                             }
-                            style={{ backgroundColor: `var(--account-${entry.token})` }}
+                            style={
+                              {
+                                backgroundColor: `var(--account-${entry.token})`,
+                                '--swatch': entry.color,
+                              } as React.CSSProperties
+                            }
                             disabled={!compatible || !!savingColor || busy === 'removing'}
                             onClick={() => setColorDrafts((v) => ({ ...v, [p.id]: entry.color }))}
                           />
@@ -582,6 +643,7 @@ export function AccountsSettings({
                       >
                         <label className="token-saving" title="Ahorro de tokens">
                           <Leaf size={13} aria-hidden="true" />
+                          <span>Ahorro</span>
                           <select
                             aria-label="Ahorro de tokens"
                             value={optimization.level}
@@ -754,7 +816,7 @@ export function AccountsSettings({
             </div>
           )}
           {state.freebuffEnabled && (
-            <section className="account-card" aria-label="Freebuff CLI">
+            <section className="account-card freebuff-card" aria-label="Freebuff CLI">
               <h3>Freebuff · terminal oficial</h3>
               <p>
                 Inicia sesión y elige los modelos desde Freebuff. Se abre en el proyecto

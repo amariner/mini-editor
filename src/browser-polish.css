@@ -5,12 +5,200 @@
   min-width: 0;
   gap: 0;
 }
+.app .chrome-connections {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.app .chrome-surface-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 31px;
+  padding: 3px 8px;
+}
+.app .chrome-surface-bar > span {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-2);
+}
+.app .chrome-surface-bar svg,
+.app .chrome-connection-actions svg {
+  flex-shrink: 0;
+}
+.app .chrome-surface-bar button,
+.app .chrome-connection-details button,
+.app .chrome-page-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.app .chrome-surface-bar button {
+  background: transparent;
+}
+.app .chrome-surface-bar button:is(:hover, .on) {
+  background: var(--tile);
+}
+.app .chrome-connection-details {
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px 9px 9px;
+}
+.app .chrome-connect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.app .chrome-connect-actions button {
+  min-height: 29px;
+  border: 1px solid var(--line);
+  background: var(--tile);
+}
+.app .chrome-connect-help {
+  margin: 7px 0 4px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.app .chrome-connection-details .chrome-setup-link {
+  padding-inline: 0;
+  color: var(--accent);
+  background: transparent;
+}
+.app .chrome-setup-hint {
+  display: block;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.app .chrome-connection-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.app .chrome-connection-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.app .chrome-connection-list li:last-child {
+  padding-bottom: 0;
+}
+.app .chrome-connection-label {
+  display: flex;
+  flex: 1 1 140px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.app .chrome-connection-label strong {
+  font-weight: 550;
+}
+.app .chrome-connection-label p {
+  margin: 2px 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.app .chrome-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+}
+.app .chrome-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.app .chrome-status.connected i {
+  background: var(--accent);
+}
+.app .chrome-status.error i {
+  background: var(--danger);
+}
+.app .chrome-connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.app .chrome-page-card {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 26px 20px;
+  gap: 8px;
+  text-align: center;
+}
+.app .chrome-page-card > strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 550;
+}
+.app .chrome-page-card > p {
+  max-width: 360px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.app .chrome-page-address {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.app .chrome-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.app .chrome-page-actions button {
+  min-height: 30px;
+  padding-inline: 9px;
+  background: var(--tile);
+}
+.app .chrome-page-card figure {
+  width: 100%;
+  margin: 10px 0 0;
+}
+.app .chrome-page-card img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.app .chrome-page-card figcaption {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 10px;
+}
 .app .browser-pane .browser-toolbar {
   gap: 5px;
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
-  flex: 0 0 34px;
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+  flex: 0 0 36px;
   padding: 0 7px;
   border-bottom-color: color-mix(in srgb, var(--line) 65%, transparent);
   animation: browser-chrome-in 160ms ease-out both;
@@ -77,9 +265,45 @@
 .app .browser-pane .browser-address button:hover {
   opacity: 1;
 }
-.app .browser-options-trigger.on {
+.app .browser-options-trigger.on,
+.app .browser-chrome-trigger.on {
   background: var(--tile);
   color: var(--text);
+}
+.app .browser-picker-trigger.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.app .browser-agent-status {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-height: 27px;
+  padding: 4px 10px;
+  color: var(--ui-text-color, var(--text-2));
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.app .browser-agent-status svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.app .browser-agent-status span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app .browser-agent-status.is-active {
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+}
+.app .browser-agent-status button {
+  font-size: 11px;
+  min-height: 23px;
+  padding: 2px 6px;
 }
 .app .browser-options {
   display: grid;
@@ -148,6 +372,7 @@
   border-bottom: 0;
 }
 .app .browser-pane .browser-tabs {
+  position: relative;
   gap: 3px;
   align-items: center;
   scrollbar-width: none;
@@ -199,6 +424,10 @@
 }
 .app .browser-pane .browser-tab-close:hover {
   background: var(--tile-hover);
+}
+/* The tab strip scrolls (and clips): keep the keyboard ring inside each tab. */
+.app .browser-pane .browser-tab > button:focus-visible {
+  outline-offset: -2px;
 }
 .app .browser-pane .browser-new-tab {
   width: 27px;
@@ -286,6 +515,105 @@
     opacity: 1;
   }
 }
+.app .browser-site-request {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 5px 7px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 12px;
+}
+.app .browser-site-request strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.app .browser-site-request p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  max-height: 100px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.app .browser-request-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.app .browser-request-actions button {
+  min-height: 27px;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+.app .browser-downloads {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+.app .browser-downloads-toggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 7px;
+  padding: 6px 10px;
+  min-height: 29px;
+  text-align: left;
+  font-size: 11px;
+  background: transparent;
+}
+.app .browser-downloads-toggle span:first-of-type {
+  flex: 1;
+}
+.app .browser-downloads ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 6px;
+  max-height: 165px;
+  overflow-y: auto;
+}
+.app .browser-downloads li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 3px;
+  border-top: 1px solid var(--line);
+}
+.app .browser-download-info {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.app .browser-download-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.app .browser-download-info span {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.app .browser-download-info progress {
+  width: 100%;
+  height: 4px;
+  accent-color: var(--accent);
+}
+.app .browser-download-actions {
+  display: flex;
+  gap: 2px;
+}
+.app .browser-download-actions button {
+  width: 25px;
+  min-width: 25px;
+  min-height: 25px;
+  padding: 4px;
+}
 @keyframes browser-loading {
   from {
     transform: translateX(-110%);
@@ -316,6 +644,12 @@
   }
   .app .browser-options-content button {
     padding-inline: 6px;
+  }
+}
+@media (forced-colors: active) {
+  .app .browser-pane .browser-tab.selected {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

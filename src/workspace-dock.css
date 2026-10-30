@@ -5,6 +5,7 @@
   height: 100%;
   min-height: 0;
   background: var(--bg);
+  container: dock / inline-size;
 }
 .app .dock-header {
   display: flex;
@@ -17,6 +18,7 @@
   color: var(--text-2);
 }
 .app .dock-tabs {
+  position: relative;
   display: flex;
   gap: 3px;
   min-width: 0;
@@ -66,6 +68,10 @@
 .app .dock-tab button:hover {
   background: var(--tile);
 }
+/* The tab strip scrolls (and clips): keep the keyboard ring inside each tab. */
+.app .dock-tab > button:focus-visible {
+  outline-offset: -2px;
+}
 .app .dock-content {
   display: flex;
   flex-direction: column;
@@ -91,7 +97,7 @@
   display: none;
 }
 .app .dock-content .terminal-panel-heading {
-  min-height: 32px;
+  min-height: 36px;
   padding: 4px 10px;
   background: none;
   border: 0;
@@ -149,10 +155,26 @@
   padding: 0;
   overflow: hidden;
 }
-.app .workspace-panel-details > .git-context {
-  margin: 12px;
+.app .workspace-panel-details > .git-context,
+.app .workspace-panel-details > div > .git-context {
+  margin: 0 0 12px;
 }
-@media (max-width: 1050px) {
+/* In the details column the Git summary has the full width and the workflow
+   scrolls with the details, never inside a second scrolling box. */
+.app .workspace-panel-details .git-summary,
+.app .workspace-panel-details .git-workflow {
+  margin: 0;
+}
+.app .workspace-panel-details .git-workflow {
+  max-height: none;
+  margin-top: 4px;
+}
+.app .workspace-panel-details .git-summary .git-summary-project {
+  flex-shrink: 0;
+  max-width: 30%;
+}
+/* Tabs collapse by the dock's own width, not the window's: the splitter decides. */
+@container dock (max-width: 640px) {
   .app .dock-tab:not(.selected) [role='tab'] span {
     display: none;
   }
@@ -211,4 +233,10 @@
 .app .dock-launcher button:focus-visible {
   outline: 2px solid var(--focus, var(--muted));
   outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .app .dock-tab.selected {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
 }

@@ -30,6 +30,16 @@ export function LocalAccountSettings({
   };
   useEffect(() => {
     let disposed = false;
+    void refresh().catch((e) => {
+      if (!disposed) setError(e.message);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [profile.id]);
+  const polling = !!activeAction || !!state?.busy;
+  useEffect(() => {
+    let disposed = false;
     const poll = async () => {
       try {
         const status = await run({ type: 'localStatus', profile: profile.id });
@@ -38,15 +48,13 @@ export function LocalAccountSettings({
         if (!disposed) setError((e as Error).message);
       }
     };
-    void refresh().catch((e) => {
-      if (!disposed) setError(e.message);
-    });
-    const timer = setInterval(() => void poll(), 1500);
+    // Progress needs a fast pace; idle checks only notice work started in another window.
+    const timer = setInterval(() => void poll(), polling ? 1500 : 6000);
     return () => {
       disposed = true;
       clearInterval(timer);
     };
-  }, [profile.id]);
+  }, [profile.id, polling]);
   useEffect(() => {
     if (cancelling && !activeAction && state && !state.busy) {
       setNotice('Descarga cancelada.');
@@ -129,8 +137,8 @@ export function LocalAccountSettings({
           ? 'Puede listar y leer el proyecto. Las escrituras, los comandos y las lecturas externas piden aprobación en el chat.'
           : 'Solo conversación: no puede leer ni escribir archivos. Activa las herramientas para trabajar en la carpeta del proyecto con un modelo compatible.'}
       </p>
-      <label>Carpeta de modelos</label>
-      <p className="muted" style={{ overflowWrap: 'anywhere' }}>
+      <strong className="local-folder-label">Carpeta de modelos</strong>
+      <p className="muted" style={{ overflowWrap: 'anywhere' }} title={state?.directory}>
         {state?.directory ?? 'Selecciona dónde guardar tus modelos.'}
       </p>
       <p className="muted">Detecta los GGUF de esta carpeta y sus subcarpetas sin copiarlos.</p>

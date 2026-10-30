@@ -61,7 +61,11 @@ try {
   // Open the same compiled code with the development Electron runtime simultaneously.
   development = await _electron.launch({
     executablePath: electron,
-    args: [payload, '--use-mock-keychain', `--user-data-dir=${path.join(temporary, 'development')}`],
+    args: [
+      payload,
+      '--use-mock-keychain',
+      `--user-data-dir=${path.join(temporary, 'development')}`,
+    ],
     cwd: temporary,
     env: {
       ...isolatedEnv,
@@ -77,7 +81,11 @@ try {
   await page.evaluate(() => window.desk.invoke({ type: 'snapshot' }));
 
   // A second installed instance must exit, while development keeps its independent lock.
-  const second = spawn(executable, ['--use-mock-keychain', `--user-data-dir=${env.AGENT_DESK_DATA_DIR}`], { cwd: temporary, env, stdio: 'ignore' });
+  const second = spawn(
+    executable,
+    ['--use-mock-keychain', `--user-data-dir=${env.AGENT_DESK_DATA_DIR}`],
+    { cwd: temporary, env, stdio: 'ignore' },
+  );
   const timeout = setTimeout(() => second.kill(), 15000);
   try {
     assert.equal((await once(second, 'exit'))[0], 0);
@@ -121,12 +129,18 @@ try {
       '--input-type=module',
       '-e',
       [
+        'import assert from "node:assert/strict";',
         'import { createRequire } from "node:module";',
         'await import(process.argv[1]);',
         'const requireApp = createRequire(process.argv[2]);',
         // Loading the bindings does not read credentials or open a terminal.
         'requireApp("@github/keytar"); requireApp("@lydell/node-pty");',
-        'console.log("SDK y módulos nativos OK");',
+        // Resolve from the distributed payload without launching or downloading a browser.
+        'const { chromium } = requireApp("playwright-core");',
+        'assert.equal(chromium.name(), "chromium");',
+        'assert.equal(typeof chromium.connectOverCDP, "function");',
+        'assert.equal(typeof chromium.launchPersistentContext, "function");',
+        'console.log("SDK, módulos nativos y Playwright Chromium OK");',
       ].join('\n'),
       new URL('file://' + path.join(payload, 'node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs'))
         .href,
@@ -164,7 +178,7 @@ try {
   await fs.mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/package-mac.png' });
   console.log(
-    `Paquete ${details.version} OK: renderer, SDK, terminal, Node ${nodeVersion}, CLI y convivencia con desarrollo.`,
+    `Paquete ${details.version} OK: renderer, SDK, Playwright Chromium, terminal, Node ${nodeVersion}, CLI y convivencia con desarrollo.`,
   );
 } finally {
   await development?.close();

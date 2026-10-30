@@ -57,6 +57,7 @@ export async function captureBrowserContext(
   if (before.url !== after.url || before.title !== after.title || before.text !== after.text)
     throw new Error('La página cambió durante la captura. Vuelve a añadirla al chat.');
   return {
+    pageUrl: before.url,
     text: browserContextText(before),
     image: { name: 'pagina-navegador.png', data: shot.image },
   };

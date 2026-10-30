@@ -267,23 +267,26 @@ export function ProviderAccountSettings({
             />
             Mostrar solo modelos gratuitos
           </label>
-          <label hidden={openCode}>
-            Uso
-            <select
-              aria-label={`Uso de los modelos de ${profile.name}`}
-              value={category}
-              onChange={(e) => {
-                setCategory(e.target.value);
-                void load(e.target.value);
-              }}
-            >
-              {categories.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* Conditional: .provider-settings label sets display, which overrides [hidden]. */}
+          {!openCode && (
+            <label>
+              Uso
+              <select
+                aria-label={`Uso de los modelos de ${profile.name}`}
+                value={category}
+                onChange={(e) => {
+                  setCategory(e.target.value);
+                  void load(e.target.value);
+                }}
+              >
+                {categories.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <input
             aria-label={`Buscar modelos de ${profile.name}`}
             placeholder="Buscar modelo…"

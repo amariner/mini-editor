@@ -66,3 +66,26 @@ test('un cierre sin confirmar libera sus listeners y permite un reintento indepe
   t.mock.timers.tick(10000);
   assert.deepEqual(signals, ['SIGTERM', 'SIGKILL', 'SIGTERM']);
 });
+
+test('una tubería rota rechaza llamadas inmediatamente sin dar el proceso por cerrado', async () => {
+  const { rpc, child, signals } = await fixture();
+  const waiting = assert.rejects(rpc.call('account/read'), /entrada del CLI/);
+  child.stdin.emit('error', new Error('EPIPE'));
+  await waiting;
+  assert.equal(rpc.closed, false, 'a broken pipe does not release the process/project lock');
+  await assert.rejects(rpc.call('new-work'), /entrada del CLI/);
+  const stopped = rpc.stop();
+  assert.deepEqual(signals, ['SIGTERM']);
+  child.emit('close', 0);
+  await stopped;
+  assert.equal(rpc.closed, true);
+});
+
+test('el final de stdout no deja solicitudes pendientes hasta el timeout', async () => {
+  const { rpc, child } = await fixture();
+  const waiting = assert.rejects(rpc.call('initialize'), /cerró su conexión/);
+  child.stdout.emit('end');
+  await waiting;
+  assert.equal(rpc.closed, false);
+  child.emit('close', 1);
+});

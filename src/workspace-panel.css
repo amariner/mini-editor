@@ -71,13 +71,15 @@
   min-height: 0;
 }
 .workspace-panel-toolbar {
-  min-height: 44px;
+  min-height: 36px;
+  padding-block: 4px;
   font-size: 11px;
 }
 .workspace-panel-toolbar > .workspace-panel-icon {
   margin-left: auto;
 }
 .workspace-panel-toolbar select {
+  flex: 0 0 auto;
   width: auto;
   min-width: 0;
   max-width: 65%;
@@ -97,6 +99,7 @@
   white-space: nowrap;
 }
 .workspace-panel-branch {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -129,6 +132,9 @@
   border-radius: var(--rx);
   color: var(--muted);
 }
+.workspace-file-search:focus-within {
+  border-color: var(--field-focus);
+}
 .workspace-file-search input {
   width: 100%;
   min-width: 0;
@@ -136,6 +142,8 @@
   border: 0;
   background: transparent;
   font-size: 11px;
+  outline: none;
+  box-shadow: none;
 }
 .workspace-file-search > svg {
   flex-shrink: 0;
@@ -181,10 +189,17 @@
   text-overflow: ellipsis;
 }
 .workspace-file-row em {
+  flex-shrink: 0;
   font-style: normal;
   font-family: var(--mono);
   color: var(--muted);
   font-size: 10px;
+}
+.workspace-file-row em.added {
+  color: var(--add-text);
+}
+.workspace-file-row em.deleted {
+  color: var(--del-text);
 }
 .workspace-panel .workspace-file-row.selected {
   background: var(--tile);
@@ -195,6 +210,9 @@
 }
 .workspace-panel .workspace-file-row.conflict em {
   color: var(--danger);
+}
+.workspace-panel .workspace-file-row > svg {
+  flex-shrink: 0;
 }
 .workspace-panel .workspace-directory-up {
   justify-content: flex-start;
@@ -229,13 +247,20 @@
   min-height: 38px;
   font-size: 11px;
 }
-.workspace-file-heading > span {
+.workspace-path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
-  flex: 1;
+  text-align: left;
   font-family: var(--mono);
+}
+.workspace-path span {
+  color: var(--muted);
+}
+.workspace-path strong {
+  font-weight: 500;
 }
 .workspace-file-heading > div {
   display: flex;
@@ -265,7 +290,8 @@
 .workspace-code td {
   padding: 0;
   border: 0;
-  vertical-align: top;
+  /* Smaller line numbers share the code's baseline. */
+  vertical-align: baseline;
 }
 .workspace-code .workspace-line-number {
   min-width: 37px;
@@ -396,12 +422,9 @@
   .workspace-file-list {
     order: 1;
     flex: 0 0 auto;
-    max-height: 180px;
+    max-height: clamp(150px, 36%, 300px);
     border-left: 0;
     border-bottom: 1px solid var(--line);
-  }
-  .workspace-file-rows {
-    max-height: 125px;
   }
   .workspace-file-viewer {
     order: 2;
@@ -427,5 +450,13 @@
 @media (prefers-reduced-motion: reduce) {
   .workspace-panel-spinner {
     animation: none;
+  }
+}
+/* High contrast drops background fills: selection needs a real outline. */
+@media (forced-colors: active) {
+  .workspace-panel .workspace-file-row.selected,
+  .workspace-panel-tabs button[aria-selected='true'] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
   }
 }

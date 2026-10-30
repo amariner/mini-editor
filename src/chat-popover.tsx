@@ -187,7 +187,7 @@ export function Popover({
         ref={trigger}
         disabled={disabled}
         className={`chip-btn ${open || active ? 'on' : ''} ${text || showLabel ? 'labeled' : ''}`}
-        title={`${title ?? label} · ${label}`}
+        title={title && title !== label ? `${title} · ${label}` : label}
         aria-label={title ?? label}
         aria-description={label !== title ? label : undefined}
         aria-expanded={open}

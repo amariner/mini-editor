@@ -349,11 +349,16 @@ function NewChatPicker({
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
-    const outside = (e: PointerEvent) => {
+    // Clicking or tabbing away closes it, like the card menu.
+    const outside = (e: Event) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
+    document.addEventListener('focusin', outside);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('focusin', outside);
+    };
   }, [open]);
   const project = state.projects.some((p) => p.id === projectId)
     ? projectId
@@ -457,11 +462,18 @@ function LayoutPicker({
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
-    const outside = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    // Clicking or tabbing away closes it, like the card menu.
+    const outside = (e: Event) => {
+      if (root.current?.contains(e.target as Node)) return;
+      setOpen(false);
+      setHover(undefined);
     };
     document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
+    document.addEventListener('focusin', outside);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('focusin', outside);
+    };
   }, [open]);
   const close = () => {
     setOpen(false);
@@ -760,7 +772,12 @@ function Card({
           e.preventDefault();
           e.stopPropagation();
           if (enabled && !floating) void attach(Array.from(e.dataTransfer.files));
-          else setLocalError('Espera a que el chat esté disponible para adjuntar archivos.');
+          else
+            setLocalError(
+              floating
+                ? 'Este chat está en una ventana flotante: adjunta los archivos allí.'
+                : 'Espera a que el chat esté disponible para adjuntar archivos.',
+            );
         }}
       >
         {/* The title drags within the grid to reorder, or outside it to detach. */}
@@ -937,7 +954,9 @@ function Card({
             tabIndex={0}
             aria-label={`Conversación de ${session.title}`}
             onWheel={(e) => {
-              if (e.deltaY < 0) {
+              // A short conversation has nothing above: never offer a jump back to it.
+              const el = e.currentTarget;
+              if (e.deltaY < 0 && el.scrollHeight - el.clientHeight > 1) {
                 following.current = false;
                 setShowLatest(true);
               }

@@ -19,8 +19,11 @@ const server = http.createServer((req, res) => {
     a{color:inherit}input{padding:9px;border:1px solid #ddd;border-radius:8px}
   </style><small>VISTA PREVIA · PRODUCTO</small><h1>El trabajo, en su sitio.</h1>
   <article><p>Una página real para comprobar el navegador integrado.</p>
-  <input aria-label="Nota" placeholder="Una idea para el proyecto"><button>Guardar</button></article>
-  <a href="/next">Siguiente página</a><p>Ruta: ${req.url}</p></html>`);
+  <input aria-label="Nota" placeholder="Una idea para el proyecto"><button id="save" onclick="window.saved=(window.saved||0)+1">Guardar</button></article>
+  <a href="/next">Siguiente página</a><p>Ruta: ${req.url}</p>
+  <iframe id="foreign-frame" title="Marco externo" sandbox="allow-scripts" srcdoc="<body style='margin:0'><button style='width:100vw;height:100vh' onclick=parent.postMessage('frame-click','*')>Control externo</button>"></iframe>
+  <dialog id="modal"><button id="modal-save" onclick="window.saved=(window.saved||0)+1">Confirmar modal</button></dialog>
+  <script>addEventListener('message',e=>{if(e.data==='frame-click')window.saved=(window.saved||0)+1})</script></html>`);
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
@@ -105,7 +108,7 @@ try {
     '1',
     'El estado vacío debe conservar el contraste del texto y sus acciones',
   );
-  assert.equal(await page.locator('.browser-toolbar button').count(), 6);
+  assert.equal(await page.locator('.browser-toolbar button').count(), 8);
   assert.equal(await page.getByRole('combobox', { name: 'Zoom del navegador' }).count(), 0);
   await capture('browser-refined-empty');
   await page.getByRole('button', { name: 'Cerrar pestaña Nueva página', exact: true }).click();
@@ -143,8 +146,10 @@ try {
   assert.ok(draft.startsWith('Conserva el diseño de la cabecera.\n\n'));
   assert.ok(draft.includes('El trabajo, en su sitio.'));
   assert.ok(draft.includes(origin));
-  await until(async () => composer.evaluate((element) => element === document.activeElement),
-    'La captura debe devolver el foco al borrador');
+  await until(
+    async () => composer.evaluate((element) => element === document.activeElement),
+    'La captura debe devolver el foco al borrador',
+  );
   assert.deepEqual(
     (await snap()).sessions.find((s) => s.id === tab.sessionId).messages,
     messagesBefore,
@@ -157,6 +162,115 @@ try {
   assert.equal(await options.evaluate((element) => element === document.activeElement), true);
   assert.equal(await page.getByRole('combobox', { name: 'Zoom del navegador' }).count(), 0);
   await until(geometryMatches);
+
+  // A real native click chooses evidence without activating the website button.
+  const picker = page.getByRole('button', { name: 'Seleccionar elemento', exact: true });
+  const guestAction = (action) =>
+    app.evaluate(
+      async ({ BrowserWindow }, { origin, action }) => {
+        const guest = BrowserWindow.getAllWindows()[0].contentView.children.find(
+          (view) => 'webContents' in view && view.webContents.getURL().startsWith(origin),
+        );
+        const wc = guest.webContents;
+        if (action === 'state')
+          return wc.executeJavaScript(
+            `({picking:!!document.querySelector('[data-agent-desk-picker]'),saved:window.saved||0})`,
+          );
+        if (action === 'modal')
+          return wc.executeJavaScript(`document.querySelector('#modal').showModal()`);
+        if (action === 'close-modal')
+          return wc.executeJavaScript(`document.querySelector('#modal').close()`);
+        if (action === 'capture') return (await wc.capturePage()).toPNG().toString('base64');
+        if (action === 'escape') {
+          wc.focus();
+          wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+          wc.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+          return;
+        }
+        const selector =
+          action === 'frame-click'
+            ? '#foreign-frame'
+            : action === 'modal-click'
+              ? '#modal-save'
+              : '#save';
+        const point = await wc.executeJavaScript(
+          `(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+        );
+        const attached = wc.debugger.isAttached();
+        if (!attached) wc.debugger.attach('1.3');
+        try {
+          await wc.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mouseMoved',
+            ...point,
+          });
+          if (action === 'click' || action === 'frame-click' || action === 'modal-click') {
+            await wc.debugger.sendCommand('Input.dispatchMouseEvent', {
+              type: 'mousePressed',
+              button: 'left',
+              clickCount: 1,
+              ...point,
+            });
+            await wc.debugger.sendCommand('Input.dispatchMouseEvent', {
+              type: 'mouseReleased',
+              button: 'left',
+              clickCount: 1,
+              ...point,
+            });
+          }
+        } finally {
+          if (!attached) wc.debugger.detach();
+        }
+      },
+      { origin, action },
+    );
+  const draftBeforePick = await composer.inputValue();
+  await picker.click();
+  await until(async () => (await guestAction('state')).picking);
+  await until(geometryMatches);
+  await guestAction('move');
+  await capture('browser-element-picker');
+  await fs.writeFile(
+    'artifacts/browser-element-picker-page.png',
+    Buffer.from(await guestAction('capture'), 'base64'),
+  );
+  await guestAction('click');
+  await until(async () => (await composer.inputValue()).includes('Selector orientativo: "#save"'));
+  assert.ok((await composer.inputValue()).startsWith(draftBeforePick));
+  assert.equal((await guestAction('state')).saved, 0, 'Seleccionar no debe activar el botón web');
+  assert.equal((await guestAction('state')).picking, false);
+  assert.deepEqual(
+    (await snap()).sessions.find((s) => s.id === tab.sessionId).messages,
+    messagesBefore,
+  );
+  await picker.click();
+  await until(async () => (await guestAction('state')).picking);
+  await guestAction('escape');
+  await until(async () => !(await guestAction('state')).picking);
+  await until(async () => (await picker.getAttribute('aria-pressed')) === 'false');
+  await picker.click();
+  await until(async () => (await guestAction('state')).picking);
+  await guestAction('frame-click');
+  await until(async () =>
+    (await composer.inputValue()).includes('Selector orientativo: "#foreign-frame"'),
+  );
+  assert.equal(
+    (await guestAction('state')).saved,
+    0,
+    'Seleccionar un marco externo nunca activa su contenido',
+  );
+  await guestAction('modal');
+  await picker.click();
+  await until(async () => (await guestAction('state')).picking);
+  await guestAction('modal-click');
+  await until(async () =>
+    (await composer.inputValue()).includes('Selector orientativo: "#modal-save"'),
+  );
+  assert.equal(
+    (await guestAction('state')).saved,
+    0,
+    'Seleccionar dentro de un diálogo no confirma la acción',
+  );
+  await guestAction('close-modal');
 
   // The options trigger retains keyboard focus when opening. Escape must work
   // before the user tabs into the secondary controls as well as inside them.
@@ -268,17 +382,26 @@ try {
     projectId: previous.selectedProject,
     profile: previous.profiles[0].id,
   });
-  await until(async () => !(await page.locator('.workspace').getAttribute('data-tools-open') === 'true'),
-    'Un chat nuevo debe comenzar sin paneles heredados');
+  await until(
+    async () => !((await page.locator('.workspace').getAttribute('data-tools-open')) === 'true'),
+    'Un chat nuevo debe comenzar sin paneles heredados',
+  );
   assert.equal(await guestGeometry(), undefined, 'La página nativa también debe ocultarse');
   // Explicitly opening the browser in this empty chat remains possible.
   await call({ type: 'browserNew', projectId: previous.selectedProject, url: origin + '/fresh' });
-  await until(async () => await page.locator('.workspace').getAttribute('data-tools-open') === 'true');
+  await until(
+    async () => (await page.locator('.workspace').getAttribute('data-tools-open')) === 'true',
+  );
   await until(geometryMatches);
-  if (await options.getAttribute('aria-expanded') === 'true') await options.click();
+  if ((await options.getAttribute('aria-expanded')) === 'true') await options.click();
   await until(geometryMatches);
-  const chromeHeight = await page.locator('.browser-viewport').evaluate((element) =>
-    element.getBoundingClientRect().top - element.closest('.workspace-dock').getBoundingClientRect().top);
+  const chromeHeight = await page
+    .locator('.browser-viewport')
+    .evaluate(
+      (element) =>
+        element.getBoundingClientRect().top -
+        element.closest('.workspace-dock').getBoundingClientRect().top,
+    );
   assert.ok(chromeHeight <= 110, `Cabecera demasiado alta: ${chromeHeight}px`);
   assert.deepEqual(errors, []);
   console.log(

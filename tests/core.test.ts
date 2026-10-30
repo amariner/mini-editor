@@ -54,6 +54,35 @@ test('perfiles aislados sin heredar secretos ni proveedores', () => {
   ]);
   assert.deepEqual(claudeArgs({ reference: 'uuid' }).slice(0, 2), ['--session-id', 'uuid']);
 });
+test('CLI encuentra instalaciones de usuario sin PATH vacío, rutas relativas ni duplicados', () => {
+  const env = cleanEnv({
+    HOME: '/Users/fixture',
+    PATH: ':/bin:relative:/bin:',
+    NVM_BIN: '/Users/fixture/.nvm/versions/node/v24/bin',
+    PNPM_HOME: '/Users/fixture/tools/pnpm',
+    VOLTA_HOME: '/Users/fixture/tools/volta',
+  });
+  const entries = env.PATH.split(path.delimiter);
+  assert.ok(entries.every((entry) => path.isAbsolute(entry)));
+  assert.equal(new Set(entries).size, entries.length);
+  for (const directory of [
+    '.local/bin',
+    '.npm-global/bin',
+    '.volta/bin',
+    '.asdf/shims',
+    'Library/pnpm',
+    '.nvm/versions/node/v24/bin',
+    'tools/pnpm',
+    'tools/volta/bin',
+  ])
+    assert.ok(entries.includes(path.join('/Users/fixture', directory)));
+  assert.equal(env.NVM_BIN, undefined, 'hints contribute paths without leaking extra environment');
+  assert.ok(
+    cleanEnv({})
+      .PATH.split(path.delimiter)
+      .every((entry) => path.isAbsolute(entry)),
+  );
+});
 test('aprobaciones de un solo uso, permisos mínimos y preguntas completas', () => {
   assert.deepEqual(approvalResult('item/commandExecution/requestApproval', {}, 'accept'), {
     decision: 'accept',

@@ -49,10 +49,18 @@ export function WorkspaceDock({
   const root = useRef<HTMLDivElement>(null);
   const restoreTabFocus = useRef(false);
   useLayoutEffect(() => {
+    // A narrow dock scrolls its tabs: keep the active one visible without scrolling the page.
+    const strip = root.current?.querySelector<HTMLElement>('.dock-tabs');
+    const tab = strip?.querySelector<HTMLElement>('.dock-tab.selected');
+    if (strip && tab) {
+      if (tab.offsetLeft < strip.scrollLeft) strip.scrollLeft = tab.offsetLeft;
+      else if (tab.offsetLeft + tab.offsetWidth > strip.scrollLeft + strip.clientWidth)
+        strip.scrollLeft = tab.offsetLeft + tab.offsetWidth - strip.clientWidth;
+    }
     if (!restoreTabFocus.current) return;
     restoreTabFocus.current = false;
     root.current?.querySelector<HTMLButtonElement>('[role="tab"][tabindex="0"]')?.focus();
-  }, [tabs, active]);
+  }, [tabs, active, launcher]);
   return (
     <div className="workspace-dock" ref={root}>
       <header className="dock-header">

@@ -389,7 +389,12 @@ export function TeamIndicator({
       >
         <Users size={13} />
         <span>{compact ? (linked ? members.length : 0) + agents.length : label}</span>
-        {working > 0 && <i className="team-active" title={`${working} chats trabajando`} />}
+        {working > 0 && (
+          <i
+            className="team-active"
+            title={`${working} ${working === 1 ? 'chat trabajando' : 'chats trabajando'}`}
+          />
+        )}
       </button>
       <div
         id={id}

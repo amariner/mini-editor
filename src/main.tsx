@@ -13,6 +13,7 @@ import type { GitSnapshot } from './git-types';
 import { providerKind, providerNames, isCodex } from './shared';
 import { useInterfacePreferences } from './interface-settings';
 import { useModalFocus } from './modal-focus';
+import { useScrollOverflow } from './scroll-overflow';
 import React, {
   useDeferredValue,
   useEffect,
@@ -34,7 +35,6 @@ import {
   X,
   Terminal,
   MessageSquare,
-  Command,
   ShieldCheck,
   ExternalLink,
   RefreshCw,
@@ -65,6 +65,7 @@ import { useWorkspaceSplit } from './workspace-split';
 import { DeskMark, ProjectMark } from './project-mark';
 import { ChatStateMark, projectChatStatus } from './chat-state-mark';
 import { captureBrowserContext } from './browser-context';
+import { browserSelectionText, type BrowserElementSelection } from './browser-selection';
 import type { BrowserState } from './browser-protocol';
 import { attentionItems } from './attention';
 import { AttentionPanel } from './attention-panel';
@@ -218,6 +219,7 @@ function App() {
   const panelElement = useRef<HTMLElement>(null);
   const showDiff = panelOpen && panelView === 'changes';
   const appearance = useInterfacePreferences(setError);
+  const projectsOverflow = useScrollOverflow();
   useModalFocus(search || settings || attentionOpen || !!confirmClose || !!removeId);
   useEffect(() => {
     try {
@@ -946,6 +948,11 @@ function App() {
         .querySelector<HTMLElement>('.palette-results .on')
         ?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   }, [search, selectedSearchIndex, results]);
+  // Drafts re-render the shell on every keystroke; the queue only depends on chats and reads.
+  const attention = useMemo(
+    () => (state ? attentionItems(state.sessions, seen, unreadCompleted) : []),
+    [state?.sessions, seen, unreadCompleted],
+  );
   if (!state)
     return (
       <div className="loading" role={error ? 'alert' : 'status'}>
@@ -966,7 +973,6 @@ function App() {
         )}
       </div>
     );
-  const attention = attentionItems(state.sessions, seen, unreadCompleted);
   const choose = (r: (typeof results)[number]) => {
     void run({ type: 'select', projectId: r.projectId, sessionId: r.sessionId });
     setSearch(false);
@@ -1061,11 +1067,18 @@ function App() {
     });
     return result === true;
   };
-  const addBrowserContext = async (tab: BrowserState) => {
+  const addBrowserContext = async (tab: BrowserState, selection?: BrowserElementSelection) => {
     const target = session;
     if (!target || target.mode === 'terminal' || target.projectId !== tab.projectId)
       throw new Error('Abre un chat del mismo proyecto para añadir esta página.');
     const evidence = await captureBrowserContext(tab, (action) => window.desk.invoke(action));
+    if (selection) {
+      if (evidence.pageUrl !== selection.url)
+        throw new Error(
+          'La página cambió después de seleccionar el elemento. Vuelve a seleccionarlo.',
+        );
+      evidence.text = `${browserSelectionText(selection, tab.id)}\n\n${evidence.text}`;
+    }
     const stillExists = () => stateRef.current?.sessions.some((s) => s.id === target.id);
     if (!stillExists()) throw new Error('El chat se ha cerrado antes de completar la captura.');
     const attachments: Attachment[] = await window.desk.invoke({
@@ -1189,6 +1202,8 @@ function App() {
     >
       <BrowserPanel
         tabs={state.browsers ?? []}
+        chromeConnections={state.chromeConnections ?? []}
+        downloads={state.browserDownloads ?? []}
         selected={browserTab}
         select={setBrowserTab}
         projectId={project?.id}
@@ -1213,6 +1228,16 @@ function App() {
             ? addBrowserContext
             : undefined
         }
+        onCaptureSelection={
+          session && session.mode !== 'terminal' && compatibleRuntime(state)
+            ? addBrowserContext
+            : undefined
+        }
+        agentLabel={(() => {
+          const activeTab = state.browsers?.find((tab) => tab.id === browserTab);
+          const actor = state.sessions.find((s) => s.id === activeTab?.activity?.sessionId);
+          return actor ? providerNames[providerKind(actor.profile)] : undefined;
+        })()}
       />
     </React.Suspense>
   );
@@ -1441,8 +1466,13 @@ function App() {
                   </button>
                 </div>
               </div>
-              <nav className="projects" aria-label="Proyectos">
-                <div className="project-list">
+              <nav
+                className="projects"
+                aria-label="Proyectos"
+                ref={projectsOverflow.viewportRef}
+                data-overflow={projectsOverflow.overflow || undefined}
+              >
+                <div className="project-list" ref={projectsOverflow.contentRef}>
                   {state.projects.map((p) => {
                     const projectFolded = foldedProjects.includes(p.id);
                     const accordionId = `project-chats-${p.id}`;
@@ -1548,7 +1578,7 @@ function App() {
                                     ),
                                   );
                               }}
-                              title={`${p.path} · Clic: ${projectFolded ? 'desplegar' : 'plegar'} chats · Doble clic o F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
+                              title={`${p.name} · ${p.path}\n${sidebarCollapsed ? 'Clic: abrir' : `Clic: ${projectFolded ? 'desplegar' : 'plegar'} chats`} · Doble clic o F2: renombrar · Arrastra para ordenar · Alt + ↑/↓ para mover`}
                               aria-disabled={navigating}
                               aria-label={p.name}
                               aria-keyshortcuts="F2 Alt+ArrowUp Alt+ArrowDown"
@@ -1694,7 +1724,7 @@ function App() {
               <button
                 className={`attention-trigger ${attentionOpen ? 'on' : ''}`}
                 aria-label="Centro de atención"
-                title={`${attention.length} chats por revisar · ⌘⇧A`}
+                title={`${attention.length} ${attention.length === 1 ? 'chat' : 'chats'} por revisar · ⌘⇧A`}
                 aria-haspopup="dialog"
                 aria-expanded={attentionOpen}
                 onClick={() => setAttentionOpen((open) => !open)}
@@ -1852,7 +1882,7 @@ function App() {
             <h1>{hasAccounts ? 'Tu espacio de trabajo' : 'Empieza con tu cuenta'}</h1>
             <p>
               {hasAccounts
-                ? 'Abre un proyecto para empezar.'
+                ? 'Añade la carpeta de un proyecto para empezar.'
                 : 'Añade una cuenta para empezar a trabajar con tus agentes.'}
             </p>
             {!hasAccounts ? (
@@ -2557,7 +2587,10 @@ function App() {
             aria-modal="true"
             aria-label="Quitar proyecto"
           >
-            <h2>Quitar proyecto de la lista</h2>
+            <h2>
+              Quitar «{state.projects.find((p) => p.id === removeId)?.name ?? 'proyecto'}» de la
+              lista
+            </h2>
             <p className="muted">
               Se detendrán todos sus chats y terminales y se borrarán sus conversaciones, adjuntos y
               datos del navegador guardados por la app. Los archivos de la carpeta permanecen
@@ -2582,9 +2615,6 @@ function App() {
           </section>
         </div>
       )}
-      <span className="hidden">
-        <Command size={1} />
-      </span>
     </div>
   );
 }

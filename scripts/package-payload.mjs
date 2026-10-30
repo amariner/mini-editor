@@ -6,6 +6,7 @@ import path from 'node:path';
 // Renderer packages and bundled main-process imports are already in dist. Only
 // external runtime packages and their actual installed dependency graph belong here.
 export const runtimePackages = [
+  'playwright-core',
   'node-pty',
   '@anthropic-ai/claude-agent-sdk',
   '@anthropic-ai/claude-code',

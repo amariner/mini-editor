@@ -34,6 +34,10 @@ export type WorkspaceView = WorkspacePanelView;
 type Resource<T> = { scope: string; key: string; data?: T; error?: string; loading: boolean };
 const basename = (path: string) => path.split('/').at(-1) || path;
 const dirname = (path: string) => path.split('/').slice(0, -1).join('/');
+const fileSize = (bytes: number) =>
+  bytes < 1024
+    ? `${bytes} ${bytes === 1 ? 'byte' : 'bytes'}`
+    : `${(bytes / (bytes < 1024 ** 2 ? 1024 : 1024 ** 2)).toLocaleString('es-ES', { maximumFractionDigits: 1 })} ${bytes < 1024 ** 2 ? 'KB' : 'MB'}`;
 const isStaged = (file: GitSnapshot['files'][number]) => ![' ', '?'].includes(file.index);
 const isUnstaged = (file: GitSnapshot['files'][number]) =>
   file.conflict || file.index === '?' || ![' ', '?'].includes(file.worktree);
@@ -55,7 +59,26 @@ const stateLabel = (file: GitSnapshot['files'][number], staged: boolean) => {
   );
 };
 
-function TextContent({ file }: { file: WorkspaceFileResult }) {
+const stateCode = (file: GitSnapshot['files'][number], staged: boolean) =>
+  file.conflict ? '!' : staged ? file.index : file.index === '?' ? 'A' : file.worktree;
+const stateTone = (code: string) =>
+  code === '!' ? 'conflict' : code === 'A' ? 'added' : code === 'D' ? 'deleted' : '';
+
+/** Ellipsis at the start: a long path still shows its file name and copies as one line. */
+function PathLabel({ path }: { path: string }) {
+  const folder = dirname(path);
+  return (
+    <span className="workspace-path" dir="rtl" title={path}>
+      <bdi dir="ltr">
+        {folder && <span>{folder}/</span>}
+        <strong>{basename(path)}</strong>
+      </bdi>
+    </span>
+  );
+}
+
+// Memoized: Git polling re-renders the panel, never the highlighted lines.
+const TextContent = React.memo(function TextContent({ file }: { file: WorkspaceFileResult }) {
   const lines = useMemo(() => file.content.split('\n'), [file.content]);
   const [limit, setLimit] = useState(1000);
   const language = file.language ?? file.path.split('.').at(-1) ?? '';
@@ -104,9 +127,9 @@ function TextContent({ file }: { file: WorkspaceFileResult }) {
       )}
     </>
   );
-}
+});
 
-function DiffContent({ diff }: { diff: WorkspaceDiffResult }) {
+const DiffContent = React.memo(function DiffContent({ diff }: { diff: WorkspaceDiffResult }) {
   const lines = useMemo(
     () =>
       parseWorkspaceDiff(diff.patch).filter(
@@ -180,7 +203,7 @@ function DiffContent({ diff }: { diff: WorkspaceDiffResult }) {
       )}
     </>
   );
-}
+});
 
 export function WorkspacePanel({
   project,
@@ -255,6 +278,12 @@ export function WorkspacePanel({
     setQuery('');
     setSearch('');
   }, [scope, openFile?.key, openFile?.path]);
+  // The dock switches views without the panel's own tabs: a filter never leaks between views.
+  useEffect(() => {
+    setQuery('');
+    setSearch('');
+    setMutationError('');
+  }, [view]);
   useEffect(() => {
     const timer = setTimeout(() => setSearch(query.trim()), 180);
     return () => clearTimeout(timer);
@@ -593,7 +622,12 @@ export function WorkspacePanel({
                               ) : (
                                 <FileCode size={14} />
                               )}
-                              <span>{query ? entry.path : entry.name}</span>
+                              <span>
+                                {entry.name}
+                                {query && dirname(entry.path) && (
+                                  <small>{dirname(entry.path)}</small>
+                                )}
+                              </span>
                               {entry.kind === 'directory' && <ChevronRight size={12} />}
                             </button>
                           ))}
@@ -625,14 +659,11 @@ export function WorkspacePanel({
                                 {basename(entry.path)}
                                 <small>{dirname(entry.path)}</small>
                               </span>
-                              <em aria-label={stateLabel(entry, staged)}>
-                                {entry.conflict
-                                  ? '!'
-                                  : staged
-                                    ? entry.index
-                                    : entry.index === '?'
-                                      ? 'A'
-                                      : entry.worktree}
+                              <em
+                                className={stateTone(stateCode(entry, staged))}
+                                aria-label={stateLabel(entry, staged)}
+                              >
+                                {stateCode(entry, staged)}
                               </em>
                             </button>
                           ))}
@@ -653,7 +684,7 @@ export function WorkspacePanel({
                     {displayPath ? (
                       <>
                         <div className="workspace-file-heading">
-                          <span title={displayPath}>{displayPath}</span>
+                          <PathLabel path={displayPath} />
                           <div>
                             {view === 'changes' && diffState?.data && (
                               <button
@@ -697,9 +728,9 @@ export function WorkspacePanel({
                             </button>
                           </div>
                         ) : view === 'files' && fileState?.data ? (
-                          <TextContent file={fileState.data} />
+                          <TextContent key={fileState.data.path} file={fileState.data} />
                         ) : diffState?.data ? (
-                          <DiffContent diff={diffState.data} />
+                          <DiffContent key={diffKey} diff={diffState.data} />
                         ) : null}
                       </>
                     ) : (
@@ -734,7 +765,7 @@ export function WorkspacePanel({
                       message ||
                       (view === 'files'
                         ? fileState?.data
-                          ? `${fileState.data.size.toLocaleString('es-ES')} bytes · Solo lectura`
+                          ? `${fileSize(fileState.data.size)} · Solo lectura`
                           : 'Solo lectura'
                         : `${changedFiles.length} ${changedFiles.length === 1 ? 'archivo' : 'archivos'}`)}
                   </span>

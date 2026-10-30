@@ -6,12 +6,13 @@ export function providerCommand(
   command: string,
   cwd: string,
   signal: AbortSignal,
+  environment: Record<string, string> = {},
 ): Promise<string> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn('/bin/bash', ['-lc', command], {
       cwd,
-      env: cleanEnv(),
+      env: { ...cleanEnv(), ...environment },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

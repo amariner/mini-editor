@@ -10,3 +10,5 @@ interface ImportMeta {
     options?: { query?: string; import?: string },
   ): Record<string, () => Promise<T>>;
 }
+// Stylesheets are imported for their side effects; Vite bundles them.
+declare module '*.css';

@@ -265,6 +265,13 @@ export class ClaudeRuntime {
     });
   }
   private ask(tool: string, input: any, opts: any) {
+    const signal: AbortSignal | undefined = opts?.signal;
+    if (this.closed || signal?.aborted)
+      return Promise.resolve({
+        behavior: 'deny',
+        message: 'Solicitud cancelada.',
+        interrupt: true,
+      });
     if (
       (tool === 'mcp__agent_desk__team' && teamInput.safeParse(input).success) ||
       (tool === 'mcp__agent_desk__coordinate' && coordinationInput.safeParse(input).success) ||
@@ -285,18 +292,23 @@ export class ClaudeRuntime {
         reason: opts?.decisionReason,
         blockedPath: opts?.blockedPath,
       };
-      s.approvals.push(approval);
-      s.status = 'waiting';
-      s.activity = undefined;
-      this.changed();
-      this.pending.set(id, { resolve, signal: opts?.signal });
-      opts?.signal?.addEventListener?.('abort', () => {
+      const finish = (result: unknown) => {
+        signal?.removeEventListener('abort', cancel);
+        resolve(result);
+      };
+      const cancel = () => {
         if (!this.pending.delete(id)) return;
         s.approvals = s.approvals.filter((a) => a.id !== id);
         if (!s.approvals.length && s.status === 'waiting') s.status = 'working';
         this.changed();
-        resolve({ behavior: 'deny', message: 'Solicitud cancelada.', interrupt: true });
-      });
+        finish({ behavior: 'deny', message: 'Solicitud cancelada.', interrupt: true });
+      };
+      this.pending.set(id, { resolve: finish, signal: opts?.signal });
+      s.approvals.push(approval);
+      s.status = 'waiting';
+      s.activity = undefined;
+      signal?.addEventListener('abort', cancel, { once: true });
+      this.changed();
     });
   }
   approve(

@@ -57,7 +57,12 @@ export function useChatDetachDrag(options: Options) {
       suppressClick.current = false;
     },
     onKeyDown: (event) => {
-      if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'f') {
+      // On macOS Option changes `key` (⌥⇧F types «Ï»): match the physical key as well.
+      if (
+        event.altKey &&
+        event.shiftKey &&
+        (event.code === 'KeyF' || event.key.toLowerCase() === 'f')
+      ) {
         event.preventDefault();
         event.stopPropagation();
         detach();

@@ -122,3 +122,57 @@ test('perfiles persistentes por proyecto y salida externa sin reutilizar OAuth',
     false,
   );
 });
+
+test('native browser controls require an unambiguous bounded target and supported inputs', () => {
+  for (const input of [
+    { action: 'click', x: 120.5, y: 90, clickCount: 2 },
+    { action: 'click', ref: 'e1001', button: 'right' },
+    { action: 'hover', ref: 'e1002' },
+    { action: 'move', x: 0, y: 0 },
+    { action: 'select', ref: 'e1003', value: 'pt' },
+    { action: 'press', key: 'a', modifiers: ['meta'] },
+    { action: 'press', key: 'PageDown' },
+    { action: 'scroll', ref: 'e1004', deltaY: 200, deltaX: -100 },
+  ])
+    assert.equal(browserInput.safeParse(input).success, true, JSON.stringify(input));
+  for (const input of [
+    { action: 'click' },
+    { action: 'click', ref: 'e1001', x: 1, y: 1 },
+    { action: 'click', x: 1 },
+    { action: 'hover', y: 1 },
+    { action: 'move', x: Infinity, y: 2 },
+    { action: 'move', x: -1, y: 2 },
+    { action: 'click', ref: 'e1001', clickCount: 10 },
+    { action: 'press', key: 'F12' },
+    { action: 'press', key: 'a', modifiers: ['unsupported'] },
+    { action: 'select', ref: 'arbitrary-selector', value: 'x' },
+    { action: 'scroll', deltaY: 1, deltaX: 9000 },
+  ])
+    assert.equal(browserInput.safeParse(input).success, false, JSON.stringify(input));
+});
+
+test('browser workflow tools validate consent, files, drag, downloads and exact dialogs', () => {
+  for (const input of [
+    { action: 'check', ref: 'e1', checked: true },
+    { action: 'upload', ref: 'e2', paths: ['report.pdf'] },
+    { action: 'upload', ref: 'e2', paths: [] },
+    { action: 'drag', ref: 'e3', toRef: 'e4' },
+    { action: 'drag', x: 10, y: 20, toX: 30, toY: 40 },
+    { action: 'download', url: 'https://example.com/report' },
+    { action: 'downloads' },
+    { action: 'downloadControl', downloadId: 'download', operation: 'cancel' },
+    { action: 'dialog', dialogId: 'prompt', accept: true, promptText: 'Report' },
+  ])
+    assert.equal(browserInput.safeParse(input).success, true, JSON.stringify(input));
+  for (const input of [
+    { action: 'check', ref: 'e1' },
+    { action: 'upload', ref: 'e2', paths: ['report.pdf'], userSelected: true },
+    { action: 'upload', ref: 'e2', paths: Array(21).fill('file') },
+    { action: 'drag', ref: 'e1', toX: 10 },
+    { action: 'drag', ref: 'e1', toRef: 'e2', toX: 10, toY: 20 },
+    { action: 'downloadControl', downloadId: 'download', operation: 'execute' },
+    { action: 'dialog', accept: true },
+    { action: 'permission', allow: true },
+  ])
+    assert.equal(browserInput.safeParse(input).success, false, JSON.stringify(input));
+});

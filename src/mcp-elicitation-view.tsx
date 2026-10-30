@@ -12,10 +12,15 @@ export function McpElicitation({
   approval,
   session,
   run,
+  index = 0,
+  total = 1,
 }: {
   approval: Approval;
   session: Session;
   run: (action: Action) => Promise<any>;
+  /** Position among the chat's pending requests, as in the permission cards. */
+  index?: number;
+  total?: number;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -67,6 +72,11 @@ export function McpElicitation({
       <div className="approval-title">
         <ShieldAlert size={15} />
         <strong>{String(params.serverName || 'Un servidor MCP')} necesita tu respuesta</strong>
+        {total > 1 && (
+          <span className="approval-count">
+            {index + 1} de {total}
+          </span>
+        )}
       </div>
       {params.message && <p>{String(params.message)}</p>}
       {unsupported && <p role="alert">{unsupported}</p>}

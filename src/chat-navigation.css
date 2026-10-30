@@ -130,17 +130,18 @@
 .chat-switcher-rename svg {
   flex: none;
 }
-.chat-switcher-status {
+/* Loaded before style.css: outrank the global `.app svg.lucide` colour so each dot keeps
+   its chat state. */
+.chat-switcher-menu .chat-switcher-option svg.chat-switcher-status {
   color: var(--muted);
 }
-.chat-switcher-status.working {
+.chat-switcher-menu .chat-switcher-option svg.chat-switcher-status.working {
   color: var(--accent);
 }
-.chat-switcher-status.attention,
-.chat-switcher-status.error {
+.chat-switcher-menu .chat-switcher-option svg.chat-switcher-status:is(.attention, .error) {
   color: var(--danger);
 }
-.chat-switcher-status.done {
+.chat-switcher-menu .chat-switcher-option svg.chat-switcher-status.done {
   color: var(--add-text);
 }
 .chat-switcher-menu .chat-switcher-rename {

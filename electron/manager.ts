@@ -930,6 +930,13 @@ export class Manager {
               () => this.changed(s),
               () => this.selectedModels(s.profile),
               () => savingInstructions(this.optimization(s.profile).level),
+              (input, signal) => {
+                signal.throwIfAborted();
+                if (!this.coordinator.browserHandler)
+                  throw new Error('El navegador requiere la ventana de Agent Desk.');
+                return this.coordinator.browserHandler(s, input);
+              },
+              this.networkEnvironment,
             );
           }
         } else {

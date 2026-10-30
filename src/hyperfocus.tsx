@@ -169,7 +169,6 @@ export function Hyperfocus({ onExit, error, needsAttention, ...composer }: Props
               ref={messages}
               role="region"
               aria-label="Último intercambio"
-              tabIndex={0}
               hidden={!shown.user && !shown.answer}
             >
               <div className="hyperfocus-turn" ref={content}>
