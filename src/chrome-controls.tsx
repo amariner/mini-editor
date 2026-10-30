@@ -4,6 +4,7 @@ import type { ChromeConnection, ChromeMode } from './chrome-types';
 import type { BrowserState } from './browser-protocol';
 import type { Action } from './shared';
 import { actionError } from './runtime';
+import { chromeContinuation } from './chrome-continuation';
 
 const statusLabels: Record<ChromeConnection['status'], string> = {
   connecting: 'Conectando…',
@@ -38,6 +39,8 @@ export function ChromeControls({
   const [pending, setPending] = useState<string>();
   const [error, setError] = useState('');
   const request = useRef<{ mode: ChromeMode; projectId?: string } | undefined>(undefined);
+  const currentSource = useRef('');
+  currentSource.current = `${projectId}:${tab?.id}`;
   const relevant = connections.filter(
     (connection) => connection.projectId === projectId || connection.id === tab?.connectionId,
   );
@@ -86,6 +89,31 @@ export function ChromeControls({
   const connect = (mode: ChromeMode) => {
     request.current = { mode, projectId };
     void run({ type: 'chromeConnect', mode, projectId, sessionId }, mode);
+  };
+  const continueWeb = async (connection: ChromeConnection) => {
+    if (!tab) return;
+    const source = currentSource.current;
+    setPending(`continue:${connection.id}`);
+    setError('');
+    try {
+      const target = chromeContinuation(tab, connection, tabs);
+      const id =
+        target.tabId ??
+        (
+          await window.desk.invoke({
+            type: 'chromeNewTab',
+            connectionId: connection.id,
+            url: target.url,
+          })
+        ).id;
+      if (currentSource.current !== source) return;
+      select(id);
+      await window.desk.invoke({ type: 'chromeFocus', tabId: id });
+    } catch (cause) {
+      setError(actionError(cause));
+    } finally {
+      setPending(undefined);
+    }
   };
   const newConnection = (mode: ChromeMode) =>
     !relevant.some(
@@ -145,6 +173,17 @@ export function ChromeControls({
           Sin extensión. Tu Chrome conserva las sesiones abiertas y pide autorización al conectar.
           Chrome gestionado usa un perfil propio y recuerda tus inicios de sesión.
         </p>
+        <p className="chrome-connect-help">
+          Una vez conectado, el agente puede leer páginas, hacer clic y rellenar formularios en las
+          pestañas de Chrome. La página se muestra en la ventana de Chrome; aquí puedes
+          seleccionarla y capturar su vista.
+        </p>
+        <p className="chrome-connect-help">
+          Si Cloudflare o un proveedor de acceso rechaza el navegador integrado, abre la web en tu
+          Chrome habitual, completa el acceso allí y después conecta. Las sesiones del integrado y
+          de Chrome son independientes; el integrado y Chrome gestionado guardan los accesos por
+          proyecto. Ningún modo garantiza que una web acepte el acceso automatizado.
+        </p>
         <button
           type="button"
           className="chrome-setup-link"
@@ -174,6 +213,18 @@ export function ChromeControls({
                   {connection.error && <p role="alert">{connection.error}</p>}
                 </div>
                 <div className="chrome-connection-actions">
+                  {connection.status === 'connected' &&
+                    tab?.backend !== 'chrome' &&
+                    tab?.projectId === connection.projectId &&
+                    /^https?:\/\//.test(tab?.url ?? '') && (
+                      <button
+                        type="button"
+                        disabled={!!pending || connecting}
+                        onClick={() => void continueWeb(connection)}
+                      >
+                        Continuar esta web
+                      </button>
+                    )}
                   {connection.status === 'connected' && (
                     <button
                       type="button"

@@ -18,6 +18,8 @@ const labels: Record<string, string> = {
   'local-fonts': 'Usar fuentes locales',
   pointerLock: 'Capturar el puntero en esta página',
   keyboardLock: 'Capturar el teclado en esta página',
+  'storage-access': 'Usar sus cookies de inicio de sesión en esta página',
+  'top-level-storage-access': 'Permitir cookies de inicio de sesión de contenido integrado',
 };
 type Pending = {
   value: BrowserPermission;

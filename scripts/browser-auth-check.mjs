@@ -20,6 +20,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Set-Cookie', [
       'fixture-persistent=yes; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax',
       'fixture-pkce=test; Path=/; HttpOnly; SameSite=Lax',
+      'fixture-partitioned=private; Path=/; HttpOnly; Secure; SameSite=None; Partitioned',
     ]);
     res.end(`<!doctype html><title>Acceso de prueba</title><h1>Acceso de prueba</h1>
       <script>localStorage.setItem('fixture','saved'); sessionStorage.setItem('fixture','copied');
@@ -151,6 +152,8 @@ try {
   const post = await until(async () =>
     (await snapshot()).browsers.find((b) => b.url === origin + '/post-callback' && !b.loading),
   );
+  // Popup metadata can precede Chromium's native POST navigation.
+  await until(() => requests.some((r) => r.path === '/post-callback'));
   assert.ok(
     requests.some(
       (r) => r.path === '/post-callback' && r.method === 'POST' && r.body === 'state=test-state',
@@ -167,6 +170,7 @@ try {
     (await act(same.id, { action: 'inspect' })).text,
     /persistent:true pkce:true local:saved/,
   );
+  assert.ok(requests.some((r) => r.path === '/check' && r.cookie.includes('fixture-partitioned=')));
   const other = await call({ type: 'browserNew', projectId: 'q', url: origin + '/isolated' });
   assert.match(
     (await act(other.id, { action: 'inspect' })).text,
@@ -194,9 +198,16 @@ try {
   await launch();
   assert.equal((await snapshot()).browsers.find((b) => b.id === same.id).suspended, true);
   await act(same.id, { action: 'reload' });
-  assert.match((await act(same.id, { action: 'inspect' })).text, /persistent:true .*local:saved/);
+  assert.match(
+    (await act(same.id, { action: 'inspect' })).text,
+    /persistent:true pkce:true local:saved/,
+  );
+  assert.equal(requests.at(-1).cookie.includes('fixture-partitioned='), false);
   await act(other.id, { action: 'reload' });
-  assert.match((await act(other.id, { action: 'inspect' })).text, /persistent:false .*local:null/);
+  assert.match(
+    (await act(other.id, { action: 'inspect' })).text,
+    /persistent:false pkce:false local:null/,
+  );
   await call({ type: 'removeProject', projectId: 'p' });
   const remaining = await app.evaluate(async ({ session }, url) => {
     const ses = session.fromPartition('persist:desk-browser-p');
@@ -205,7 +216,7 @@ try {
   assert.equal(remaining, 0);
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: native popup/opener/postMessage/close, about:blank, POST form, shared PKCE cookie, isolated projects, persistent cookies and storage after restart, clearing removed-project cookies, Chrome launcher and default fallback, OAuth restart URL, blocked schemes. Synthetic local data only.',
+    'PASS: native popup/opener/postMessage/close, about:blank, POST form, shared PKCE cookie, isolated projects, persistent and session cookies after restart, CHIPS not broadened, localStorage, clearing removed-project cookies, Chrome launcher and default fallback, OAuth restart URL, blocked schemes. Synthetic local data only.',
   );
 } finally {
   await app?.close();

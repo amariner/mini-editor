@@ -712,6 +712,7 @@ export function BrowserPanel({
           <button disabled={busy} onClick={() => void openExternal()}>
             Abrir web en Chrome
           </button>
+          <button onClick={() => setChromeOpen(true)}>Conectar mi Chrome</button>
         </div>
       )}
       {state?.error && (

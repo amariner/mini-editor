@@ -141,6 +141,26 @@ test('unknown iframe origins cannot borrow the top page identity; selected-file 
   assert.deepEqual(file, [false]);
 });
 
+test('embedded login cookies require consent from the requesting origin', (t) => {
+  const f = fixture();
+  t.after(() => f.controller.close());
+  for (const permission of ['storage-access', 'top-level-storage-access']) {
+    assert.equal(f.check(permission), false);
+    const decisions = f.ask(permission, {
+      requestingUrl: 'https://login.example/embedded',
+      isMainFrame: false,
+    });
+    assert.deepEqual(decisions, []);
+    const pending = f.controller.list(f.wc)[0];
+    assert.equal(pending.origin, 'https://login.example');
+    assert.match(pending.label, /cookies/);
+    f.controller.respond(f.wc, pending.id, true);
+    assert.deepEqual(decisions, [true]);
+    assert.equal(f.check(permission), false);
+    assert.deepEqual(f.ask(permission, { requestingUrl: '', isMainFrame: false }), [false]);
+  }
+});
+
 test('navigation and destruction cancel requests, clean listeners, and reject old IDs', (t) => {
   const f = fixture();
   t.after(() => f.controller.close());

@@ -158,6 +158,24 @@ try {
   await page.locator('.chrome-page-card').waitFor();
   await page.getByRole('button', { name: 'Integrado', exact: true }).click();
   await page.getByRole('button', { name: 'Seleccionar elemento', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Continuar esta web', exact: true }).click();
+  await page.locator('.chrome-page-card').waitFor();
+  const handoffs = () =>
+    page.evaluate(
+      () =>
+        window.fixture.actions.filter(
+          (a) =>
+            a.type === 'chromeNewTab' &&
+            a.connectionId === 'connection-managed' &&
+            a.url === 'https://local.test/',
+        ).length,
+    );
+  assert.equal(await handoffs(), 1);
+  await page.getByRole('button', { name: 'Integrado', exact: true }).click();
+  await page.getByRole('button', { name: 'Continuar esta web', exact: true }).click();
+  await page.locator('.chrome-page-card').waitFor();
+  assert.equal(await handoffs(), 1, 'Reusing the connected tab preserves its state');
+  await page.getByRole('button', { name: 'Integrado', exact: true }).click();
   await page.getByRole('button', { name: 'Opciones del navegador' }).click();
   await page.getByRole('combobox', { name: 'Zoom del navegador' }).waitFor();
   await page.setViewportSize({ width: 330, height: 760 });

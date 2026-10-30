@@ -1,4 +1,11 @@
-import { BrowserWindow, WebContentsView, nativeImage, session as electronSession } from 'electron';
+import {
+  BrowserWindow,
+  WebContentsView,
+  nativeImage,
+  safeStorage,
+  session as electronSession,
+} from 'electron';
+import { BrowserSessions, restorableCookies } from './browser-sessions';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -50,6 +57,7 @@ export class DeskBrowser {
   private removedProjects = new Set<string>();
   private downloads: BrowserDownloads;
   private permissions: BrowserPermissions;
+  private sessions: BrowserSessions;
   constructor(
     private host: () => BrowserWindow | undefined,
     private changed: () => void,
@@ -62,6 +70,22 @@ export class DeskBrowser {
       projectRoot?: (projectId: string, sessionId?: string) => Promise<string>;
     } = {},
   ) {
+    this.sessions = new BrowserSessions(safeStorage, root, async (session) => {
+      // Tabs may already be suspended. A blank, unattached view lets CDP read the
+      // exact project's cookie jar including partition metadata, without loading a site.
+      const view = new WebContentsView({
+        webPreferences: { session, sandbox: true, contextIsolation: true, nodeIntegration: false },
+      });
+      try {
+        view.webContents.debugger.attach('1.3');
+        // Network is scoped to this target's storage partition. Storage.getCookies
+        // without a browserContextId instead reads the default browser context.
+        const result = await view.webContents.debugger.sendCommand('Network.getAllCookies');
+        return restorableCookies(result.cookies);
+      } finally {
+        view.webContents.close({ waitForBeforeUnload: false });
+      }
+    });
     this.downloads = new BrowserDownloads(
       capabilities.downloadsRoot ?? path.join(root ?? os.tmpdir(), 'browser-downloads'),
       changed,
@@ -580,6 +604,7 @@ export class DeskBrowser {
         this.observed.delete(key);
     this.updateMonitor();
     const ses = electronSession.fromPartition(browserPartition(projectId));
+    await this.sessions.forget(ses);
     await ses.closeAllConnections();
     await ses.clearCache();
     await ses.clearStorageData();
@@ -599,8 +624,12 @@ export class DeskBrowser {
     this.observed.clear();
     await Promise.allSettled(
       [...this.securedSessions].map(async (session) => {
-        session.flushStorageData();
-        await session.cookies.flushStore();
+        try {
+          await this.sessions.save(session);
+        } finally {
+          session.flushStorageData();
+          await session.cookies.flushStore();
+        }
       }),
     );
   }
@@ -655,6 +684,7 @@ export class DeskBrowser {
     const dormant = this.pages.get(id)!.state.suspended;
     const p = this.ensure(id);
     const wc = p.view!.webContents;
+    await this.sessions.restore(wc.session);
     await this.prepareNetwork(wc.session);
     if (dormant && p.state.url) await this.loadPage(wc, p.state.url);
     return pickBrowserElement(wc);
@@ -790,6 +820,7 @@ export class DeskBrowser {
     const dormant = this.pages.get(id)?.state.suspended;
     const p = this.ensure(id);
     const wc = p.view!.webContents;
+    await this.sessions.restore(wc.session);
     await this.prepareNetwork(wc.session);
     if (dormant && args.action !== 'navigate' && p.state.url) await this.loadPage(wc, p.state.url);
     if (p.dialogs?.current)
