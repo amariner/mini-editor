@@ -75,7 +75,8 @@ import { accountCardStyle, suggestedAccountColor } from './account-color';
 import { workspaceAvailability } from './workspace-availability';
 import { SnapshotSync } from './snapshot-sync';
 import { reconcileSnapshot } from './state-sharing';
-import { searchWorkspace } from './workspace-search';
+import { commandFromKey, searchDesk, type DeskCommandId } from './commands';
+import { hasUnreadTurn } from './session-supervision';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import './shell-polish.css';
@@ -582,6 +583,8 @@ function App() {
   }, [project?.id, project?.path, session?.id, session?.worktree?.cwd]);
   // History starts read; new completions remain in the queue until their chat is visible.
   const readBaseline = useRef(false);
+  const commandDispatch = useRef<(id: DeskCommandId) => void>(() => {});
+  const readRequests = useRef(new Set<string>());
   const attentionStatuses = useRef<Record<string, string>>({});
   useEffect(() => {
     if (!state) return;
@@ -610,6 +613,17 @@ function App() {
     attentionStatuses.current = Object.fromEntries(state.sessions.map((s) => [s.id, s.status]));
     const markRead = () => {
       const active = reading();
+      const visible = state.sessions.find((s) => s.id === active);
+      if (visible && hasUnreadTurn(visible) && compatibleRuntime(state)) {
+        const revision = visible.supervision!.revision;
+        const key = `${state.runtime?.instanceId}:${visible.id}:${revision}`;
+        if (!readRequests.current.has(key)) {
+          readRequests.current.add(key);
+          void window.desk
+            .invoke({ type: 'markSessionRead', sessionId: visible.id, revision })
+            .catch(() => readRequests.current.delete(key));
+        }
+      }
       // A completion belongs to this snapshot, not to every later focus event.
       const newlyCompleted = completed.splice(0);
       setSeen((previous) => {
@@ -624,9 +638,11 @@ function App() {
       setUnreadCompleted((previous) => {
         const next = new Set(
           [...previous, ...newlyCompleted].filter(
-            (id) => id !== active && state.sessions.some((s) => s.id === id),
+            (id) => id !== active && state.sessions.some((s) => s.id === id && !s.supervision),
           ),
         );
+        for (const s of state.sessions)
+          if (hasUnreadTurn(s) && s.supervision?.outcome === 'completed') next.add(s.id);
         return next.size === previous.size && [...next].every((id) => previous.has(id))
           ? previous
           : next;
@@ -738,15 +754,26 @@ function App() {
       const modal = search || settings || attentionOpen || confirmClose || removeId;
       const attentionShortcut =
         (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a';
+      const commandShortcut = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'p';
       if (
         modal &&
         e.key !== 'Escape' &&
         !((e.metaKey || e.ctrlKey) && ['k', ','].includes(e.key)) &&
-        !(attentionOpen && attentionShortcut)
+        !(attentionOpen && attentionShortcut) &&
+        !commandShortcut
       )
         return;
       const s = stateRef.current?.sessions.find((x) => x.id === stateRef.current?.selectedSession);
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      const registered = commandFromKey(e);
+      if (commandShortcut) {
+        e.preventDefault();
+        if (confirmClose || removeId) return;
+        setAttentionOpen(false);
+        setSettings(false);
+        setSearch(true);
+        setQuery('>');
+        setSearchIndex(0);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         if (confirmClose || removeId) return;
         setAttentionOpen(false);
@@ -759,17 +786,18 @@ function App() {
         if (confirmClose || removeId) return;
         setAttentionOpen(false);
         setSearch(false);
-        setSettings((v) => !v);
+        if (settings) setSettings(false);
+        else if (registered) commandDispatch.current(registered);
       } else if (attentionShortcut) {
         e.preventDefault();
-        setAttentionOpen((open) => !open);
+        if (attentionOpen) setAttentionOpen(false);
+        else if (registered) commandDispatch.current(registered);
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && !floatingSessionId) {
         e.preventDefault();
-        setSidebarCollapsed((value) => !value);
+        if (registered) commandDispatch.current(registered);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
-        const projectId = s?.projectId ?? stateRef.current?.selectedProject;
-        if (projectId) void run({ type: 'newSession', projectId });
+        if (registered && stateRef.current?.selectedProject) commandDispatch.current(registered);
       } else if (
         e.key === 'Tab' &&
         e.shiftKey &&
@@ -938,7 +966,7 @@ function App() {
   // fast arrow navigation would still operate on the previous filtered list.
   const searchQuery = query.trim() ? deferredQuery : query;
   const results = useMemo(
-    () => (search && state ? searchWorkspace(state, searchQuery, statusLabels) : []),
+    () => (search && state ? searchDesk(state, searchQuery, statusLabels) : []),
     [search, state, searchQuery],
   );
   const selectedSearchIndex = Math.min(searchIndex, Math.max(0, results.length - 1));
@@ -974,8 +1002,48 @@ function App() {
       </div>
     );
   const choose = (r: (typeof results)[number]) => {
+    if (r.command) {
+      setSearch(false);
+      switch (r.command) {
+        case 'attention':
+          setAttentionOpen(true);
+          break;
+        case 'settings':
+          setSettings(true);
+          break;
+        case 'sidebar':
+          setSidebarCollapsed((v) => !v);
+          break;
+        case 'newChat':
+          void run({ type: 'newSession', projectId: r.projectId });
+          break;
+        case 'changes':
+          openWorkspace('changes');
+          break;
+        case 'files':
+          openWorkspace('files');
+          break;
+        case 'terminal':
+          selectTool('terminal');
+          break;
+        case 'details':
+          openWorkspace('details');
+          break;
+        case 'floating':
+          if (session) void run({ type: 'floatingChat', operation: 'open', sessionId: session.id });
+          break;
+        case 'interrupt':
+          if (session) void run({ type: 'interrupt', sessionId: session.id });
+          break;
+      }
+      return;
+    }
     void run({ type: 'select', projectId: r.projectId, sessionId: r.sessionId });
     setSearch(false);
+  };
+  commandDispatch.current = (command) => {
+    const available = searchDesk(state, '>', statusLabels).find((r) => r.command === command);
+    if (available) choose(available);
   };
   const terminalMode = !isCodex(session?.profile) && session?.mode === 'terminal';
   const antigravityChat =
@@ -1720,7 +1788,7 @@ function App() {
                 <Focus size={17} aria-hidden="true" />
               </button>
             )}
-            {hasChats && (attention.length > 0 || attentionOpen) && (
+            {hasChats && (
               <button
                 className={`attention-trigger ${attentionOpen ? 'on' : ''}`}
                 aria-label="Centro de atención"
@@ -2382,6 +2450,8 @@ function App() {
         <AttentionPanel
           items={attention}
           projects={state.projects}
+          sessions={state.sessions}
+          run={run}
           onClose={() => setAttentionOpen(false)}
           onSelect={async (target) => {
             await run({ type: 'select', projectId: target.projectId, sessionId: target.id });
@@ -2416,7 +2486,9 @@ function App() {
               <Search size={17} />
               <input
                 data-autofocus
-                aria-label="Buscar proyecto o sesión"
+                aria-label={
+                  query.trimStart().startsWith('>') ? 'Buscar acción' : 'Buscar proyecto o sesión'
+                }
                 role="combobox"
                 aria-autocomplete="list"
                 aria-expanded="true"
@@ -2424,7 +2496,9 @@ function App() {
                 aria-activedescendant={
                   results[selectedSearchIndex] ? `palette-result-${selectedSearchIndex}` : undefined
                 }
-                placeholder="Buscar proyecto o sesión…"
+                placeholder={
+                  query.trimStart().startsWith('>') ? 'Buscar acción…' : 'Buscar proyecto o sesión…'
+                }
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
@@ -2434,7 +2508,7 @@ function App() {
                   if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
                   if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return;
                   const currentResults =
-                    query === searchQuery ? results : searchWorkspace(state, query, statusLabels);
+                    query === searchQuery ? results : searchDesk(state, query, statusLabels);
                   if (e.key === 'ArrowDown') {
                     e.preventDefault();
                     setSearchIndex((i) => Math.max(0, Math.min(i + 1, currentResults.length - 1)));
@@ -2480,16 +2554,26 @@ function App() {
                   className={i === selectedSearchIndex ? 'on' : ''}
                   onClick={() => choose(r)}
                 >
-                  {r.sessionId ? <MessageSquare size={15} /> : <Folder size={15} />}
+                  {r.command ? (
+                    <Terminal size={15} />
+                  ) : r.sessionId ? (
+                    <MessageSquare size={15} />
+                  ) : (
+                    <Folder size={15} />
+                  )}
                   <span>
                     <strong>{r.title}</strong>
                     <small>{r.subtitle}</small>
                   </span>
+                  {r.shortcut && <kbd>{r.shortcut}</kbd>}
                 </button>
               ))}
               {!results.length && <p className="muted">No hay resultados.</p>}
             </div>
             <div className="palette-footer" aria-hidden="true">
+              <span>
+                <kbd>&gt;</kbd> Acciones · ⌘⇧P
+              </span>
               <span>
                 <kbd>↑↓</kbd> Elegir
               </span>

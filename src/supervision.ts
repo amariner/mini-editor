@@ -14,6 +14,12 @@ export function cardStatus(session: Session): [CardTone, string] {
   if (session.status === 'stopping') return ['working', 'Cerrando…'];
   if (session.mode === 'terminal' || session.status === 'terminal')
     return ['idle', sessionIsLive(session) ? 'Terminal abierta' : 'Terminal detenida'];
+  if (session.supervision) {
+    if (session.supervision.outcome === 'failed') return ['error', 'Falló el último turno'];
+    if (session.supervision.outcome === 'interrupted') return ['idle', 'Interrumpido'];
+    if (session.supervision.outcome === 'completed') return ['done', 'Terminado'];
+    return ['idle', 'En espera'];
+  }
   if (session.messages.some((m) => m.role === 'assistant')) return ['done', 'Terminado'];
   return ['idle', 'En espera'];
 }

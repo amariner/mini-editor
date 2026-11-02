@@ -271,6 +271,15 @@ export function ConfigPanel({
         </section>
         <section>
           <h4>Razonamiento</h4>
+          <Tiles
+            label="Esfuerzo de los subagentes"
+            small
+            options={[{ id: undefined as any, name: 'Heredar' }, ...efforts]}
+            value={c.subagentEffort}
+            onChange={(subagentEffort) =>
+              set({ subagentEffort: (subagentEffort as any) ?? undefined })
+            }
+          />
           <FastModeControl session={session} run={run} />
           <Tiles
             label="Esfuerzo de razonamiento"

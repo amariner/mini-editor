@@ -124,7 +124,7 @@ try {
   await page.goto(server.resolvedUrls.local[0]);
   await page.getByRole('textbox', { name: 'Mensaje', exact: true }).waitFor();
   assert.equal(
-    await page.locator('.attention-trigger').count(),
+    await page.locator('.attention-trigger .attention-badge').count(),
     0,
     'startup history is already read',
   );
@@ -135,7 +135,7 @@ try {
   await page
     .getByRole('dialog', { name: 'Centro de atención', exact: true })
     .waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('.attention-trigger').count(), 0);
+  assert.equal(await page.locator('.attention-trigger .attention-badge').count(), 0);
   await page.evaluate(() => {
     const { state, publish } = window.fixture;
     // A background stream completes without creating a new message.
@@ -193,6 +193,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.locator('.attention-trigger').click();
   await rows.first().click();
+  await page.getByRole('button', { name: 'Abrir chat', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 's2');
   assert.equal(await page.evaluate(() => window.fixture.state.selectedProject), 'p2');
@@ -215,8 +216,9 @@ try {
   await page.locator('.attention-trigger').click();
   assert.equal(await rows.count(), 1);
   await rows.first().click();
+  await page.getByRole('button', { name: 'Abrir chat', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
-  await page.locator('.attention-trigger').waitFor({ state: 'hidden' });
+  await page.locator('.attention-trigger .attention-badge').waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => window.fixture.state.selectedSession), 's1');
   // A selected chat can finish while the app is unfocused. Reading it once must
   // consume that transition: later focus/visibility events cannot resurrect it.
@@ -236,7 +238,7 @@ try {
     window.fixture.focused = true;
     window.dispatchEvent(new Event('focus'));
   });
-  await page.locator('.attention-trigger').waitFor({ state: 'hidden' });
+  await page.locator('.attention-trigger .attention-badge').waitFor({ state: 'hidden' });
   await page.evaluate(() => {
     window.fixture.focused = false;
     document.dispatchEvent(new Event('visibilitychange'));
@@ -245,7 +247,7 @@ try {
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
   assert.equal(
-    await page.locator('.attention-trigger').count(),
+    await page.locator('.attention-trigger .attention-badge').count(),
     0,
     'read completion stays consumed after visibility change',
   );
@@ -254,7 +256,160 @@ try {
     window.dispatchEvent(new Event('focus'));
     delete document.hasFocus;
   });
-  assert.equal(await page.locator('.attention-trigger').count(), 0);
+  assert.equal(await page.locator('.attention-trigger .attention-badge').count(), 0);
+  // New supervision UI: global agents, inherited blockers, preview and explicit read acknowledgements.
+  await page.evaluate(() => {
+    const { state, publish } = window.fixture;
+    state.selectedSession = 's0';
+    state.selectedProject = 'p';
+    state.sessions[0].status = 'working';
+    state.sessions[2].profile = 'claude-1';
+    state.sessions[1].supervision = {
+      revision: 1,
+      seenRevision: 0,
+      startedAt: Date.now() - 120000,
+      finishedAt: Date.now(),
+      outcome: 'completed',
+    };
+    state.sessions[1].agentDeliveries = [
+      {
+        id: 'a',
+        description: 'Revisión del formulario',
+        summary: 'Verificados tres casos y navegación por teclado.',
+        outcome: 'completed',
+        finishedAt: Date.now(),
+      },
+    ];
+    state.sessions[2].parentId = state.sessions[0].id;
+    state.sessions[2].status = 'waiting';
+    state.sessions[2].approvals = [
+      {
+        id: 'partial',
+        method: 'claude/permission',
+        tool: 'AskUserQuestion',
+        params: {},
+        input: {
+          questions: [
+            {
+              header: 'Entorno',
+              question: '¿Qué entorno usamos?',
+              options: [
+                { label: 'Local', description: 'Desarrollo local' },
+                { label: 'Pruebas', description: 'Entorno de pruebas' },
+              ],
+              multiSelect: false,
+            },
+            {
+              header: 'Entrega',
+              question: '¿Cuándo entregamos?',
+              options: [
+                { label: 'Hoy', description: 'Ahora' },
+                { label: 'Después', description: 'Otra fecha' },
+              ],
+              multiSelect: false,
+            },
+          ],
+        },
+      },
+    ];
+    state.sessions[2].info.capabilities = ['ask_user_question_unanswered_v1'];
+    state.sessions[3].status = 'ready';
+    state.sessions[3].error = undefined;
+    const original = window.desk.invoke;
+    window.desk.invoke = async (action) => {
+      if (action.type === 'markSessionRead') {
+        window.fixture.actions.push(action);
+        const s = state.sessions.find((s) => s.id === action.sessionId);
+        s.supervision.seenRevision = action.revision;
+        publish();
+        return true;
+      }
+      if (action.type === 'approve') {
+        window.fixture.actions.push(action);
+        const s = state.sessions.find((s) => s.id === action.sessionId);
+        s.approvals = [];
+        s.status = 'ready';
+        publish();
+        return true;
+      }
+      return original(action);
+    };
+    publish();
+  });
+  await page.locator('.attention-trigger').click();
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  assert.equal(await rows.count(), 4);
+  assert.match(await rows.first().innerText(), /auxiliar necesita atención/);
+  await page.getByLabel('Ordenar agentes').selectOption('project');
+  assert.equal(await dialog.locator('section[aria-label="Studio"]').count(), 1);
+  await page.getByLabel('Ordenar agentes').selectOption('priority');
+  await fs.mkdir('artifacts/supervision', { recursive: true });
+  await page.screenshot({ path: 'artifacts/supervision/agents.png', animations: 'disabled' });
+  await rows.filter({ hasText: 'Verificar el formulario' }).click();
+  await page.getByLabel('Vista rápida de Verificar el formulario').waitFor();
+  await page.getByRole('button', { name: 'Marcar revisado', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Marcar revisado', exact: true })
+    .waitFor({ state: 'hidden' });
+  assert.equal(
+    await page.evaluate(() => window.fixture.state.sessions[1].supervision.seenRevision),
+    1,
+  );
+  await dialog.locator('.agent-deliveries summary').click();
+  await page.screenshot({ path: 'artifacts/supervision/preview-dark.png', animations: 'disabled' });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.screenshot({
+    path: 'artifacts/supervision/preview-light.png',
+    animations: 'disabled',
+  });
+  await page.setViewportSize({ width: 440, height: 640 });
+  assert.equal(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth), true);
+  await page.screenshot({
+    path: 'artifacts/supervision/preview-narrow.png',
+    animations: 'disabled',
+  });
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: 'Verificar el formulario · Terminado', exact: true })
+    .waitFor();
+  assert.equal(
+    await rows
+      .filter({ hasText: 'Verificar el formulario' })
+      .evaluate((el) => el === document.activeElement),
+    true,
+  );
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'hidden' });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.keyboard.press('Meta+Shift+p');
+  const actionSearch = page.getByRole('combobox', { name: 'Buscar acción', exact: true });
+  await actionSearch.waitFor();
+  await actionSearch.fill('>atención');
+  await page.keyboard.press('Enter');
+  await dialog.waitFor();
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  await dialog.locator('.attention-item[data-session-id="s2"]').click();
+  await page.getByRole('button', { name: 'Abrir chat', exact: true }).click();
+  await page
+    .getByLabel('Cómo continuar: ¿Qué entorno usamos?', { exact: true })
+    .selectOption('skipped');
+  await page
+    .getByLabel('Cómo continuar: ¿Cuándo entregamos?', { exact: true })
+    .selectOption('replied_in_chat');
+  await page.screenshot({
+    path: 'artifacts/supervision/partial-questions.png',
+    animations: 'disabled',
+  });
+  await page.getByRole('button', { name: 'Enviar respuesta', exact: true }).click();
+  assert.deepEqual(
+    await page.evaluate(
+      () => window.fixture.actions.findLast((a) => a.type === 'approve').unanswered,
+    ),
+    {
+      '¿Qué entorno usamos?': 'skipped',
+      '¿Cuándo entregamos?': 'replied_in_chat',
+    },
+  );
   assert.deepEqual(errors, []);
   console.log(
     'PASS: atención entre agentes/proyectos, prioridad, histórico leído, final en mismo mensaje, teclado, foco, navegación, temas, ancho reducido y movimiento reducido; sin acciones del agente automáticas.',

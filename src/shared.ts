@@ -94,6 +94,7 @@ export interface ClaudeConfig {
   fallbackModel?: string;
   permissionMode: PermissionMode;
   effort?: Effort;
+  subagentEffort?: Effort;
   fastMode?: boolean;
   thinking: 'adaptive' | 'enabled' | 'disabled';
   thinkingBudget?: number;
@@ -265,6 +266,7 @@ export interface SlashCommand {
   builtin?: boolean;
 }
 export interface ModelInfo {
+  inputModalities?: string[];
   upgrade?: string;
   categories?: string[];
   tools?: boolean;
@@ -288,6 +290,8 @@ export interface McpServer {
 }
 export interface SessionInfo {
   version?: string;
+  executable?: string;
+  capabilities?: string[];
   model?: string;
   tools: string[];
   commands: SlashCommand[];
@@ -325,6 +329,9 @@ export interface RateLimit {
   status?: string;
 }
 export interface Session {
+  supervision?: import('./session-supervision').SessionSupervision;
+  agentDeliveries?: import('./session-supervision').AgentDelivery[];
+  deliveryPaused?: boolean;
   /** Undefined inherits the project's selection; an empty array disables managed connections. */
   mcpConnectionIds?: string[];
   mcpAppliedIds?: string[];
@@ -539,6 +546,8 @@ export type Action =
   | { type: 'accountLogin' | 'accountLogout'; profile: Profile; stopSessions: boolean }
   | { type: 'removeAccount'; profile: Profile; confirmed: true }
   | { type: 'snapshot' }
+  | { type: 'markSessionRead'; sessionId: string; revision: number }
+  | { type: 'resumeDeliveries'; sessionId: string }
   | { type: 'restartApp' }
   | { type: 'addProject' }
   | { type: 'moveProject'; projectId: string; targetProjectId: string }
@@ -566,6 +575,7 @@ export type Action =
       requestId: string | number;
       decision: 'accept' | 'always' | 'decline';
       answers?: Record<string, string>;
+      unanswered?: Record<string, 'skipped' | 'replied_in_chat' | 'dismissed'>;
       message?: string;
     }
   | { type: 'configure'; sessionId: string; config: Partial<ClaudeConfig> }

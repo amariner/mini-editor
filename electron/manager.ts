@@ -9,6 +9,7 @@ import {
 } from './mcp-adapters';
 import { effectiveMcpIds, supportsManagedMcp, type McpConnectionInput } from '../src/mcp-types';
 import { Teams } from './teams';
+import { observeSession, finishSession, markSessionRead } from '../src/session-supervision';
 import { readGit, changeGit, repositoryRoot } from './git';
 import { stageWorkspaceFile } from './workspace-files';
 import {
@@ -137,7 +138,7 @@ export class Manager {
       !this.startingInputs.has(s.id) &&
       !this.operations.has(s.id) &&
       this.acceptsInput(s),
-    send: (id, text, files, style) => this.sendNow(id, text, files, style),
+    send: (id, text, files, style) => this.sendNow(id, text, files, style, true),
     changed: () => this.changed(),
   });
   private acceptsInput(s: Session) {
@@ -160,7 +161,7 @@ export class Manager {
       this.state.selectedSession = selectedSession;
       return child;
     },
-    send: (id, text) => this.send(id, text),
+    send: (id, text) => this.send(id, text, [], undefined, true),
     changed: () => this.changed(),
   });
   private operations = new Set<string>();
@@ -173,6 +174,7 @@ export class Manager {
   private gitWork = new Set<Promise<unknown>>();
   private eventTimer?: NodeJS.Timeout;
   private pumpQueued = false;
+  private observedStatuses = new Map<string, Session['status']>();
   /** `profilesRoot` lets tests reuse authenticated profiles with an isolated state file. */
   constructor(
     root: string,
@@ -508,6 +510,10 @@ export class Manager {
     });
   }
   changed(session?: Session) {
+    for (const s of session ? [session] : this.state.sessions) {
+      observeSession(s, this.observedStatuses.get(s.id));
+      this.observedStatuses.set(s.id, s.status);
+    }
     // Provider deltas affect one chat. Global configuration changes still refresh every chat.
     if (this.mcp)
       for (const s of session ? [session] : this.state.sessions) {
@@ -1398,6 +1404,10 @@ export class Manager {
     // so a network outage cannot show the login card or leave a half-ready agent.
     await this.account(s);
     await this.codexModels(s);
+    if (s.info) {
+      s.info.version = rpc.serverVersion;
+      s.info.executable = binary;
+    }
     s.status = 'ready';
     if (s.reference && s.account) await this.loadThread(s);
     this.changed();
@@ -1800,7 +1810,13 @@ export class Manager {
       previousEffort: s.optimization?.effort,
     });
   }
-  async send(id: string, text: string, images: PreparedAttachment[] = [], responseStyle?: 'study') {
+  async send(
+    id: string,
+    text: string,
+    images: PreparedAttachment[] = [],
+    responseStyle?: 'study',
+    queuedDelivery = false,
+  ) {
     const session = this.session(id);
     this.project(session.projectId);
     if (
@@ -1820,7 +1836,7 @@ export class Manager {
     const starting = !this.runtimes.has(id);
     if (starting) this.startingInputs.add(id);
     try {
-      return await this.sendNow(id, text, images, responseStyle);
+      return await this.sendNow(id, text, images, responseStyle, queuedDelivery);
     } finally {
       if (starting) {
         this.startingInputs.delete(id);
@@ -1833,6 +1849,7 @@ export class Manager {
     text: string,
     images: PreparedAttachment[] = [],
     responseStyle?: 'study',
+    queuedDelivery = false,
   ): Promise<boolean> {
     if (this.accounts.removing(this.session(id).profile))
       throw new Error('Se está eliminando esta cuenta.');
@@ -1840,6 +1857,21 @@ export class Manager {
     const prompt = responsePrompt(text, responseStyle);
     return this.exclusive(id, async () => {
       const s = this.session(id);
+      if (queuedDelivery && s.deliveryPaused)
+        throw new Error(
+          'Envío pausado al interrumpir. Recupera el mensaje antes de volver a enviarlo.',
+        );
+      if (isCodex(s.profile) && images.some((a) => a.attachment.mediaType?.startsWith('image/'))) {
+        const selected = s.info?.models.find((m) =>
+          s.codexConfig?.model && s.codexConfig.model !== 'default'
+            ? m.value === s.codexConfig.model
+            : m.isDefault,
+        );
+        if (selected?.image === false)
+          throw new Error(
+            'Este modelo no admite imágenes. Cambia de modelo o retira la imagen; tu borrador se conserva.',
+          );
+      }
       let rt = this.runtime(id);
       if (this.mcp && supportsManagedMcp(s.profile, s.mode)) {
         if (['working', 'waiting'].includes(s.status)) {
@@ -2146,24 +2178,43 @@ export class Manager {
   async interrupt(id: string) {
     const s = this.session(id),
       rt = this.runtime(id);
-    if (rt.provider) {
-      await rt.provider.interrupt();
-      return;
+    // Completion callbacks may pump both queues while the interruption is awaiting the engine.
+    s.deliveryPaused = true;
+    const previousTurn = s.supervision && { ...s.supervision };
+    finishSession(s, 'interrupted');
+    this.changed(s);
+    try {
+      if (rt.provider) {
+        await rt.provider.interrupt();
+        return;
+      }
+      if (rt.pty) {
+        rt.pty.write('\x03');
+        return;
+      }
+      if (rt.claude) {
+        await rt.claude.interrupt();
+        this.changed();
+        return;
+      }
+      if (!s.turnId)
+        throw new Error('Aún no hay un turno confirmado. Cierra la pestaña si no responde.');
+      await rt.rpc!.call('turn/interrupt', { threadId: s.reference, turnId: s.turnId });
+    } catch (error) {
+      if (
+        previousTurn &&
+        s.supervision?.revision === previousTurn.revision &&
+        ['working', 'waiting'].includes(s.status)
+      )
+        s.supervision = previousTurn;
+      this.changed(s);
+      throw error;
     }
-    if (rt.pty) {
-      rt.pty.write('\x03');
-      return;
-    }
-    if (rt.claude) {
-      await rt.claude.interrupt();
-      this.changed();
-      return;
-    }
-    if (!s.turnId)
-      throw new Error('Aún no hay un turno confirmado. Cierra la pestaña si no responde.');
-    await rt.rpc!.call('turn/interrupt', { threadId: s.reference, turnId: s.turnId });
   }
   async stop(id: string) {
+    const stopped = this.session(id);
+    stopped.deliveryPaused = true;
+    finishSession(stopped, 'interrupted');
     this.pendingInputs.pause(this.session(id));
     for (const message of this.session(id).teamMessages ?? []) {
       if (message.status === 'queued') {
@@ -2172,6 +2223,17 @@ export class Manager {
       }
     }
     return this.exclusive(id, () => this.stopRuntime(id));
+  }
+  markRead(id: string, revision: number) {
+    const s = this.session(id);
+    if (markSessionRead(s, revision)) this.changed(s);
+    return true;
+  }
+  resumeDeliveries(id: string) {
+    const s = this.session(id);
+    s.deliveryPaused = false;
+    this.changed(s);
+    return true;
   }
   private stopRuntime(id: string) {
     const pending = this.stoppingRuntimes.get(id);
@@ -2274,6 +2336,7 @@ export class Manager {
     decision: 'accept' | 'always' | 'decline',
     answers?: Record<string, string>,
     message?: string,
+    unanswered?: Record<string, 'skipped' | 'replied_in_chat' | 'dismissed'>,
   ) {
     const s = this.session(id),
       rt = this.runtime(id);
@@ -2282,7 +2345,7 @@ export class Manager {
       return;
     }
     if (rt.claude) {
-      rt.claude.approve(requestId, decision, answers, message);
+      rt.claude.approve(requestId, decision, answers, message, unanswered);
       this.changed();
       return;
     }

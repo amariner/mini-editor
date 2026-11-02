@@ -11,6 +11,7 @@ const pageSchema = z.object({
       upgrade: z.string().nullable().optional(),
       defaultReasoningEffort: z.string().optional(),
       supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(),
+      inputModalities: z.array(z.string()).optional(),
     }),
   ),
   nextCursor: z.string().nullable().optional(),
@@ -34,6 +35,8 @@ export async function fetchCodexModels(
           isDefault: m.isDefault,
           upgrade: m.upgrade ?? undefined,
           defaultEffort: m.defaultReasoningEffort,
+          inputModalities: m.inputModalities ?? ['text', 'image'],
+          image: !m.inputModalities || m.inputModalities.includes('image'),
           supportedEffortLevels: (m.supportedReasoningEfforts ?? []).map((e) => e.reasoningEffort),
         });
     cursor = page.nextCursor ?? undefined;

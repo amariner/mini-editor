@@ -29,6 +29,7 @@ export const claudeConfigSchema = z.object({
     'bypassPermissions',
   ]),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  subagentEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   thinking: z.enum(['adaptive', 'enabled', 'disabled']),
   thinkingBudget: z.number().int().min(1024).max(200000).optional(),
   thinkingDisplay: z.enum(['summarized', 'omitted']),
@@ -63,6 +64,12 @@ export const modelSelectionSchema = z
 export const providerConfigSchema = z.object({ model: z.string().min(1).max(1024) }).strict();
 export const accountColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
 export const actionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('markSessionRead'),
+    sessionId: id,
+    revision: z.number().int().positive(),
+  }),
+  z.object({ type: z.literal('resumeDeliveries'), sessionId: id }),
   floatingChatAction,
   z.object({ type: z.literal('saveMcpConnection'), connection: mcpConnectionInputSchema }).strict(),
   ...(
@@ -375,6 +382,9 @@ export const actionSchema = z.discriminatedUnion('type', [
     requestId: z.union([id, z.number().int()]),
     decision: z.enum(['accept', 'always', 'decline']),
     answers: z.record(z.string(), z.string().max(10000)).optional(),
+    unanswered: z
+      .record(z.string(), z.enum(['skipped', 'replied_in_chat', 'dismissed']))
+      .optional(),
     message: z.string().max(5000).optional(),
   }),
   z.object({ type: z.literal('configure'), sessionId: id, config: claudeConfigSchema.partial() }),
@@ -604,6 +614,8 @@ export function claudeOptions(
   if (c.model && c.model !== 'default') options.model = c.model;
   if (c.fallbackModel) options.fallbackModel = c.fallbackModel;
   if (c.effort) options.effort = c.effort;
+  if (c.subagentEffort)
+    (options.env as Record<string, string>).CLAUDE_CODE_SUBAGENT_EFFORT = c.subagentEffort;
   if (c.maxTurns) options.maxTurns = c.maxTurns;
   if (c.maxBudgetUsd) options.maxBudgetUsd = c.maxBudgetUsd;
   if (c.allowedTools.length) options.allowedTools = c.allowedTools;
@@ -668,6 +680,8 @@ export function permissionResult(
   decision: 'accept' | 'always' | 'decline',
   answers?: Record<string, string>,
   message?: string,
+  unanswered?: Record<string, 'skipped' | 'replied_in_chat' | 'dismissed'>,
+  allowUnanswered = false,
 ) {
   if (decision === 'decline')
     return {
@@ -677,9 +691,32 @@ export function permissionResult(
   const input = approval.input ?? {};
   if (approval.tool === 'AskUserQuestion') {
     const questions: any[] = input.questions ?? [];
-    for (const q of questions)
-      if (!answers?.[q.question]) throw new Error('Responde a todas las preguntas.');
-    return { behavior: 'allow' as const, updatedInput: { ...input, answers } };
+    const supplied = { ...answers };
+    const annotations: Record<string, { unanswered: string }> = {};
+    for (const q of questions) {
+      if (supplied[q.question]?.trim()) continue;
+      const disposition = unanswered?.[q.question];
+      if (
+        !allowUnanswered ||
+        !['skipped', 'replied_in_chat', 'dismissed'].includes(disposition ?? '')
+      )
+        throw new Error('Responde a todas las preguntas.');
+      supplied[q.question] =
+        disposition === 'replied_in_chat'
+          ? 'El usuario responderá en el chat.'
+          : disposition === 'dismissed'
+            ? 'El usuario ha descartado esta pregunta.'
+            : 'El usuario ha omitido esta pregunta.';
+      annotations[q.question] = { unanswered: disposition! };
+    }
+    return {
+      behavior: 'allow' as const,
+      updatedInput: {
+        ...input,
+        answers: supplied,
+        ...(Object.keys(annotations).length ? { annotations } : {}),
+      },
+    };
   }
   if (decision === 'always') {
     const updatedPermissions =

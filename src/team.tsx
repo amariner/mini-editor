@@ -316,8 +316,9 @@ export function TeamIndicator({
   const root = session.parentId ?? session.id;
   const members = sessions.filter((s) => s.id === root || s.parentId === root);
   const agents = session.subagents ?? [];
+  const deliveries = session.agentDeliveries ?? [];
   const linked = members.length > 1;
-  const available = linked || agents.length > 0;
+  const available = linked || agents.length > 0 || deliveries.length > 0;
   const working = members.filter((s) => ['working', 'starting'].includes(s.status)).length;
   useLayoutEffect(() => {
     if (!available) {
@@ -361,6 +362,7 @@ export function TeamIndicator({
   const label = [
     linked ? `${members.length} chats` : '',
     agents.length ? `${agents.length} ${agents.length === 1 ? 'agente' : 'agentes'}` : '',
+    !agents.length && deliveries.length ? `${deliveries.length} entregas` : '',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -388,7 +390,9 @@ export function TeamIndicator({
         }}
       >
         <Users size={13} />
-        <span>{compact ? (linked ? members.length : 0) + agents.length : label}</span>
+        <span>
+          {compact ? (linked ? members.length : 0) + (agents.length || deliveries.length) : label}
+        </span>
         {working > 0 && (
           <i
             className="team-active"
@@ -481,6 +485,25 @@ export function TeamIndicator({
             <ChatStateMark tone="working" status="Trabajando" />
           </div>
         ))}
+        {deliveries.length > 0 && (
+          <div className="agent-deliveries" aria-label="Entregas de subagentes">
+            <h4>Últimas entregas</h4>
+            {[...deliveries].reverse().map((agent) => (
+              <details key={agent.id}>
+                <summary>
+                  {agent.description || 'Subagente'} ·{' '}
+                  {agent.outcome === 'completed'
+                    ? 'Terminado'
+                    : agent.outcome === 'failed'
+                      ? 'Falló'
+                      : 'Interrumpido'}
+                </summary>
+                <p>{agent.summary || 'Sin resumen disponible.'}</p>
+                {agent.tool && <small>Última herramienta: {agent.tool}</small>}
+              </details>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

@@ -1279,6 +1279,9 @@ function ClaudePermissionApproval({
 }) {
   const { root } = useChatActions();
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [unanswered, setUnanswered] = useState<
+    Record<string, 'skipped' | 'replied_in_chat' | 'dismissed'>
+  >({});
   const [reason, setReason] = useState('');
   const [showReason, setShowReason] = useState(false);
   const primary = useApprovalFocus();
@@ -1295,10 +1298,14 @@ function ClaudePermissionApproval({
           ? Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v.join(', ')]))
           : undefined,
       message: reason || undefined,
+      unanswered: tool === 'AskUserQuestion' ? unanswered : undefined,
     });
   if (tool === 'AskUserQuestion') {
     const questions: any[] = input.questions ?? [];
-    const complete = questions.every((q) => answers[q.question]?.length);
+    const supportsPartial = session.info?.capabilities?.includes('ask_user_question_unanswered_v1');
+    const complete = questions.every(
+      (q) => answers[q.question]?.length || (supportsPartial && unanswered[q.question]),
+    );
     return (
       <section className="approval ask" aria-label="Pregunta de Claude">
         <div className="approval-title">
@@ -1307,13 +1314,44 @@ function ClaudePermissionApproval({
           <Counter index={index} total={total} />
         </div>
         {questions.map((q, k) => (
-          <OptionTiles
-            key={q.question}
-            q={q}
-            autoFocus={k === 0}
-            value={answers[q.question] ?? []}
-            onChange={(v) => setAnswers({ ...answers, [q.question]: v })}
-          />
+          <div key={q.question} className="question-choice">
+            <OptionTiles
+              key={q.question}
+              q={q}
+              autoFocus={k === 0}
+              value={answers[q.question] ?? []}
+              onChange={(v) => {
+                setAnswers({ ...answers, [q.question]: v });
+                setUnanswered((old) => {
+                  const next = { ...old };
+                  delete next[q.question];
+                  return next;
+                });
+              }}
+            />
+            {supportsPartial && !answers[q.question]?.length && (
+              <label className="question-disposition">
+                Sin respuesta
+                <select
+                  aria-label={`Cómo continuar: ${q.question}`}
+                  value={unanswered[q.question] ?? ''}
+                  onChange={(e) =>
+                    setUnanswered((old) => {
+                      const next = { ...old };
+                      if (e.target.value) next[q.question] = e.target.value as 'skipped';
+                      else delete next[q.question];
+                      return next;
+                    })
+                  }
+                >
+                  <option value="">Elegir…</option>
+                  <option value="skipped">Omitir</option>
+                  <option value="replied_in_chat">Responder en el chat</option>
+                  <option value="dismissed">Descartar</option>
+                </select>
+              </label>
+            )}
+          </div>
         ))}
         <div className="approval-actions">
           <button className="primary" disabled={!complete} onClick={() => answer('accept')}>
@@ -2071,6 +2109,19 @@ export function Composer({
   };
   const send = async () => {
     const text = draft.trim();
+    const model = session.info?.models.find((m) =>
+      !session.codexConfig?.model || session.codexConfig.model === 'default'
+        ? m.isDefault
+        : m.value === session.codexConfig.model,
+    );
+    if (
+      isCodex(session.profile) &&
+      model?.image === false &&
+      images.some((a) => a.mediaType?.startsWith('image/'))
+    ) {
+      setImageError('Este modelo no admite imágenes. Cambia de modelo o retira la imagen.');
+      return;
+    }
     if (
       (!text && !images.length) ||
       !enabled ||
@@ -2840,16 +2891,22 @@ export const suggestions: { title: string; text: string; icon: any; color: strin
 /** Running tasks reported by the provider, shared by full chat and grid. */
 export function ExecutionPanel({ session }: { session: Session }) {
   const agents = session.subagents ?? [];
-  if (!agents.length) return null;
+  const deliveries = session.agentDeliveries ?? [];
+  if (!agents.length && !deliveries.length) return null;
   return (
     <details className="execution-panel">
       <summary>
         <Bot size={13} aria-hidden="true" />
         <span className="execution-count">
-          {agents.length} {agents.length === 1 ? 'agente' : 'agentes'}
+          {agents.length
+            ? `${agents.length} ${agents.length === 1 ? 'agente' : 'agentes'}`
+            : `${deliveries.length} entregas`}
         </span>
-        <span className="execution-current" title={agents[0].description || 'Trabajando'}>
-          {agents[0].description || 'Trabajando'}
+        <span
+          className="execution-current"
+          title={agents[0]?.description || deliveries.at(-1)?.description}
+        >
+          {agents[0]?.description || deliveries.at(-1)?.description}
         </span>
         <ChevronRight size={12} className="execution-chevron" aria-hidden="true" />
       </summary>
@@ -2863,6 +2920,23 @@ export function ExecutionPanel({ session }: { session: Session }) {
           </li>
         ))}
       </ul>
+      {!!deliveries.length && (
+        <div className="agent-deliveries">
+          {[...deliveries].reverse().map((a) => (
+            <details key={a.id}>
+              <summary>
+                {a.description} ·{' '}
+                {a.outcome === 'completed'
+                  ? 'Terminado'
+                  : a.outcome === 'failed'
+                    ? 'Falló'
+                    : 'Interrumpido'}
+              </summary>
+              <p>{a.summary || 'Sin resumen disponible.'}</p>
+            </details>
+          ))}
+        </div>
+      )}
     </details>
   );
 }
@@ -2876,10 +2950,27 @@ export function PendingMessages({
   run: (action: Action) => Promise<any>;
   recover: (text: string, attachments: Attachment[]) => void;
 }) {
-  if (!session.pendingInputs?.length) return null;
+  const pausedCount =
+    (session.pendingInputs?.filter((m) => m.status === 'pending').length ?? 0) +
+    (session.teamMessages?.filter((m) => m.status === 'queued').length ?? 0);
+  if (!session.pendingInputs?.length && !(session.deliveryPaused && pausedCount)) return null;
   return (
     <div className="pending-messages" aria-label="Mensajes pendientes" aria-live="polite">
-      {session.pendingInputs.map((message) => (
+      {session.deliveryPaused && pausedCount > 0 && (
+        <div className="queue-paused">
+          <span>
+            <small>Envíos pausados</small>
+            {pausedCount} {pausedCount === 1 ? 'mensaje conservado' : 'mensajes conservados'}
+          </span>
+          <button
+            type="button"
+            onClick={() => run({ type: 'resumeDeliveries', sessionId: session.id })}
+          >
+            Reanudar envíos
+          </button>
+        </div>
+      )}
+      {session.pendingInputs?.map((message) => (
         <div key={message.id} className={message.status}>
           <span title={message.error || message.text}>
             <small>

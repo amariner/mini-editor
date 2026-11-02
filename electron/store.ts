@@ -94,6 +94,29 @@ const schema = z.object({
       mcpConnectionIds: z.array(z.string().max(150)).max(100).optional(),
       profile: profileSchema,
       title: z.string(),
+      deliveryPaused: z.boolean().optional(),
+      supervision: z
+        .object({
+          revision: z.number().int().nonnegative(),
+          seenRevision: z.number().int().nonnegative(),
+          startedAt: z.number(),
+          finishedAt: z.number().optional(),
+          outcome: z.enum(['completed', 'interrupted', 'failed']).optional(),
+        })
+        .optional(),
+      agentDeliveries: z
+        .array(
+          z.object({
+            id: z.string(),
+            description: z.string(),
+            summary: z.string().optional(),
+            tool: z.string().optional(),
+            outcome: z.enum(['completed', 'interrupted', 'failed']),
+            finishedAt: z.number(),
+          }),
+        )
+        .max(40)
+        .optional(),
       pendingInputs: z
         .array(
           z.object({
@@ -238,6 +261,13 @@ export class Store {
             : definitions[0]?.id,
           sessions: data.sessions.map((s) => ({
             ...s,
+            supervision:
+              s.supervision && !s.supervision.finishedAt
+                ? { ...s.supervision, outcome: 'interrupted', finishedAt: Date.now() }
+                : s.supervision,
+            deliveryPaused:
+              s.deliveryPaused ||
+              !!s.teamMessages?.some((m) => m.status === 'queued' || m.status === 'sending'),
             accountLocked: sessionAccountLocked(s),
             config: s.config ? mergeConfig(s.config) : undefined,
             codexConfig: isCodex(s.profile) ? mergeCodexConfig(s.codexConfig) : undefined,
@@ -312,6 +342,9 @@ export class Store {
           pendingInputs,
           parentId,
           teamMessages,
+          supervision,
+          agentDeliveries,
+          deliveryPaused,
           stats,
           messages,
         }) => ({
@@ -336,6 +369,9 @@ export class Store {
           pendingInputs,
           parentId,
           teamMessages,
+          supervision,
+          agentDeliveries,
+          deliveryPaused,
           stats,
           messages: messages.map(
             ({

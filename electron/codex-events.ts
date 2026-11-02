@@ -1,4 +1,5 @@
 import type { Message, Session, ToolInfo } from '../src/shared';
+import { finishSession } from '../src/session-supervision';
 const OUTPUT_LIMIT = 30000,
   DIFF_LIMIT = 60000;
 // Keep the end of long outputs: failures and summaries are usually printed last.
@@ -149,6 +150,14 @@ export function applyCodexEvent(s: Session, method: string, p: any) {
     s.turnId = p.turn.id;
     s.status = 'working';
   } else if (method === 'turn/completed') {
+    finishSession(
+      s,
+      p.turn.status === 'interrupted'
+        ? 'interrupted'
+        : p.turn.error || p.turn.status === 'failed'
+          ? 'failed'
+          : 'completed',
+    );
     s.turnId = undefined;
     s.status = 'ready';
     s.approvals = [];

@@ -813,6 +813,10 @@ app.whenReady().then(async () => {
           return;
         case 'snapshot':
           return snapshot();
+        case 'markSessionRead':
+          return manager.markRead(a.sessionId, a.revision);
+        case 'resumeDeliveries':
+          return manager.resumeDeliveries(a.sessionId);
         case 'restartApp':
           if (!dev || !process.send || !updateAvailable)
             throw new Error('No hay una actualización de desarrollo preparada.');
@@ -945,7 +949,14 @@ app.whenReady().then(async () => {
           return manager.send(a.sessionId, a.text, images, a.responseStyle);
         }
         case 'approve':
-          return manager.approve(a.sessionId, a.requestId, a.decision, a.answers, a.message);
+          return manager.approve(
+            a.sessionId,
+            a.requestId,
+            a.decision,
+            a.answers,
+            a.message,
+            a.unanswered,
+          );
         case 'login': {
           const url = await manager.login(a.sessionId);
           if (url) {

@@ -1,5 +1,6 @@
 import type { Approval, Session } from './shared';
 import { lastTurnChanges, type TurnChanges } from './supervision';
+import { hasUnreadTurn } from './session-supervision';
 
 export type AttentionKind = 'permission' | 'question' | 'error' | 'delivery' | 'completed';
 export interface AttentionItem {
@@ -62,7 +63,7 @@ export function attentionItems(
       });
       continue;
     }
-    if (session.status === 'error' || session.error) {
+    if (session.status === 'error' || session.error || session.supervision?.outcome === 'failed') {
       items.push({
         session,
         kind: 'error',
@@ -83,11 +84,17 @@ export function attentionItems(
       continue;
     }
     if (session.status !== 'ready' && session.status !== 'stopped') continue;
+    if (
+      session.supervision &&
+      (!hasUnreadTurn(session) || session.supervision.outcome !== 'completed')
+    )
+      continue;
     // A streaming reply may finish in the same message the user saw before leaving.
     // The host records that completion transition independently of message count.
-    const read = unreadCompleted.has(session.id)
-      ? 0
-      : (seen[session.id] ?? session.messages.length);
+    const read =
+      hasUnreadTurn(session) || unreadCompleted.has(session.id)
+        ? 0
+        : (seen[session.id] ?? session.messages.length);
     let lastUser = -1;
     for (let i = session.messages.length - 1; i >= 0; i--) {
       if (session.messages[i].role === 'user') {
@@ -114,6 +121,15 @@ export function attentionItems(
       });
       break;
     }
+    if (hasUnreadTurn(session) && !items.some((item) => item.session.id === session.id))
+      items.push({
+        session,
+        kind: 'completed',
+        label: 'Turno sin leer',
+        detail:
+          'El turno ha terminado sin una respuesta de texto. Revisa la actividad y los cambios.',
+        changes: lastTurnChanges(session),
+      });
   }
   const priority: Record<AttentionKind, number> = {
     permission: 0,

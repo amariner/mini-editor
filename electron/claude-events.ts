@@ -1,4 +1,5 @@
 import type { Block, Message, Session } from '../src/shared';
+import { finishSession, recordAgentDelivery } from '../src/session-supervision';
 const RESULT_LIMIT = 30000,
   MESSAGE_LIMIT = 400;
 function contentText(content: any): string {
@@ -40,6 +41,7 @@ function push(s: Session, m: Message) {
 }
 /** Mark every tool still running as finished (after an interruption or exit). */
 export function settle(s: Session) {
+  for (const agent of s.subagents ?? []) recordAgentDelivery(s, agent.id, 'stopped');
   s.subagents = undefined;
   for (const m of s.messages)
     for (const b of walk(m.blocks)) if (b.type === 'tool_use' && !b.done) b.done = true;
@@ -214,6 +216,7 @@ export function applyClaudeMessage(s: Session, m: any) {
     return;
   }
   if (m.type === 'result') {
+    finishSession(s, m.is_error || m.subtype !== 'success' ? 'failed' : 'completed');
     s.attempted = true;
     s.forkFrom = undefined; // The fork now has its own transcript under `reference`.
     const st = (s.stats ??= { cost: 0, turns: 0, inputTokens: 0, outputTokens: 0, durationMs: 0 });
@@ -269,6 +272,9 @@ export function applyClaudeMessage(s: Session, m: any) {
         outputStyles: [],
       });
       info.version = m.claude_code_version;
+      info.capabilities = Array.isArray(m.capabilities)
+        ? m.capabilities.filter((c: unknown) => typeof c === 'string')
+        : [];
       info.model = m.model;
       info.tools = m.tools ?? [];
       info.mcpServers = (m.mcp_servers ?? []).map((x: any) => ({ name: x.name, status: x.status }));
@@ -347,6 +353,7 @@ export function applyClaudeMessage(s: Session, m: any) {
     } else if (sub === 'task_updated' || sub === 'task_notification') {
       const status = sub === 'task_updated' ? m.patch?.status : m.status;
       if (['completed', 'failed', 'killed', 'stopped'].includes(status) && s.subagents) {
+        recordAgentDelivery(s, m.task_id, status, m.summary ?? m.patch?.summary);
         s.subagents = s.subagents.filter((a) => a.id !== m.task_id);
         if (!s.subagents.length) s.subagents = undefined;
       }
@@ -382,6 +389,10 @@ export function applyClaudeMessage(s: Session, m: any) {
     return;
   }
   if (m.type === 'task_notification') {
+    if (['completed', 'failed', 'killed', 'stopped'].includes(m.status)) {
+      recordAgentDelivery(s, m.task_id, m.status, m.summary);
+      s.subagents = s.subagents?.filter((a) => a.id !== m.task_id);
+    }
     note(
       s,
       'info',

@@ -126,6 +126,7 @@ export class Teams {
     if (this.closed) return;
     for (const s of this.host.sessions()) {
       if (
+        s.deliveryPaused ||
         !['ready', 'stopped'].includes(s.status) ||
         s.approvals.length ||
         this.delivering.has(s.id)

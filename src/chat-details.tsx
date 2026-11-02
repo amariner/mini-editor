@@ -6,6 +6,7 @@ import type { GitSnapshot } from './git-types';
 import { compactTokens } from './task-signature';
 import { usePanelPresence } from './panel-presence';
 import './chat-details.css';
+import { cardStatus } from './supervision';
 
 export function ChatDetails({
   session,
@@ -140,24 +141,32 @@ export function ChatDetailsContent({
     session.codexConfig?.model ??
     session.providerConfig?.model;
   const location = session.worktree?.cwd ?? root;
-  const status = session.approvals.length
-    ? 'Necesita tu atención'
-    : {
-        stopped: 'Detenido',
-        starting: 'Conectando…',
-        terminal: 'Terminal activa',
-        ready: 'Listo',
-        working: 'Trabajando',
-        waiting: 'Espera tu respuesta',
-        stopping: 'Deteniendo…',
-        error: 'Revisar error',
-      }[session.status];
+  const status = session.supervision
+    ? cardStatus(session)[1]
+    : session.approvals.length
+      ? 'Necesita tu atención'
+      : {
+          stopped: 'Detenido',
+          starting: 'Conectando…',
+          terminal: 'Terminal activa',
+          ready: 'Listo',
+          working: 'Trabajando',
+          waiting: 'Espera tu respuesta',
+          stopping: 'Deteniendo…',
+          error: 'Revisar error',
+        }[session.status];
   const queued = session.pendingInputs?.filter((input) => input.status !== 'failed').length ?? 0;
   const failed = session.pendingInputs?.filter((input) => input.status === 'failed').length ?? 0;
 
   return (
     <div className="chat-details-content">
       <div className="chat-details-activity">
+        {session.info?.version && (
+          <small title={session.info.executable}>
+            Motor {session.info.version}
+            {session.info.version.includes('-') ? ' · Versión de prueba' : ''}
+          </small>
+        )}
         <span
           className={`chat-details-status status-${session.approvals.length ? 'waiting' : session.status}`}
         >

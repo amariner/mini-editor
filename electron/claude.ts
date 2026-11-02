@@ -185,6 +185,7 @@ export class ClaudeRuntime {
       agents: [],
       outputStyles: [],
     });
+    info.executable = String(this.options.pathToClaudeCodeExecutable ?? '');
     info.models = (init.models ?? []).map((m: any) => ({
       value: m.value,
       displayName: m.displayName,
@@ -316,6 +317,7 @@ export class ClaudeRuntime {
     decision: 'accept' | 'always' | 'decline',
     answers?: Record<string, string>,
     message?: string,
+    unanswered?: Record<string, 'skipped' | 'replied_in_chat' | 'dismissed'>,
   ) {
     const s = this.s;
     const a = s.approvals.find((a) => a.id === id);
@@ -323,7 +325,14 @@ export class ClaudeRuntime {
     if (!a || !p) throw new Error('La solicitud ya no está pendiente.');
     const result = p.elicitation
       ? mcpElicitationResult(a.params, decision, answers)
-      : permissionResult(a, decision, answers, message);
+      : permissionResult(
+          a,
+          decision,
+          answers,
+          message,
+          unanswered,
+          s.info?.capabilities?.includes('ask_user_question_unanswered_v1'),
+        );
     this.pending.delete(String(id));
     s.approvals = s.approvals.filter((x) => x.id !== id);
     s.status = s.approvals.length ? 'waiting' : 'working';
@@ -379,7 +388,15 @@ export class ClaudeRuntime {
       );
     }
     this.s.approvals = [];
-    await this.query?.interrupt();
+    this.queue = [];
+    const receipt = await this.query?.interrupt();
+    if (receipt?.still_queued?.length || (busy && !Array.isArray(receipt?.still_queued))) {
+      // The public SDK cannot cancel these queued UUIDs. Close this runtime so they cannot wake it.
+      this.s.notice =
+        'Se ha cerrado el agente para confirmar la interrupción de su cola. Los mensajes y adjuntos se conservan en el historial; puedes iniciar otra tarea.';
+      await this.stop();
+      return;
+    }
     this.s.activity = undefined;
     settle(this.s);
     if (busy) note(this.s, 'info', 'Interrumpido · Escribe qué debe hacer en su lugar.');

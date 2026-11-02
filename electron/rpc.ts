@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { codexRpcError } from './codex-errors';
 export class Rpc extends EventEmitter {
+  serverVersion?: string;
   process: ChildProcessWithoutNullStreams;
   private sequence = 0;
   private stopping?: Promise<void>;
@@ -110,9 +111,13 @@ export class Rpc extends EventEmitter {
     this.send({ id, result });
   }
   async initialize() {
-    await this.call('initialize', {
+    const result = await this.call('initialize', {
       clientInfo: { name: 'agent_desk', title: 'Agent Desk', version: '0.1.0' },
     });
+    this.serverVersion =
+      typeof result?.userAgent === 'string'
+        ? result.userAgent.match(/\b(\d+\.\d+\.\d+(?:-[\w.]+)?)/)?.[1]
+        : undefined;
     this.send({ method: 'initialized', params: {} });
   }
   stop(): Promise<void> {
