@@ -1144,7 +1144,7 @@ export class Manager {
       append: [
         s.config?.appendSystemPrompt,
         continuationContext(s),
-        'For multi-step work, create a short task list at the beginning with TodoWrite or TaskCreate and update it as work progresses. Skip task lists for simple answers. Keep the parent task list separate from subagent tasks.',
+        'For multi-step work, create a short task list at the beginning with TodoWrite or TaskCreate, before using other tools, so the user sees how you will complete the request. Write 3-6 concrete steps in the language the user writes in. Keep exactly one step in progress and mark each completed as soon as it is done. Skip task lists for simple answers. Keep the parent task list separate from subagent tasks.',
         isolated
           ? isolatedInstructions(s.worktree!.branch, s.worktree!.base)
           : coordinationInstructions,

@@ -17,6 +17,7 @@ import {
 } from './codex-permissions';
 import { readDroppedFiles } from './image-drop';
 import { conversationEntries, currentActivity, working } from './conversation';
+import { hasPlanTools, turnPlan, type PlanItem } from './turn-plan';
 import { CodexCatalogStatus } from './codex-catalog';
 import { signatureModel, reportedTokens, compactTokens } from './task-signature';
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -700,105 +701,139 @@ export const MessageView = memo(function MessageView({
     </div>
   );
 });
+// Changed files read as chips beneath the reply; each one opens its file.
 function TurnChanges({ messages }: { messages: Message[] }) {
   const { root, openPath, showChanges } = useChatActions();
-  const [expanded, setExpanded] = useState(false);
-  const id = useId();
+  const [all, setAll] = useState(false);
   const files = fileChanges(messages);
   if (!files.length) return null;
-  const added = files.reduce((n, f) => n + f.added, 0);
-  const removed = files.reduce((n, f) => n + f.removed, 0);
+  const shown = all ? files : files.slice(0, 6);
   return (
     <section className="turn-changes" aria-label="Archivos cambiados en esta respuesta">
-      <header>
+      {shown.map((f) => {
+        const content = (
+          <>
+            <span className="turn-file-name">{shortPath(f.path, root)}</span>
+            {f.created && <span className="turn-tag">nuevo</span>}
+            {f.added ? <span className="git-added">+{f.added}</span> : null}
+            {f.removed ? <span className="git-removed">−{f.removed}</span> : null}
+          </>
+        );
+        return openPath ? (
+          <button
+            key={f.path}
+            type="button"
+            className="turn-file"
+            title={`${f.path} · Abrir`}
+            onClick={() => openPath(f.path)}
+          >
+            {content}
+          </button>
+        ) : (
+          <span key={f.path} className="turn-file" title={f.path}>
+            {content}
+          </span>
+        );
+      })}
+      {files.length > shown.length && (
+        <button type="button" className="turn-more" onClick={() => setAll(true)}>
+          +{files.length - shown.length} más
+        </button>
+      )}
+      {showChanges && (
         <button
-          className="turn-changes-toggle"
-          aria-expanded={expanded}
-          aria-controls={expanded ? id : undefined}
-          onClick={() => setExpanded((value) => !value)}
+          type="button"
+          className="turn-changes-open"
+          aria-label="Ver cambios de esta respuesta"
+          title="Ver cambios"
+          onClick={showChanges}
         >
           <FileDiff size={13} aria-hidden="true" />
-          <strong>
-            {files.length} {files.length === 1 ? 'archivo cambiado' : 'archivos cambiados'}
-          </strong>
-          <ChevronRight size={12} aria-hidden="true" />
+          Ver cambios
         </button>
-        <span className="step-lines">
-          <span className="git-added">+{added}</span>
-          <span className="git-removed">−{removed}</span>
-        </span>
-        {showChanges && (
-          <button
-            className="turn-changes-open"
-            aria-label="Ver cambios de esta respuesta"
-            title="Ver cambios"
-            onClick={showChanges}
-          >
-            <FileDiff size={14} aria-hidden="true" />
-          </button>
-        )}
-      </header>
-      {expanded && (
-        <ul id={id}>
-          {files.slice(0, 8).map((f) => (
-            <li key={f.path}>
-              {openPath ? (
-                <button
-                  className="turn-file"
-                  title={`${f.path} · Abrir`}
-                  onClick={() => openPath(f.path)}
-                >
-                  {shortPath(f.path, root)}
-                </button>
-              ) : (
-                <span className="turn-file">{shortPath(f.path, root)}</span>
-              )}
-              {f.created && <span className="turn-tag">nuevo</span>}
-              <span className="step-lines">
-                {f.added ? <span className="git-added">+{f.added}</span> : null}
-                {f.removed ? <span className="git-removed">−{f.removed}</span> : null}
-              </span>
-            </li>
-          ))}
-          {files.length > 8 && <li className="turn-more">y {files.length - 8} más</li>}
-        </ul>
       )}
     </section>
   );
 }
-function ResponseAnswer({
-  message,
-  kind,
-  compact,
-}: {
-  message: Message;
-  kind: ProviderKind;
-  compact: boolean;
-}) {
+type WorkItem = ReturnType<typeof workItems>[number];
+type Segment =
+  { type: 'text'; id: string; text: string } | { type: 'run'; id: string; items: WorkItem[] };
+/** The reply in the order it happened: prose stays readable, tool runs fold between it. */
+export function responseSegments(items: WorkItem[]): Segment[] {
+  const out: Segment[] = [];
+  for (const item of items) {
+    if (item.type === 'text') {
+      out.push({ type: 'text', id: item.id, text: item.text });
+      continue;
+    }
+    const last = out.at(-1);
+    if (last?.type === 'run') last.items.push(item);
+    else
+      out.push({ type: 'run', id: item.type === 'step' ? item.step.id : item.id, items: [item] });
+  }
+  return out;
+}
+function WorkRun({ items, live }: { items: WorkItem[]; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  const steps = items.flatMap((w) => (w.type === 'step' ? [w.step] : []));
+  const blocked = steps.filter((step) => antigravityDenied(step.message)).length;
+  const errors = Math.max(0, steps.filter((step) => step.error).length - blocked);
+  const current = live ? [...steps].reverse().find((step) => step.running) : undefined;
+  const thinking = live && items.some((w) => w.type === 'thinking' && w.streaming);
+  const label = current
+    ? `${VERBS[current.kind][1]} ${current.label}`.trim()
+    : thinking
+      ? 'Razonando…'
+      : summarize(steps.filter((step) => !antigravityDenied(step.message))) ||
+        (blocked
+          ? `${blocked} ${blocked === 1 ? 'acción sin ejecutar' : 'acciones sin ejecutar'}`
+          : items.some((w) => w.type === 'thinking')
+            ? 'Razonó'
+            : 'Ver actividad');
+  const ms = steps.reduce((total, step) => total + (step.ms ?? 0), 0);
+  const time = !current && !thinking && ms >= 1500 ? duration(ms) : '';
+  return (
+    <details
+      className={`response-work ${errors ? 'has-errors' : ''} ${current || thinking ? 'running' : ''}`}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <ChevronRight size={12} className="work-chevron" aria-hidden="true" />
+        <span className="work-summary" title={label}>
+          {label}
+        </span>
+        {steps.length > 1 && <span className="work-count">{steps.length} pasos</span>}
+        {time && <span className="work-time">{time}</span>}
+        {blocked > 0 && <span className="work-permissions">Requiere permiso</span>}
+        {errors ? (
+          <span className="work-errors">
+            {errors} {errors === 1 ? 'error' : 'errores'}
+          </span>
+        ) : null}
+      </summary>
+      {open && <WorkFeed items={items} />}
+    </details>
+  );
+}
+function ResponseText({ text, compact }: { text: string; compact: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
-  const text = answerText(message);
-  const long =
-    text.length > (compact ? 650 : 1600) || text.split('\n').length > (compact ? 14 : 28);
-  const size = compact ? 280 : 520;
+  // Only small multichat cards abbreviate a long reply; the main chat always shows all of it.
+  const long = compact && (text.length > 650 || text.split('\n').length > 14);
   const boundary = text.indexOf('\n\n');
   const end =
-    boundary > 0 && boundary <= size ? boundary : Math.max(size / 2, text.lastIndexOf(' ', size));
+    boundary > 0 && boundary <= 280 ? boundary : Math.max(140, text.lastIndexOf(' ', 280));
   // Never offer "copy code" on an excerpt: its original code remains behind the disclosure.
   const excerpt = text
     .slice(0, end)
     .split(/(?:^|\n)\s{0,3}(?:`{3,}|~{3,})/)[0]
     .trimEnd();
-  const preview =
+  const shown =
     long && !expanded
-      ? {
-          ...message,
-          blocks: undefined,
-          text: excerpt
-            ? excerpt + (boundary > 0 && end === boundary ? '' : '…')
-            : 'Respuesta con código. Abre la respuesta completa para consultarlo.',
-        }
-      : message;
+      ? excerpt
+        ? excerpt + (boundary > 0 && end === boundary ? '' : '…')
+        : 'Respuesta con código. Abre la respuesta completa para consultarlo.'
+      : text;
   return (
     <div className="response-answer">
       {long && (
@@ -813,109 +848,113 @@ function ResponseAnswer({
           <ChevronDown size={13} aria-hidden="true" />
         </button>
       )}
-      <div id={id}>
-        <MessageView m={preview} kind={kind} showAuthor={false} />
+      <div id={id} className="row assistant">
+        <Markdown text={shown} />
       </div>
     </div>
   );
 }
 
-function CalmResponse({ text, pending }: { text: string; pending: boolean }) {
-  const { visible, reveal } = useCalmText(text, pending);
+/** The steps the agent committed to for this request, ticked off as it works. */
+function PlanCard({ items, live }: { items: PlanItem[]; live: boolean }) {
+  const done = items.filter((item) => item.status === 'completed').length;
   return (
-    <div className="response-answer calm-response">
+    <section
+      className={`turn-plan ${live ? 'live' : ''}`}
+      aria-label={`Plan: ${done} de ${items.length} pasos completados`}
+    >
+      <ol>
+        {items.map((item, index) => {
+          const status = STATUS_LABELS[item.status] ? item.status : 'pending';
+          const text =
+            status === 'in_progress' && live ? item.activeForm || item.content : item.content;
+          return (
+            <li key={item.id ?? index} className={status}>
+              <span className={`plan-mark ${status}`} aria-hidden="true">
+                {status === 'completed' && <Check size={10} strokeWidth={3} />}
+              </span>
+              <span className="sr-only">{STATUS_LABELS[status]}: </span>
+              <span className="plan-text">{text}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pendiente',
+  in_progress: 'En curso',
+  completed: 'Hecho',
+};
+
+function CalmResponse({ text, pending }: { text: string; pending: boolean }) {
+  const { visible } = useCalmText(text, pending);
+  return (
+    <div className={`response-answer calm-response ${pending ? 'streaming' : ''}`}>
       <div className="row assistant">
         <Markdown text={visible} animate />
       </div>
-      {!pending && visible !== text && (
-        <button className="response-expand" onClick={reveal}>
-          Mostrar todo ahora
-        </button>
-      )}
     </div>
   );
 }
 
+const planKey = (plan?: PlanItem[]) =>
+  plan ? plan.map((t) => `${t.status}:${t.content}:${t.activeForm ?? ''}`).join('\n') : '';
 const ResponseGroup = memo(
   function ResponseGroup({
     entry,
-    kind,
+    plan,
     animate = false,
     compact = false,
   }: {
     entry: Extract<ReturnType<typeof conversationEntries>[number], { type: 'response' }>;
     kind: ProviderKind;
+    plan?: PlanItem[];
     animate?: boolean;
     compact?: boolean;
   }) {
     const { root } = useChatActions();
-    const [activityOpen, setActivityOpen] = useState(false);
-    const items = useMemo(() => workItems(entry.work, root), [entry.work, root]);
-    const progress = items.filter((w) => w.type === 'text');
-    // An interrupted turn may have no final answer; keep its last narration in sight.
-    const showProgress = entry.pending || !entry.answer;
-    const details = showProgress ? items.filter((w) => w.type !== 'text') : items;
-    const steps = items.flatMap((w) => (w.type === 'step' ? [w.step] : []));
-    const blocked = steps.filter((step) => antigravityDenied(step.message)).length;
-    const errors = Math.max(0, entry.errors - blocked);
+    const items = useMemo(() => workItems(entry.messages, root), [entry.messages, root]);
+    const segments = useMemo(() => responseSegments(items), [items]);
+    const lastText = segments.reduce(
+      (found, segment, index) => (segment.type === 'text' ? index : found),
+      -1,
+    );
     const ms = [...entry.messages].reverse().find((m) => m.durationMs)?.durationMs;
     const model = prettyModel(entry.answer?.model ?? entry.messages.find((m) => m.model)?.model);
-    const summary =
-      summarize(steps.filter((step) => !antigravityDenied(step.message))) ||
-      (blocked
-        ? `${blocked} ${blocked === 1 ? 'acción sin ejecutar' : 'acciones sin ejecutar'}`
-        : items.some((w) => w.type === 'thinking')
-          ? 'Razonó'
-          : 'Ver actividad');
     const time = duration(ms);
-    const text = entry.answer ? answerText(entry.answer) : '';
+    // Copy the final answer; a turn without one copies everything it said.
+    const text = entry.answer
+      ? answerText(entry.answer)
+      : segments.flatMap((s) => (s.type === 'text' ? [s.text.trim()] : [])).join('\n\n');
     const at = entry.answer?.at ?? [...entry.messages].reverse().find((m) => m.at)?.at;
     const clock = at
       ? new Date(at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
       : '';
     return (
-      <div className="response-group">
-        {!animate &&
-          showProgress &&
-          (entry.pending ? progress.slice(-1) : progress).map((w) => (
-            <div className="row assistant progress-message" key={w.id}>
-              <Markdown text={w.text} />
-            </div>
-          ))}
-        {!entry.pending && details.length > 0 && (
-          <details
-            className={`response-work ${errors ? 'has-errors' : ''}`}
-            onToggle={(event) => setActivityOpen(event.currentTarget.open)}
-          >
-            <summary>
-              <span className="work-summary" title={summary}>
-                {summary}
-              </span>
-              {time && <span className="work-time">{time}</span>}
-              {blocked > 0 && <span className="work-permissions">Requiere permiso</span>}
-              {errors ? (
-                <span className="work-errors">
-                  {errors} {errors === 1 ? 'error' : 'errores'}
-                </span>
-              ) : null}
-              <ChevronRight size={12} />
-            </summary>
-            {activityOpen && <WorkFeed items={details} />}
-          </details>
-        )}
-        {animate && (progress.length > 0 || !!text) && (
-          <CalmResponse
-            text={entry.answer ? text : progress.at(-1)!.text}
-            pending={entry.pending}
-          />
-        )}
-        {!animate && entry.answer && (
-          <ResponseAnswer
-            key={entry.answer.id}
-            message={entry.answer}
-            kind={kind}
-            compact={compact}
-          />
+      <div className={`response-group ${entry.pending ? 'pending' : ''}`}>
+        {plan && <PlanCard items={plan} live={entry.pending} />}
+        {segments.map((segment, index) =>
+          segment.type === 'run' ? (
+            <WorkRun
+              key={segment.id}
+              items={segment.items}
+              live={entry.pending && index === segments.length - 1}
+            />
+          ) : animate && index === lastText ? (
+            <CalmResponse
+              key={segment.id}
+              text={segment.text}
+              pending={entry.pending && index === segments.length - 1}
+            />
+          ) : (
+            <ResponseText
+              key={segment.id}
+              text={segment.text}
+              compact={compact && !entry.pending && index === lastText}
+            />
+          ),
         )}
         {!entry.pending && <TurnChanges messages={entry.messages} />}
         {!entry.pending && (text || model || clock) && (
@@ -926,9 +965,7 @@ const ResponseGroup = memo(
                 <ReadAloudButton text={text} />
               </>
             )}
-            <span className="msg-meta">
-              {[model, !entry.work.length && time ? time : '', clock].filter(Boolean).join(' · ')}
-            </span>
+            <span className="msg-meta">{[model, time, clock].filter(Boolean).join(' · ')}</span>
           </div>
         )}
       </div>
@@ -939,6 +976,7 @@ const ResponseGroup = memo(
     previous.animate === next.animate &&
     previous.compact === next.compact &&
     previous.entry.pending === next.entry.pending &&
+    planKey(previous.plan) === planKey(next.plan) &&
     previous.entry.messages.length === next.entry.messages.length &&
     previous.entry.messages.every((message, index) => message === next.entry.messages[index]),
 );
@@ -967,6 +1005,18 @@ export function ConversationMessages({
     [suppliedEntries, session.messages, session.status, session.approvals.length],
   );
   const visible = limit === undefined ? entries : entries.slice(-limit);
+  const lastResponse = [...entries].reverse().find((entry) => entry.type === 'response');
+  // The live list is authoritative for the latest turn (task updates may refer to earlier turns);
+  // older turns replay the plan they published themselves.
+  const planFor = (entry: Extract<(typeof entries)[number], { type: 'response' }>) => {
+    if (entry === lastResponse && session.todos?.length) {
+      const unfinished = session.todos.some((t) => t.status !== 'completed');
+      const published = kind === 'claude' ? hasPlanTools(entry.messages) : entry.pending;
+      // A plan still in progress follows the conversation into its latest turn.
+      if (published || unfinished) return session.todos;
+    }
+    return turnPlan(entry.messages);
+  };
   return (
     <CodePreviewContext.Provider value={true}>
       {visible.map((entry) => {
@@ -977,6 +1027,7 @@ export function ConversationMessages({
             key={`${session.id}:${entry.id}`}
             entry={entry}
             kind={kind}
+            plan={planFor(entry)}
             compact={compact}
             animate={animateReplies && !initialMessages.has(entry.id)}
           />

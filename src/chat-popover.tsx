@@ -111,21 +111,31 @@ export function Popover({
   }, [open]);
   useLayoutEffect(() => {
     if (!open || !sidePanel || !panel.current || !side.current) return;
+    // Stay inside the chat pane: neighbouring panes (like the integrated browser, a native view)
+    // paint above the page, so a flyout placed over them would be hidden and unusable.
+    const boundary =
+      ref.current?.closest('.conversation, .drawer-body, .modal') ?? document.documentElement;
     const placeSide = () => {
       const main = panel.current?.getBoundingClientRect();
       const popup = side.current;
       if (!main || !popup) return;
       const margin = 8;
-      const width = Math.min(200, window.innerWidth - margin * 2);
-      const right = window.innerWidth - margin - main.right;
-      const left = main.left - margin;
+      const area = boundary.getBoundingClientRect();
+      const minX = Math.max(margin, area.left + margin);
+      const maxX = Math.min(window.innerWidth - margin, area.right - margin);
+      const minY = Math.max(margin, area.top + margin);
+      const maxY = Math.min(window.innerHeight - margin, area.bottom - margin);
+      const width = Math.max(0, Math.min(200, maxX - minX));
+      const right = maxX - main.right;
+      const left = main.left - minX;
+      // Without room beside the menu, the flyout covers it; "← Modelos" leads back.
       const x =
         right >= width + 6 ? main.right + 6 : left >= width + 6 ? main.left - width - 6 : main.left;
       popup.style.width = `${width}px`;
-      popup.style.left = `${Math.max(margin, Math.min(x, window.innerWidth - margin - width))}px`;
-      popup.style.maxHeight = `${Math.max(0, window.innerHeight - margin * 2)}px`;
+      popup.style.left = `${Math.max(minX, Math.min(x, maxX - width))}px`;
+      popup.style.maxHeight = `${Math.max(0, maxY - minY)}px`;
       const height = popup.getBoundingClientRect().height;
-      popup.style.top = `${Math.max(margin, Math.min(main.top, window.innerHeight - margin - height))}px`;
+      popup.style.top = `${Math.max(minY, Math.min(main.top, maxY - height))}px`;
     };
     placeSide();
     const observer = new ResizeObserver(placeSide);

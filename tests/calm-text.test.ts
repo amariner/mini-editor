@@ -27,3 +27,13 @@ test('list rows and closed code blocks arrive whole', () => {
   assert.equal(first(code + 'Después'), code);
   assert.equal(first('```ts\nconst x = 1;', true), '```ts\nconst x = 1;');
 });
+test('un paréntesis o acento grave sin cerrar no congela el resto de la respuesta', () => {
+  assert.equal(
+    first('Opciones: a) uno (ver nota\nSegunda línea. Más'),
+    'Opciones: a) uno (ver nota\nSegunda línea. ',
+  );
+  assert.deepEqual(
+    sentenceEnds('Usa `npm\n\nListo. Sigue', false).at(-1),
+    'Usa `npm\n\nListo. '.length,
+  );
+});

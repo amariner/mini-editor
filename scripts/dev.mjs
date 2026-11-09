@@ -1,7 +1,14 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'vite';
 import { context } from 'esbuild';
-import electron from 'electron';
+import { createRequire } from 'node:module';
+import electronImport from 'electron';
+// Under ELECTRON_RUN_AS_NODE (e.g. Agent Desk's bundled node) `import 'electron'` yields the
+// built-in module instead of the binary path; the npm package still resolves via require.
+const electron =
+  typeof electronImport === 'string'
+    ? electronImport
+    : createRequire(import.meta.url)('./../node_modules/electron/index.js');
 import { buildOptions } from './build-options.mjs';
 
 let child, server, builder;
@@ -17,7 +24,12 @@ function launch() {
   restart = false;
   child = spawn(electron, ['.'], {
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-    env: { ...process.env, AGENT_DESK_DEV_URL: 'http://127.0.0.1:5173' },
+    // The app itself must not inherit node mode from the shell that started the dev script.
+    env: Object.fromEntries(
+      Object.entries({ ...process.env, AGENT_DESK_DEV_URL: 'http://127.0.0.1:5173' }).filter(
+        ([key]) => key !== 'ELECTRON_RUN_AS_NODE',
+      ),
+    ),
   });
   child.on('message', (message) => {
     if (message === 'desk:dev-restart') restart = true;

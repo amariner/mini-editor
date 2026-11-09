@@ -30,7 +30,6 @@
 }
 .response-work[open] > .activity-messages,
 .execution-panel[open] > ul,
-.turn-changes > ul,
 .todo-panel > .todos {
   animation: desk-fade-in var(--motion-fast) ease;
 }
@@ -40,8 +39,7 @@
     color var(--motion-fast) ease,
     background-color var(--motion-fast) ease;
 }
-.execution-panel .execution-chevron,
-.turn-changes-toggle > svg:last-child {
+.execution-panel .execution-chevron {
   transition: transform var(--motion-fast) var(--motion-ease);
 }
 .response-group .response-actions {
@@ -52,48 +50,6 @@
 .response-actions .msg-meta {
   font-size: 10.5px;
   opacity: 1;
-}
-.response-group .turn-changes {
-  border-color: transparent;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--text) 2.5%, transparent);
-  max-width: 560px;
-}
-.turn-changes > header {
-  background: transparent;
-  min-height: 36px;
-  padding: 3px 8px;
-}
-.turn-changes .turn-changes-toggle {
-  min-height: 28px;
-  padding: 3px 2px;
-  min-width: 0;
-  justify-content: flex-start;
-  background: transparent;
-  color: var(--ui-text-color, var(--text-2));
-  gap: 7px;
-}
-.turn-changes .turn-changes-toggle strong {
-  font-size: 11.5px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.turn-changes-toggle[aria-expanded='true'] > svg:last-child {
-  transform: rotate(90deg);
-}
-.turn-changes .turn-changes-open {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--ui-text-color, var(--muted));
-}
-.turn-changes > ul {
-  border-color: color-mix(in srgb, var(--line) 65%, transparent);
-  padding-block: 6px;
-}
-.turn-changes > ul > li {
-  min-height: 28px;
 }
 .todo-panel,
 .multichat-card .todo-panel {
@@ -356,4 +312,316 @@
 .approval :is(input, select, textarea) {
   background: var(--card);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ── Reply timeline (designs: Thinking, Tool chips, Streaming text) ──────────
+ * Prose stays in reading order; each tool run folds into one quiet row whose
+ * chevron leads, shimmers while it works and expands into chip rows. */
+.app .response-group {
+  gap: 10px;
+}
+.app .response-group > .response-work {
+  align-self: flex-start;
+  max-width: calc(100% + 6px);
+  /* The row's hover pill extends left; the text stays aligned with the prose. */
+  margin-inline-start: -6px;
+}
+.app .response-group > .response-work > summary {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 26px;
+  margin: 0;
+  padding: 2px 8px 2px 6px;
+  gap: 6px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ui-text-color, var(--text-2));
+}
+.app .response-group > .response-work > summary:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--ui-text-color, var(--text));
+}
+.response-work > summary > .work-chevron {
+  flex-shrink: 0;
+  color: var(--ui-icon-color, var(--muted));
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.response-work[open] > summary > .work-chevron {
+  transform: rotate(90deg);
+}
+.response-work .work-count {
+  font-weight: 400;
+  color: var(--ui-text-color, var(--muted));
+  font-variant-numeric: tabular-nums;
+}
+.response-work .work-count::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--ui-text-color, var(--faint));
+}
+.response-work .work-time,
+.response-work .work-errors,
+.response-work .work-permissions {
+  font-weight: 400;
+}
+/* While a run works its label shimmers, like the design's active trace. */
+.response-work.running .work-summary {
+  color: transparent;
+  background-image: linear-gradient(90deg, var(--muted) 35%, var(--text) 50%, var(--muted) 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: work-shimmer 1.4s linear infinite;
+}
+@keyframes work-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.response-work > .activity-messages {
+  margin: 4px 0 2px 5px;
+  padding: 2px 0 2px 14px;
+  border-left: 1px solid var(--line);
+  animation: work-unfold 300ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes work-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+/* Tool rows: icon (chevron on hover) · verb · target chip · meta. */
+.response-work .tool.step > .tool-head {
+  min-height: 28px;
+  padding: 2px 4px;
+  gap: 8px;
+}
+.response-work .tool.step .tool-icon {
+  position: relative;
+  width: 16px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.response-work .tool.step .tool-name {
+  color: var(--ui-text-color, var(--text));
+  font-size: 12.5px;
+}
+.response-work .tool.step .tool-summary {
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 22px;
+  line-height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 4.5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+  font-size: 11.5px;
+  color: var(--ui-text-color, var(--text-2));
+}
+.response-work .tool.step .tool-summary:empty {
+  display: none;
+}
+.response-work .tool.step .tool-summary.mono {
+  font-family: var(--mono);
+}
+.response-work .tool.step .tool-chevron {
+  margin-left: auto;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    transform 150ms ease;
+}
+.response-work .tool.step > .tool-head:is(:hover, :focus-visible) .tool-chevron,
+.response-work .tool.step > .tool-head[aria-expanded='true'] .tool-chevron {
+  opacity: 1;
+}
+.response-work .tool.step > .tool-body {
+  margin: 2px 0 6px 12px;
+  padding: 4px 0 4px 14px;
+  border-left: 1px solid var(--line);
+}
+/* Changed files: chips with their diff counts, one click from the file. */
+.app .response-group > section.turn-changes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+.turn-changes > .turn-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  background: var(--card);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--shadow-soft);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ui-text-color, var(--text));
+  overflow: visible;
+}
+button.turn-file:hover {
+  background: var(--tile);
+}
+.turn-changes .turn-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-changes .turn-file > :is(.git-added, .git-removed, .turn-tag) {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.turn-changes .turn-tag {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--ui-text-color, var(--muted));
+}
+.turn-changes > .turn-more,
+.turn-changes > .turn-changes-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 6px;
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--ui-text-color, var(--muted));
+}
+.turn-changes > .turn-more:hover,
+.turn-changes > .turn-changes-open:hover {
+  background: transparent;
+  color: var(--ui-text-color, var(--text));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Streaming caret: the reply is still arriving. */
+.calm-response.streaming .md > :is(p, h1, h2, h3, h4, h5, h6):last-child::after,
+.calm-response.streaming .md > :is(ul, ol):last-child > li:last-child::after,
+.calm-response.streaming .md:empty::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 0.95em;
+  margin-left: 3px;
+  border-radius: 1px;
+  background: var(--text);
+  vertical-align: -0.1em;
+  animation: stream-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes stream-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .response-work.running .work-summary,
+  .calm-response.streaming .md > :last-child::after,
+  .response-work > .activity-messages {
+    animation: none;
+  }
+  .response-work.running .work-summary {
+    color: var(--ui-text-color, var(--text-2));
+    background: none;
+  }
+}
+
+/* ── Plan card: the steps the agent will take for this request ─────────────── */
+.app .response-group > .turn-plan {
+  max-width: 100%;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+  animation: work-unfold 300ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.turn-plan > ol {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.turn-plan li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 28px;
+  padding: 4px 0;
+  font-size: calc(var(--chat-font-size, 15px) - 1.5px);
+  line-height: 1.45;
+  color: var(--ui-text-color, var(--text-2));
+}
+.turn-plan li.in_progress {
+  color: var(--ui-text-color, var(--text));
+}
+.turn-plan li.completed .plan-text {
+  color: var(--ui-text-color, var(--muted));
+}
+.turn-plan .plan-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  transition: color 300ms ease;
+}
+.plan-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  /* Centre the mark on the first line of text. */
+  margin-top: calc((1.45em - 15px) / 2);
+  border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--muted) 80%, transparent);
+  color: var(--bg);
+}
+.plan-mark.in_progress {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--muted) 35%, transparent);
+  border-top-color: var(--text);
+}
+.turn-plan.live .plan-mark.in_progress {
+  animation: plan-spin 800ms linear infinite;
+}
+.plan-mark.completed {
+  border: 0;
+  background: color-mix(in srgb, var(--text) 55%, transparent);
+  animation: plan-check 260ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes plan-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes plan-check {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-plan.live .plan-mark.in_progress,
+  .plan-mark.completed,
+  .app .response-group > .turn-plan {
+    animation: none;
+  }
 }

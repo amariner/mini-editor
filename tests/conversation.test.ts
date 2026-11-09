@@ -83,7 +83,7 @@ test('progreso activo en el dock; no oculta una respuesta terminada durante arra
     assert.equal(tail.type === 'response' && tail.answer?.id, 'a3');
   }
 });
-test('solo el último progreso queda visible y el historial completo se conserva en actividad', () => {
+test('la narración intermedia nunca se oculta: el texto sigue el orden y las herramientas se pliegan', () => {
   for (const kind of ['claude', 'codex'] as const) {
     const session = fixture();
     if (kind === 'codex') {
@@ -94,30 +94,31 @@ test('solo el último progreso queda visible y el historial completo se conserva
         { id: 'a2', role: 'assistant', text: 'Ya encontré la causa.' },
       ];
     }
-    session.status = 'working';
     const render = () =>
       renderToStaticMarkup(React.createElement(ConversationMessages, { session, kind }));
-    const active = render();
-    assert.match(active, /progress-message/);
-    assert.doesNotMatch(active, /Voy a revisar el proyecto\./);
-    assert.match(active, kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
-    assert.doesNotMatch(active, /<details|class="tool|Revisar archivos/);
-    session.status = 'waiting';
-    assert.match(render(), kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
-    const pending = conversationEntries(session).find((entry) => entry.type === 'response');
-    assert.ok(
-      pending?.type === 'response' &&
-        JSON.stringify(pending.work).includes('Voy a revisar el proyecto.'),
-    );
-    session.status = 'ready';
-    const finished = render();
-    // Closed history keeps its summary, without mounting hidden tool rows or markdown.
-    assert.doesNotMatch(finished, /Voy a revisar el proyecto\./);
-    assert.doesNotMatch(finished, /activity-messages/);
-    assert.match(finished, /response-work/);
-    assert.doesNotMatch(finished, /<details[^>]* open=/);
-    assert.match(finished, kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
+    for (const status of ['working', 'waiting', 'ready'] as const) {
+      session.status = status;
+      const html = render();
+      assert.match(html, /Voy a revisar el proyecto\./);
+      assert.match(html, kind === 'claude' ? /Usa JavaScript/ : /Ya encontré la causa/);
+      // Narration, then the folded tool run, then the answer.
+      assert.ok(html.indexOf('Voy a revisar el proyecto.') < html.lastIndexOf('response-work'));
+      // Closed tool runs do not mount their rows until opened.
+      assert.doesNotMatch(html, /activity-messages/);
+      assert.doesNotMatch(html, /<details[^>]* open=/);
+    }
   }
+});
+test('la respuesta larga del chat principal se muestra entera, sin extracto', () => {
+  const session = fixture();
+  const long = Array.from({ length: 60 }, (_, i) => `Línea ${i} de la respuesta.`).join('\n\n');
+  session.messages.push({ id: 'a9', role: 'assistant', text: long });
+  session.status = 'ready';
+  const html = renderToStaticMarkup(
+    React.createElement(ConversationMessages, { session, kind: 'codex' }),
+  );
+  assert.match(html, /Línea 59 de la respuesta\./);
+  assert.doesNotMatch(html, /Ver respuesta completa/);
 });
 
 test('subagentes resumen la ejecución sin repetir la descripción y mantienen los detalles plegados', () => {

@@ -42,6 +42,23 @@
 .app .desk-input .usage-account {
   min-width: 0;
 }
+/* The account chip shrinks with its slot instead of running under the model chip. */
+.app .desk-input .composer-account .popover-host {
+  min-width: 0;
+  max-width: 100%;
+}
+.app .desk-input .composer-chips .composer-account .chip-btn.labeled,
+.app .desk-input .composer-account .chip-btn.labeled {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.app .desk-input .composer-account .chip-text {
+  min-width: 0;
+}
+.app .desk-input .composer-account .chip-btn > svg {
+  flex-shrink: 0;
+}
 .app .desk-input .usage-account select {
   max-width: 130px;
   width: 100%;

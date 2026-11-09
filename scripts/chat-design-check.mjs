@@ -255,16 +255,14 @@ try {
     await page.goto(server.resolvedUrls.local[0]);
     const chat = page.locator('.workspace');
     await chat.getByText('He bajado los últimos cambios', { exact: false }).waitFor();
-    const summary = chat.locator('.response-work > summary').first();
-    assert.equal(
+    const summary = chat.locator('.response-work > summary').filter({ hasText: 'Leyó' }).first();
+    assert.match(
       (await summary.innerText()).replace(/\s+/g, ' ').trim(),
-      'Leyó 1 archivo, hizo 1 búsqueda, ejecutó 2 comandos y editó 1 archivo 1 min 23 s',
+      /^Leyó 1 archivo, hizo 1 búsqueda, ejecutó 2 comandos y editó 1 archivo/,
     );
+    // Turn time moved to the reply's meta row; changed files are visible chips.
     assert.equal(await chat.locator('.turn-changes').count(), 1);
-    assert.equal(await chat.locator('.turn-changes-toggle').getAttribute('aria-expanded'), 'false');
-    await chat.locator('.turn-changes-toggle').click();
     assert.match(await chat.locator('.turn-changes').innerText(), /README\.md/);
-    await chat.locator('.turn-changes-toggle').click();
     assert.equal(await chat.locator('.md :not(pre) > code').first().innerText(), 'origin/main');
     assert.equal(await chat.locator('a.md-link.path').count(), 1);
     assert.equal(await chat.locator('a.md-link.url').count(), 1);
@@ -272,7 +270,6 @@ try {
     assert.ok((await chat.locator('.md-code .tk-f').count()) >= 1);
     assert.equal(await chat.locator('.md-table th').count(), 3);
     assert.equal(await chat.locator('.md-callout.warning').count(), 1);
-    assert.match(await chat.locator('.task-signature').innerText(), /34%/);
     await page.screenshot({
       path: `artifacts/chat-v2-respuesta-${colorScheme === 'dark' ? 'oscuro' : 'claro'}.png`,
     });
@@ -280,7 +277,7 @@ try {
     await chat
       .getByRole('region', { name: 'Contenido de docs/wiki/sistema-de-diseno.md', exact: true })
       .waitFor();
-    await chat.getByRole('button', { name: 'Cerrar panel de trabajo', exact: true }).click();
+    await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
     await chat.locator('.workspace-tools').waitFor({ state: 'detached' });
     await chat.locator('a.md-link.url').click();
     const actions = await page.evaluate(() => window.fixture.actions.map((a) => a.type));
@@ -291,7 +288,7 @@ try {
       await chat.locator('.response-work pre.diff').waitFor();
       assert.equal(await chat.locator('.response-work pre.diff .added').count(), 2);
       assert.equal(await chat.locator('.response-work pre.diff .removed').count(), 1);
-      await chat.locator('.response-work').scrollIntoViewIfNeeded();
+      await chat.locator('.response-work').last().scrollIntoViewIfNeeded();
       await page.screenshot({ path: 'artifacts/chat-v2-pasos.png' });
       await summary.click();
       // Composer menus retain context, support arrows, and return focus without interrupting.
@@ -432,11 +429,12 @@ try {
         f.publish();
       });
       await chat.getByText('Esperando tu respuesta', { exact: true }).waitFor();
-      const plan = chat.locator('.todo-panel > button');
-      assert.equal(await plan.getAttribute('aria-expanded'), 'true');
-      assert.equal(await chat.locator('.todo-panel .todos > li').count(), 3);
-      await plan.click();
-      assert.match(await plan.innerText(), /Borrando la rama fusionada/);
+      // The plan travels with the reply as a card, its current step in active wording.
+      const plan = chat.locator('.response-group').last().locator('.turn-plan');
+      assert.equal(await plan.locator('li').count(), 3);
+      assert.match(await plan.locator('li.in_progress').innerText(), /Borrando la rama fusionada/);
+      await plan.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: 'artifacts/chat-v2-plan.png' });
       await chat.locator('.approval').scrollIntoViewIfNeeded();
       assert.match(
         await chat.locator('.approval').innerText(),
@@ -632,17 +630,16 @@ try {
   await page.goto(server.resolvedUrls.local[0]);
   const chat = page.locator('.workspace');
   await chat.getByText('Corregido:', { exact: false }).waitFor();
-  const codexSummary = chat.locator('.response-work > summary');
-  assert.equal(
+  const codexSummary = chat.locator('.response-work > summary').filter({ hasText: 'Leyó' });
+  assert.match(
     (await codexSummary.innerText()).replace(/\s+/g, ' ').trim(),
-    'Leyó 1 archivo, ejecutó 1 comando y editó 1 archivo 47 s 1 error',
+    /^Leyó 1 archivo, ejecutó 1 comando y editó 1 archivo .*1 error$/,
   );
   await codexSummary.click();
   await chat.locator('.response-work .tool.failed').waitFor();
   assert.equal(await chat.locator('.response-work .tool.failed').count(), 1);
-  await chat.locator('.turn-changes-toggle').click();
   assert.match(await chat.locator('.turn-changes').innerText(), /src\/dates\.ts/);
-  assert.equal(await chat.locator('.todo-panel').count(), 1);
+  assert.equal(await chat.locator('.turn-plan').count(), 1);
   await page.getByRole('button', { name: 'Panel de trabajo', exact: true }).click();
   assert.deepEqual(errors, []);
   await chat.locator('.workspace-tools .chat-details-content').waitFor();

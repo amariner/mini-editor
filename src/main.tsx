@@ -55,7 +55,6 @@ import {
   Composer,
   ConversationMessages,
   ActivityDock,
-  TodoPanel,
   PendingMessages,
   ExecutionPanel,
 } from './chat';
@@ -2221,10 +2220,6 @@ function App() {
                       </div>
                       {!terminalMode && (
                         <>
-                          {session.todos?.length &&
-                          (live(session) || session.todos.some((t) => t.status !== 'completed')) ? (
-                            <TodoPanel key={session.id} todos={session.todos} defaultOpen />
-                          ) : null}
                           <ExecutionPanel session={session} />
                         </>
                       )}

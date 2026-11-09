@@ -228,9 +228,9 @@ export const CodeBlock = memo(function CodeBlock({
   const codeId = useId();
   const previewCode = useContext(CodePreviewContext);
   const lines = useMemo(() => code.split('\n'), [code]);
-  const long = previewCode && (lines.length > 24 || code.length > 2400);
+  const long = previewCode && (lines.length > 40 || code.length > 4000);
   const visibleCode =
-    long && !expanded ? lines.slice(0, 12).join('\n').slice(0, 1800) + '\n…' : code;
+    long && !expanded ? lines.slice(0, 30).join('\n').slice(0, 3000) + '\n…' : code;
   const reset = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(reset.current), []);
   const highlighted = useMemo(() => highlight(visibleCode, lang), [visibleCode, lang]);
@@ -473,14 +473,19 @@ function blocks(source: string[], prefix: string, tight = false, depth = 0): Rea
       while (i < lines.length && lines[i].includes('|') && lines[i].trim())
         rows.push(cells(lines[i++]));
       const id = key();
+      // Rows wider than the header keep their extra cells instead of silently losing them.
+      const columns = Array.from(
+        { length: Math.max(head.length, ...rows.map((r) => r.length)) },
+        (_, x) => x,
+      );
       nodes.push(
         <div className="md-table" key={id}>
           <table>
             <thead>
               <tr>
-                {head.map((c, j) => (
+                {columns.map((j) => (
                   <th key={j} style={align[j] ? { textAlign: align[j] } : undefined}>
-                    {inline(c, `${id}h${j}`)}
+                    {inline(head[j] ?? '', `${id}h${j}`)}
                   </th>
                 ))}
               </tr>
@@ -488,7 +493,7 @@ function blocks(source: string[], prefix: string, tight = false, depth = 0): Rea
             <tbody>
               {rows.map((r, y) => (
                 <tr key={y}>
-                  {head.map((_, x) => (
+                  {columns.map((x) => (
                     <td key={x} style={align[x] ? { textAlign: align[x] } : undefined}>
                       {inline(r[x] ?? '', `${id}r${y}c${x}`)}
                     </td>

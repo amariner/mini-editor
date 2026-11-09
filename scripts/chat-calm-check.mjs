@@ -125,7 +125,9 @@ try {
     );
     await page.goto(process.env.SOURCE_DEV_URL || 'http://127.0.0.1:5173');
     const chat = page.locator('#conversation-content');
-    await chat.getByRole('button', { name: 'Ver respuesta completa', exact: true }).waitFor();
+    // The main chat never abbreviates a reply: the long answer arrives whole.
+    await chat.locator('.response-group').last().locator('.md-code').waitFor();
+    assert.equal(await chat.getByRole('button', { name: 'Ver respuesta completa' }).count(), 0);
     assert.equal(
       await chat
         .locator('.md')
@@ -146,7 +148,7 @@ try {
         return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
       };
       const background = luminance(getComputedStyle(document.body).backgroundColor);
-      return ['#conversation-content .md', '.response-expand'].map((selector) => {
+      return ['#conversation-content .md', '.response-actions .msg-meta'].map((selector) => {
         const foreground = luminance(getComputedStyle(document.querySelector(selector)).color);
         return (
           (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
@@ -163,7 +165,6 @@ try {
       true,
     );
     await page.getByRole('button', { name: 'Ocultar herramientas', exact: true }).click();
-    assert.equal(await chat.getByRole('button', { name: 'Copiar código', exact: true }).count(), 0);
     await page.screenshot({ path: `artifacts/chat-calm/chat-${colorScheme}.png` });
     const last = chat.locator('.response-group').last();
     await last.hover();
@@ -173,7 +174,6 @@ try {
       true,
       'copy keeps the full response',
     );
-    await last.getByRole('button', { name: 'Ver respuesta completa', exact: true }).click();
     const code = last.locator('.md-code');
     assert.equal((await code.locator('pre').innerText()).includes('value59'), false);
     await code.hover();
@@ -186,7 +186,6 @@ try {
     await code.getByRole('button', { name: /Mostrar código completo/ }).click();
     assert.match(await code.locator('pre').innerText(), /value59/);
     await code.getByRole('button', { name: 'Mostrar menos código', exact: true }).click();
-    await last.getByRole('button', { name: 'Mostrar menos', exact: true }).click();
     await page.setViewportSize({ width: 560, height: 720 });
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -205,12 +204,10 @@ try {
     assert.equal(await card.locator('.response-group').count(), 2);
     await page.screenshot({ path: `artifacts/chat-calm/grid-${colorScheme}.png` });
     const active = page.locator('.multichat-card[data-session-id="s1"]');
-    assert.equal(await active.locator('.progress-message').count(), 1);
-    await active.getByRole('button', { name: 'Ver progreso', exact: true }).click();
     assert.match(
-      await active.locator('.activity-log').innerText(),
+      await active.locator('.response-group').last().innerText(),
       /Primero reviso/,
-      'earlier narration remains in activity',
+      'earlier narration stays visible in the reply',
     );
     assert.deepEqual(errors, []);
     await page.close();

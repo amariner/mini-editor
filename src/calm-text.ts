@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export const SENTENCE_PAUSE = 1200;
+export const SENTENCE_PAUSE = 450;
 const segmenter = new Intl.Segmenter('es', { granularity: 'sentence' });
 
 // Keep Markdown structures whole: code, links and emphasis must not flash unfinished.
@@ -12,6 +12,9 @@ export function sentenceEnds(text: string, finished: boolean): number[] {
   let brackets = 0;
   let emphasis = false;
   for (const line of text.split(/(?<=\n)/)) {
+    // An unmatched mark never spans paragraphs: one stray "(" or "`" must not freeze the reply.
+    brackets = 0;
+    if (!line.trim()) inlineCode = emphasis = false;
     const marker = line.match(/^\s{0,3}(`{3,}|~{3,})/);
     if (marker) {
       if (!fence) fence = marker[1];
@@ -54,32 +57,36 @@ export function sentenceEnds(text: string, finished: boolean): number[] {
   return ends.filter((end) => end > 0);
 }
 
+/** Longest prefix of `text` that ends on a sentence boundary and fits within `limit`. */
+function sentencePrefix(text: string, limit: number) {
+  const ends = sentenceEnds(text, false).filter((end) => end <= limit);
+  return text.slice(0, ends.at(-1) ?? 0);
+}
+/**
+ * Streams complete sentences at a calm pace. Every complete sentence available at each beat
+ * appears together, so the reply never falls behind the model; once the turn finishes the whole
+ * text is shown at once — nothing stays hidden behind the animation.
+ */
 export function useCalmText(text: string, pending: boolean) {
   const [shown, setShown] = useState('');
-  const [immediate, setImmediate] = useState(false);
-  const nextAt = useRef(Date.now() + SENTENCE_PAUSE);
-  const finalAt = useRef<number | undefined>(undefined);
-  const visible = text.startsWith(shown)
-    ? shown
-    : text.startsWith(shown.trimEnd())
-      ? shown.trimEnd()
-      : '';
+  const nextAt = useRef(0);
+  const visible = !pending
+    ? text
+    : text.startsWith(shown)
+      ? shown
+      : sentencePrefix(text, shown.length);
   useEffect(() => {
-    if (pending) finalAt.current = undefined;
-    else finalAt.current ??= Date.now();
-    if (immediate || visible === text) return;
-    const end = sentenceEnds(text, !pending).find((end) => end > visible.length);
-    if (end === undefined) return;
+    if (!pending || visible === text) return;
+    const end = sentenceEnds(text, false).at(-1);
+    if (end === undefined || end <= visible.length) return;
     const timer = setTimeout(
       () => {
-        // Long completed answers remain accessible without a lengthy playback queue.
-        const flush = !pending && Date.now() - finalAt.current! >= 4800;
-        setShown(text.slice(0, flush ? text.length : end));
+        setShown(text.slice(0, end));
         nextAt.current = Date.now() + SENTENCE_PAUSE;
       },
       Math.max(0, nextAt.current - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [text, pending, visible, immediate]);
-  return { visible: immediate ? text : visible, reveal: () => setImmediate(true) };
+  }, [text, pending, visible]);
+  return { visible };
 }
