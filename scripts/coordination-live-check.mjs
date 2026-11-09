@@ -1,7 +1,7 @@
 // Opt-in subscription-backed test. Uses official isolated profiles, never reads credentials.
 import { build } from 'esbuild';
 import { spawn } from 'node:child_process';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import path from 'node:path';
 if (!process.env.AGENT_DESK_PROFILES_DIR)
   throw new Error('Define AGENT_DESK_PROFILES_DIR con los perfiles oficiales autenticados.');

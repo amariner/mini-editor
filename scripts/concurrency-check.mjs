@@ -1,7 +1,7 @@
 // Real providers and MCP transports, isolated project/profiles, no model calls.
 import { build } from 'esbuild';
 import { spawn } from 'node:child_process';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import path from 'node:path';
 const output = path.resolve('dist-electron/concurrency-check.cjs');
 await build({

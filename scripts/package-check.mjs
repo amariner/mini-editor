@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import { _electron } from 'playwright';
 
 const appPath = path.resolve(process.argv[2] ?? `release/mac-${process.arch}/Agent Desk.app`);

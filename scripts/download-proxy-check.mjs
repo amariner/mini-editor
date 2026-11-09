@@ -1,6 +1,6 @@
 // Real Chromium HTTPS downloads through an isolated authenticated proxy; no remote requests.
 import { build } from 'esbuild';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';

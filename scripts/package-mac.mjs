@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { build as buildRenderer } from 'vite';
 import { build } from 'esbuild';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import { buildOptions } from './build-options.mjs';
 import {
   runtimeDependencies,
@@ -15,6 +15,8 @@ import {
 } from './package-payload.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Electron's node also treats .asar files as folders; copy them as plain files.
+if (process.versions.electron) process.noAsar = true;
 process.chdir(root);
 if (process.platform !== 'darwin') throw new Error('Genera el instalador desde macOS.');
 const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));

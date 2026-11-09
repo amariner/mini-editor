@@ -2,6 +2,14 @@
 
 Aplicación local para macOS: una ventana Electron con tus proyectos, cuentas independientes de Claude Code, Codex, OpenRouter y Google · Gemini (sin cuentas precreadas). Claude funciona como un **chat nativo equivalente a Claude Code** (streaming, herramientas, permisos, preguntas, comandos, modelo, permisos y esfuerzo desde el compositor) y conserva su terminal oficial como modo opcional. La interfaz está en español, con un diseño plano y claro.
 
+## Respuestas completas y plan de trabajo · 0.1.10
+
+Las respuestas del chat ya no se recortan ni esconden texto: la narración que el agente escribe entre herramientas permanece en su sitio y en orden, las respuestas largas se muestran enteras en el chat principal y, al terminar el turno, el texto aparece completo sin esperar a la animación. Un paréntesis o acento grave sin cerrar ya no detiene la aparición de frases. Las tablas conservan las celdas que exceden la cabecera y solo se pliegan los bloques de código de más de 40 líneas.
+
+Cada respuesta con trabajo de varios pasos empieza con una **tarjeta de plan**: pendiente, en curso (con su forma activa) y hecho. El plan de cada turno se reconstruye desde sus propias herramientas (`TodoWrite`, `TaskCreate`, `TaskUpdate`) y el plan en curso acompaña al último turno. Claude recibe la indicación de publicar 3–6 pasos concretos antes de empezar. Las herramientas se agrupan en una fila plegable por tramo, con brillo mientras trabajan y filas con chip; los archivos cambiados aparecen como chips bajo la respuesta.
+
+En chats estrechos, el selector de intensidad se abre dentro del panel del chat (con **← Modelos** para volver) y el chip de cuenta se recorta sin solaparse con el modelo. `npm run dev` y `npm run package:mac` funcionan también desde el `node` incluido en Agent Desk.
+
 ## Supervisión y continuidad de los agentes · 0.1.9
 
 El **Centro de atención** está disponible cuando hay conversaciones (`⌘⇧A`). **Pendientes** reúne solicitudes y entregas sin leer; **Todos** permite supervisar los chats por prioridad o proyecto, incluidos los coordinadores cuyos auxiliares necesitan una respuesta. Elegir una fila abre una **vista rápida** con la respuesta reciente, los hijos del equipo y las entregas de subagentes. **Abrir chat** lleva a la conversación original para responder a sus permisos. Escape vuelve primero a la lista y después cierra el centro, devolviendo el foco.

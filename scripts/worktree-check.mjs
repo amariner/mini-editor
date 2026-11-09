@@ -2,7 +2,7 @@
 // Optional: with Claude Code installed, opens an isolated chat for real (initialization only).
 import { build } from 'esbuild';
 import { spawn } from 'node:child_process';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import path from 'node:path';
 const output = path.resolve('dist-electron/worktree-check.cjs');
 await build({

@@ -6,7 +6,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import { chromium } from 'playwright';
 const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'agent-desk-runtime-')));
 const data = path.join(root, 'data');

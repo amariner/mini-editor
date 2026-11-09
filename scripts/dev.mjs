@@ -1,14 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'vite';
 import { context } from 'esbuild';
-import { createRequire } from 'node:module';
-import electronImport from 'electron';
-// Under ELECTRON_RUN_AS_NODE (e.g. Agent Desk's bundled node) `import 'electron'` yields the
-// built-in module instead of the binary path; the npm package still resolves via require.
-const electron =
-  typeof electronImport === 'string'
-    ? electronImport
-    : createRequire(import.meta.url)('./../node_modules/electron/index.js');
+import electron from './electron-path.mjs';
 import { buildOptions } from './build-options.mjs';
 
 let child, server, builder;

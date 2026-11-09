@@ -1,6 +1,6 @@
 // Real Electron networking, isolated synthetic proxy; no accounts or remote requests.
 import { build } from 'esbuild';
-import electron from 'electron';
+import electron from './electron-path.mjs';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
