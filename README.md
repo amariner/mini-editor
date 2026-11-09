@@ -2,6 +2,10 @@
 
 Aplicación local para macOS: una ventana Electron con tus proyectos, cuentas independientes de Claude Code, Codex, OpenRouter y Google · Gemini (sin cuentas precreadas). Claude funciona como un **chat nativo equivalente a Claude Code** (streaming, herramientas, permisos, preguntas, comandos, modelo, permisos y esfuerzo desde el compositor) y conserva su terminal oficial como modo opcional. La interfaz está en español, con un diseño plano y claro.
 
+## Capturas fiables del navegador integrado · 0.1.11
+
+La acción **screenshot** del navegador integrado ya no falla con `UnknownVizError` ni con imágenes vacías cuando la pestaña está en segundo plano, recién abierta o con la ventana minimizada u oculta. Si Chromium no puede leer la superficie de la pestaña, Agent Desk la separa un instante de la ventana, la captura solo a ella mediante CDP (sin exponer un puerto de depuración) y la devuelve a su sitio con la misma visibilidad. Cada paso tiene un límite de tiempo, de modo que un agente no queda esperando; si aun así no es posible, recibe un mensaje claro para abrir la pestaña y reintentar.
+
 ## Respuestas completas y plan de trabajo · 0.1.10
 
 Las respuestas del chat ya no se recortan ni esconden texto: la narración que el agente escribe entre herramientas permanece en su sitio y en orden, las respuestas largas se muestran enteras en el chat principal y, al terminar el turno, el texto aparece completo sin esperar a la animación. Un paréntesis o acento grave sin cerrar ya no detiene la aparición de frases. Las tablas conservan las celdas que exceden la cabecera y solo se pliegan los bloques de código de más de 40 líneas.

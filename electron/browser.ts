@@ -512,6 +512,79 @@ export class DeskBrowser {
     this.changed();
     return entry;
   }
+  /**
+   * Screenshot of one tab, whether or not the user is looking at it. Chromium cannot read a
+   * hidden view's display surface (UnknownVizError, or an empty image when the window is
+   * hidden, minimised or on another Space), and CDP stalls on such a view too. The view is
+   * then detached for a moment and rendered on its own through CDP for this page only,
+   * never exposing a general debugging endpoint; it returns to the same place afterwards.
+   */
+  private async capture(
+    id: string,
+    wc: Electron.WebContents,
+    dom: (input: { action: 'viewport' }) => Promise<{ width: number; height: number }>,
+  ) {
+    const within = <T>(work: Promise<T>, ms = 8000) =>
+      Promise.race([
+        work,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('La captura no respondió a tiempo.')), ms),
+        ),
+      ]);
+    const p = this.pages.get(id)!;
+    try {
+      const image = await within(wc.capturePage(), 4000);
+      if (!image.isEmpty()) return image;
+    } catch {
+      /* Falls back to a detached capture below. */
+    }
+    const host = this.host();
+    const view = p.view!;
+    const attached = !!host && !host.isDestroyed() && host.contentView.children.includes(view);
+    const index = attached ? host!.contentView.children.indexOf(view) : -1;
+    const shown = this.visible === id;
+    const debuggerAttached = wc.debugger.isAttached();
+    try {
+      if (attached) host!.contentView.removeChildView(view);
+      if (!debuggerAttached) wc.debugger.attach('1.3');
+      const bounds = view.getBounds();
+      const viewport = await within(dom({ action: 'viewport' })).catch(() => undefined);
+      const width = Math.max(320, Math.round(viewport?.width || bounds.width || 1280));
+      const height = Math.max(240, Math.round(viewport?.height || bounds.height || 800));
+      await within(
+        wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+          width,
+          height,
+          deviceScaleFactor: 1,
+          mobile: false,
+        }),
+      );
+      const result = await within(
+        wc.debugger.sendCommand('Page.captureScreenshot', {
+          format: 'png',
+          fromSurface: true,
+          clip: { x: 0, y: 0, width, height, scale: 1 },
+        }),
+      );
+      const image = nativeImage.createFromBuffer(Buffer.from(result.data, 'base64'));
+      if (image.isEmpty()) throw new Error('empty');
+      return image;
+    } catch {
+      throw new Error(
+        'No se pudo capturar la página. Abre su pestaña en el panel del navegador y vuelve a intentarlo.',
+      );
+    } finally {
+      if (!wc.isDestroyed() && wc.debugger.isAttached()) {
+        if (!p.releaseInput)
+          await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => {});
+        if (!debuggerAttached) wc.debugger.detach();
+      }
+      if (attached && host && !host.isDestroyed() && !host.contentView.children.includes(view)) {
+        host.contentView.addChildView(view, index);
+        view.setVisible(shown);
+      }
+    }
+  }
   present(id: string, bounds: Rect, visible: boolean) {
     if (!visible) {
       this.pages.get(id)?.view?.setVisible(false);
@@ -926,49 +999,15 @@ export class DeskBrowser {
       p.state.error = undefined;
       if (!dormant) wc.reload();
     } else if (args.action === 'screenshot') {
-      let capture = await wc.capturePage();
-      // A page created in a background conversation has no compositor frame yet.
-      // Ask Chromium for this page only; never expose a general CDP endpoint.
-      if (capture.isEmpty()) {
-        const attached = wc.debugger.isAttached();
-        try {
-          if (!attached) wc.debugger.attach('1.3');
-          const { width, height } = await dom({ action: 'viewport' });
-          await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
-            width,
-            height,
-            deviceScaleFactor: 1,
-            mobile: false,
-          });
-          const result = await wc.debugger.sendCommand('Page.captureScreenshot', {
-            format: 'png',
-            fromSurface: true,
-            clip: { x: 0, y: 0, width, height, scale: 1 },
-          });
-          capture = nativeImage.createFromBuffer(Buffer.from(result.data, 'base64'));
-        } finally {
-          if (!wc.isDestroyed() && wc.debugger.isAttached()) {
-            if (!p.releaseInput)
-              await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => {});
-            if (!attached) wc.debugger.detach();
-          }
-        }
-      }
-      if (capture.isEmpty())
-        throw new Error(
-          'La página aún no ha generado una imagen. Abre su panel de navegador y vuelve a intentarlo.',
-        );
+      const capture = await this.capture(id, wc, dom);
       const viewport = await dom({ action: 'viewport' });
-      const imageWidth = Math.min(p.view!.getBounds().width, 1440);
-      const imageSize = capture.resize({ width: imageWidth }).getSize();
+      const width = Math.min(p.view!.getBounds().width || capture.getSize().width, 1440);
+      const resized = capture.resize({ width });
       return {
         ok: true,
         viewport,
-        imageSize,
-        image: capture
-          .resize({ width: Math.min(p.view!.getBounds().width, 1440) })
-          .toPNG()
-          .toString('base64'),
+        imageSize: resized.getSize(),
+        image: resized.toPNG().toString('base64'),
         mimeType: 'image/png',
       };
     } else if (args.action === 'inspect')
